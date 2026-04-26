@@ -1,0 +1,9 @@
+numpy==1.26.4
+gymnasium==0.29.1
+filterpy==1.4.5
+scipy==1.15.3
+msgpack-rpc-python==0.4.1
+opencv-python>=4.8
+torch
+pandas
+matplotlib
