@@ -64,9 +64,9 @@ class CommandRecord:
 
 @dataclass
 class Waypoint:
-    lat: float
-    lon: float
-    alt_m: float
+    x: float
+    y: float
+    z: float
 
 
 def metres_between_local(a: TelemetryData, x: float, y: float, z: float) -> float:

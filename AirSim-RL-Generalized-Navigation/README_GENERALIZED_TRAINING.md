@@ -1,3 +1,29 @@
+## 3D Path Planning Mode
+
+The generalized training environment supports full 3D reinforcement-learning path planning:
+
+- Start and target positions are sampled in XYZ.
+- The action is `[vx, vy, vz]`; `vz` is no longer forced to zero.
+- The state includes six LiDAR clearance values: front, left, right, back, up, and down.
+- Reward, success radius, path length, and final distance are computed in 3D.
+- Training/evaluation CSV files include `Start_Z` and `Target_Z`.
+
+Because the observation vector changed from 13 to 16 dimensions, train a new model for this version.
+
+Example 3D training:
+
+```powershell
+python train_generalized.py --episodes 300 --x-min -60 --x-max 80 --y-min -50 --y-max 50 --z-min -10 --z-max -2
+```
+
+Example 3D evaluation:
+
+```powershell
+python evaluate_generalized.py --model runs\YYYYMMDD_HHMMSS\sac_model_generalized_latest.pth --episodes 50 --z-min -10 --z-max -2
+```
+
+For old fixed-altitude behavior, keep using `--z -2`.
+
 # Generalized AirSim RL Navigation Training
 
 这个副本用于训练更有意义的导航策略：每个 episode 随机起点、随机目标点，目标点作为状态输入，让模型学习“从当前位置到任意目标”的局部导航控制，而不是记住固定目标路线。

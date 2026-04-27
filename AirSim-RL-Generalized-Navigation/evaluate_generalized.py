@@ -24,7 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--x-max", type=float, default=80.0)
     parser.add_argument("--y-min", type=float, default=-50.0)
     parser.add_argument("--y-max", type=float, default=50.0)
-    parser.add_argument("--z", type=float, default=-2.0)
+    parser.add_argument("--z", type=float, default=None, help="Optional fixed NED altitude for backward-compatible 2D-style evaluation.")
+    parser.add_argument("--z-min", type=float, default=-8.0)
+    parser.add_argument("--z-max", type=float, default=-2.0)
     parser.add_argument("--min-distance", type=float, default=20.0)
     parser.add_argument("--max-distance", type=float, default=120.0)
     return parser.parse_args()
@@ -44,12 +46,13 @@ def main() -> None:
         x_max=args.x_max,
         y_min=args.y_min,
         y_max=args.y_max,
-        z=args.z,
+        z_min=args.z if args.z is not None else args.z_min,
+        z_max=args.z if args.z is not None else args.z_max,
         min_start_goal_distance=args.min_distance,
         max_start_goal_distance=args.max_distance,
     )
-    env = GeneralizedAirSimDroneEnv(area=area, max_episode_steps=args.max_steps, target_altitude=args.z)
-    agent = GeneralizedSACAgent(state_dim=13, action_dim=3, expert_weight=args.expert_weight)
+    env = GeneralizedAirSimDroneEnv(area=area, max_episode_steps=args.max_steps)
+    agent = GeneralizedSACAgent(state_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0], expert_weight=args.expert_weight)
     agent.load(args.model)
 
     rows = []
@@ -81,8 +84,10 @@ def main() -> None:
                 "Episode": episode + 1,
                 "Start_X": float(reset_info["start"][0]),
                 "Start_Y": float(reset_info["start"][1]),
+                "Start_Z": float(reset_info["start"][2]),
                 "Target_X": float(reset_info["target"][0]),
                 "Target_Y": float(reset_info["target"][1]),
+                "Target_Z": float(reset_info["target"][2]),
                 "Success": success,
                 "Final_Distance": final_distance,
                 "Collisions": collisions,

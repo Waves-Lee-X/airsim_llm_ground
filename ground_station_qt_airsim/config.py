@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover
 
 @dataclass
 class UiConfig:
-    title: str = "AirSim 基础地面站"
+    title: str = "\u57fa\u4e8e AirSim \u7684\u65e0\u4eba\u673a\u5730\u9762\u7ad9"
     theme_mode: str = "light"
     geometry: str = "1480x920"
     min_width: int = 1200
@@ -33,7 +33,7 @@ class AirSimConfig:
     default_speed_mps: float = 4.0
     takeoff_height_m: float = 8.0
     auto_enable_api_control: bool = True
-    use_gps_on_map: bool = True
+    use_gps_on_map: bool = False
     vehicle_names: list[str] | None = None
 
 

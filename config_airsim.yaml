@@ -1,0 +1,26 @@
+ui:
+  title: "\u57fa\u4e8e AirSim \u7684\u65e0\u4eba\u673a\u5730\u9762\u7ad9"
+  theme_mode: light
+  geometry: 1480x920
+  min_width: 1200
+  min_height: 760
+  dashboard_interval_ms: 250
+  default_selected_uav: 1
+  default_altitude_m: -8.0
+
+airsim:
+  host: 127.0.0.1
+  port: 41451
+  timeout_s: 10.0
+  poll_interval_s: 0.2
+  default_speed_mps: 4.0
+  takeoff_height_m: 8.0
+  auto_enable_api_control: true
+  use_gps_on_map: false
+  vehicle_names: null
+
+formation:
+  enabled: true
+  refresh_interval_s: 0.6
+  default_spacing_m: 6.0
+  default_altitude_offset_m: 0.0

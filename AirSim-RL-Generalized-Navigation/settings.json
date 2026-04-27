@@ -29,10 +29,10 @@
                         "Roll": 0,
                         "Pitch": 0,
                         "Yaw": 0,
-                        "VerticalFOVUpper": 20,
-                        "VerticalFOVLower": -20,
-                        "HorizontalFOVStart": -90,
-                        "HorizontalFOVEnd": 90,
+                        "VerticalFOVUpper": 45,
+                        "VerticalFOVLower": -45,
+                        "HorizontalFOVStart": -180,
+                        "HorizontalFOVEnd": 180,
                         "DrawDebugPoints": true,
                         "DataFrame": "SensorLocalFrame"
                     }

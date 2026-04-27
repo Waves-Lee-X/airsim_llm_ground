@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 
 try:
@@ -43,12 +44,17 @@ from ground_station_qt_airsim.models import Waypoint
 
 
 COMMAND_LABELS = {
-    "arm": "解锁",
-    "disarm": "上锁",
-    "takeoff": "起飞",
-    "land": "降落",
-    "rtl": "返航",
-    "hover": "悬停",
+    "arm": "\u89e3\u9501",
+    "disarm": "\u4e0a\u9501",
+    "takeoff": "\u8d77\u98de",
+    "land": "\u964d\u843d",
+    "rtl": "\u8fd4\u822a",
+    "hover": "\u60ac\u505c",
+    "expert_goto_map": "\u4e13\u5bb6\u907f\u969c\u6307\u70b9",
+    "expert_goto_local": "\u4e13\u5bb6\u907f\u969c\u6307\u70b9",
+    "expert_goto": "\u4e13\u5bb6\u907f\u969c",
+    "goto_local": "\u76f4\u63a5\u6307\u70b9",
+    "stop_motion": "\u505c\u6b62",
 }
 
 CRITICAL_COMMANDS = {"arm", "disarm", "takeoff", "land", "rtl"}
@@ -58,8 +64,8 @@ class MapBridge(QObject):
     clicked = Signal(float, float)
 
     @Slot(float, float)
-    def mapClicked(self, lat: float, lon: float) -> None:
-        self.clicked.emit(float(lat), float(lon))
+    def mapClicked(self, x: float, y: float) -> None:
+        self.clicked.emit(float(x), float(y))
 
 
 class AirSimGroundStationWindow(QMainWindow):
@@ -73,6 +79,7 @@ class AirSimGroundStationWindow(QMainWindow):
         self.map_ready = False
         self.selected_uav = int(config.ui.default_selected_uav)
         self.map_mode = "goto"
+        self.navigation_mode = "expert"
         self.waypoints: list[Waypoint] = []
         self.current_theme = config.ui.theme_mode or "light"
         self.quick_labels: dict[str, QLabel] = {}
@@ -93,7 +100,7 @@ class AirSimGroundStationWindow(QMainWindow):
     @staticmethod
     def create_application(argv: list[str]) -> QApplication:
         app = QApplication.instance() or QApplication(argv)
-        app.setApplicationName("AirSim 基础地面站")
+        app.setApplicationName("\u57fa\u4e8e AirSim \u7684\u65e0\u4eba\u673a\u5730\u9762\u7ad9")
         app.setStyle("Fusion")
         return app
 
@@ -110,10 +117,10 @@ class AirSimGroundStationWindow(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 10, 16, 10)
         header_layout.addStretch(1)
-        self.status_label = QLabel("未连接")
+        self.status_label = QLabel("\u672a\u8fde\u63a5")
         self.status_label.setObjectName("StatusPillWarn")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.header_info = QLabel("等待连接 AirSim")
+        self.header_info = QLabel("\u7b49\u5f85 AirSim \u8fde\u63a5")
         self.header_info.setObjectName("HeaderInfo")
         header_layout.addWidget(self.status_label)
         header_layout.addWidget(self.header_info)
@@ -141,6 +148,7 @@ class AirSimGroundStationWindow(QMainWindow):
         self._add_status_section(sidebar_layout)
         self._add_basic_command_section(sidebar_layout)
         self._add_map_section(sidebar_layout)
+        self._add_llm_section(sidebar_layout)
         self._add_backend_section(sidebar_layout)
         sidebar_layout.addStretch(1)
 
@@ -162,24 +170,23 @@ class AirSimGroundStationWindow(QMainWindow):
         self.fleet_table = QTableWidget(0, 10)
         self.fleet_table.setObjectName("InfoTable")
         self.fleet_table.setHorizontalHeaderLabels(
-            ["编号", "名称", "在线", "模式", "解锁", "高度(m)", "速度", "纬度", "经度", "本地坐标"]
+            ["\u7f16\u53f7", "\u540d\u79f0", "\u5728\u7ebf", "\u6a21\u5f0f", "\u89e3\u9501", "\u9ad8\u5ea6(m)", "\u901f\u5ea6", "X", "Y", "Z"]
         )
         self.fleet_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        tabs.addTab(self.fleet_table, "飞机状态")
+        tabs.addTab(self.fleet_table, "\u98de\u673a\u72b6\u6001")
 
         self.command_table = QTableWidget(0, 5)
         self.command_table.setObjectName("InfoTable")
-        self.command_table.setHorizontalHeaderLabels(["序号", "目标", "命令", "状态", "时间"])
+        self.command_table.setHorizontalHeaderLabels(["\u5e8f\u53f7", "\u76ee\u6807", "\u547d\u4ee4", "\u72b6\u6001", "\u65f6\u95f4"])
         self.command_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        tabs.addTab(self.command_table, "控制记录")
+        tabs.addTab(self.command_table, "\u63a7\u5236\u8bb0\u5f55")
 
         self.overview_table = QTableWidget(5, 2)
         self.overview_table.setObjectName("InfoTable")
-        self.overview_table.setHorizontalHeaderLabels(["项目", "值"])
+        self.overview_table.setHorizontalHeaderLabels(["\u9879\u76ee", "\u503c"])
         self.overview_table.verticalHeader().setVisible(False)
         self.overview_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        tabs.addTab(self.overview_table, "运行概览")
-
+        tabs.addTab(self.overview_table, "\u8fd0\u884c\u6982\u89c8")
         right.addWidget(tabs, stretch=1)
 
         self.log_view = QTextEdit()
@@ -188,14 +195,13 @@ class AirSimGroundStationWindow(QMainWindow):
         self.log_view.setMaximumHeight(150)
         right.addWidget(self.log_view)
 
-        menubar = self.menuBar()
-        view_menu = menubar.addMenu("视图")
-        theme_action = QAction("切换主题", self)
+        view_menu = self.menuBar().addMenu("\u89c6\u56fe")
+        theme_action = QAction("\u5207\u6362\u4e3b\u9898", self)
         theme_action.triggered.connect(self._toggle_theme)
         view_menu.addAction(theme_action)
 
-        conn_menu = menubar.addMenu("连接")
-        reconnect_action = QAction("重新连接 AirSim", self)
+        conn_menu = self.menuBar().addMenu("\u8fde\u63a5")
+        reconnect_action = QAction("\u91cd\u65b0\u8fde\u63a5 AirSim", self)
         reconnect_action.triggered.connect(self._reconnect_backend)
         conn_menu.addAction(reconnect_action)
 
@@ -211,49 +217,45 @@ class AirSimGroundStationWindow(QMainWindow):
         return frame, layout
 
     def _add_selector_section(self, parent: QVBoxLayout) -> None:
-        frame, layout = self._wrap_card("当前目标")
+        frame, layout = self._wrap_card("\u63a7\u5236\u76ee\u6807")
         self.uav_combo = QComboBox()
         self.uav_combo.addItem("UAV1")
         self.uav_combo.setMinimumWidth(200)
         self.alt_spin = QDoubleSpinBox()
-        self.alt_spin.setRange(-120.0, -0.5)
+        self.alt_spin.setRange(0.5, 120.0)
         self.alt_spin.setDecimals(1)
-        self.alt_spin.setValue(float(self.config.ui.default_altitude_m))
+        self.alt_spin.setValue(abs(float(self.config.ui.default_altitude_m)))
         self.alt_spin.setSuffix(" m")
         self.alt_spin.setMinimumWidth(200)
-        layout.addWidget(QLabel("控制对象"), 0, 0)
+        layout.addWidget(QLabel("\u65e0\u4eba\u673a"), 0, 0)
         layout.addWidget(self.uav_combo, 0, 1)
-        layout.addWidget(QLabel("目标Z坐标"), 1, 0)
+        layout.addWidget(QLabel("\u76ee\u6807\u9ad8\u5ea6"), 1, 0)
         layout.addWidget(self.alt_spin, 1, 1)
         parent.addWidget(frame)
 
     def _add_status_section(self, parent: QVBoxLayout) -> None:
-        frame, layout = self._wrap_card("状态回传")
+        frame, layout = self._wrap_card("\u72b6\u6001\u56de\u4f20")
         items = [
-            ("连接状态", "未连接"),
-            ("飞行模式", "-"),
-            ("当前位置", "-"),
-            ("本地坐标", "-"),
-            ("当前高度", "0.0 m"),
-            ("当前速度", "0.0 m/s"),
+            ("\u8fde\u63a5", "\u672a\u8fde\u63a5"),
+            ("\u6a21\u5f0f", "-"),
+            ("\u4f4d\u7f6e", "-"),
+            ("\u672c\u5730\u5750\u6807", "-"),
+            ("\u9ad8\u5ea6", "0.0 m"),
+            ("\u901f\u5ea6", "0.0 m/s"),
         ]
         for row, (name, value) in enumerate(items):
             name_label = QLabel(name)
             name_label.setObjectName("FieldName")
-            name_label.setMinimumHeight(26)
-            name_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             value_label = QLabel(value)
             value_label.setObjectName("QuickValue")
             value_label.setWordWrap(True)
-            value_label.setMinimumHeight(26)
-            value_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             layout.addWidget(name_label, row, 0)
             layout.addWidget(value_label, row, 1)
             self.quick_labels[name] = value_label
         parent.addWidget(frame)
 
     def _add_basic_command_section(self, parent: QVBoxLayout) -> None:
-        frame, layout = self._wrap_card("基础控制")
+        frame, layout = self._wrap_card("\u57fa\u7840\u63a7\u5236")
         commands = ["arm", "disarm", "takeoff", "land", "rtl", "hover"]
         layout.setColumnStretch(0, 1)
         layout.setColumnStretch(1, 1)
@@ -267,48 +269,76 @@ class AirSimGroundStationWindow(QMainWindow):
         parent.addWidget(frame)
 
     def _add_map_section(self, parent: QVBoxLayout) -> None:
-        frame, layout = self._wrap_card("离线地图控制")
+        frame, layout = self._wrap_card("\u5730\u56fe\u63a7\u5236")
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["单点导航", "航点模式"])
+        self.mode_combo.addItems(["\u5355\u70b9\u6307\u70b9", "\u822a\u70b9\u4efb\u52a1"])
         self.mode_combo.setMinimumWidth(200)
+        self.nav_mode_combo = QComboBox()
+        self.nav_mode_combo.addItems(["\u4e13\u5bb6\u907f\u969c", "\u76f4\u63a5\u98de\u884c"])
+        self.nav_mode_combo.setMinimumWidth(200)
         self.layer_combo = QComboBox()
-        self.layer_combo.addItems(["离线地图"])
+        self.layer_combo.addItems(["AirSim \u573a\u666f\u5750\u6807"])
         self.layer_combo.setEnabled(False)
         self.layer_combo.setMinimumWidth(200)
-        clear_btn = QPushButton("清空航点")
+        clear_btn = QPushButton("\u6e05\u7a7a\u822a\u70b9")
         clear_btn.setMinimumHeight(40)
-        clear_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         clear_btn.clicked.connect(self._clear_waypoints)
-        run_btn = QPushButton("执行航点")
+        run_btn = QPushButton("\u6267\u884c\u822a\u70b9")
         run_btn.setMinimumHeight(40)
-        run_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         run_btn.clicked.connect(self._run_waypoints)
-        layout.addWidget(QLabel("点击模式"), 0, 0)
+        layout.addWidget(QLabel("\u70b9\u51fb\u6a21\u5f0f"), 0, 0)
         layout.addWidget(self.mode_combo, 0, 1)
-        layout.addWidget(QLabel("地图类型"), 1, 0)
-        layout.addWidget(self.layer_combo, 1, 1)
-        layout.addWidget(clear_btn, 2, 0)
-        layout.addWidget(run_btn, 2, 1)
+        layout.addWidget(QLabel("\u5bfc\u822a\u65b9\u5f0f"), 1, 0)
+        layout.addWidget(self.nav_mode_combo, 1, 1)
+        layout.addWidget(QLabel("\u5730\u56fe"), 2, 0)
+        layout.addWidget(self.layer_combo, 2, 1)
+        layout.addWidget(clear_btn, 3, 0)
+        layout.addWidget(run_btn, 3, 1)
+        parent.addWidget(frame)
+
+    def _add_llm_section(self, parent: QVBoxLayout) -> None:
+        frame, layout = self._wrap_card("\u81ea\u7136\u8bed\u8a00\u547d\u4ee4")
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        self.llm_input = QTextEdit()
+        self.llm_input.setObjectName("LlmInput")
+        self.llm_input.setPlaceholderText("\u793a\u4f8b\uff1a\u98de\u5230 X=20 Y=5 \u9ad8\u5ea6 8m\uff1b\u60ac\u505c\uff1b\u8d77\u98de\uff1b\u964d\u843d")
+        self.llm_input.setMinimumHeight(76)
+        self.llm_input.setMaximumHeight(100)
+        preview_btn = QPushButton("\u9884\u89c8")
+        preview_btn.setMinimumHeight(40)
+        preview_btn.clicked.connect(self._preview_llm_command)
+        run_btn = QPushButton("\u6267\u884c")
+        run_btn.setMinimumHeight(40)
+        run_btn.clicked.connect(self._execute_llm_command)
+        self.llm_preview = QTextEdit()
+        self.llm_preview.setObjectName("LlmPreview")
+        self.llm_preview.setReadOnly(True)
+        self.llm_preview.setMaximumHeight(86)
+        layout.addWidget(self.llm_input, 0, 0, 1, 2)
+        layout.addWidget(preview_btn, 1, 0)
+        layout.addWidget(run_btn, 1, 1)
+        layout.addWidget(self.llm_preview, 2, 0, 1, 2)
         parent.addWidget(frame)
 
     def _add_backend_section(self, parent: QVBoxLayout) -> None:
-        frame, layout = self._wrap_card("AirSim 连接")
+        frame, layout = self._wrap_card("AirSim \u8fde\u63a5")
         self.backend_host_label = QLabel(self.config.airsim.host)
         self.backend_host_label.setObjectName("QuickValue")
         self.backend_port_label = QLabel(str(self.config.airsim.port))
         self.backend_port_label.setObjectName("QuickValue")
-        reconnect_btn = QPushButton("重新连接")
+        reconnect_btn = QPushButton("\u91cd\u65b0\u8fde\u63a5")
         reconnect_btn.clicked.connect(self._reconnect_backend)
-        layout.addWidget(QLabel("主机地址"), 0, 0)
+        layout.addWidget(QLabel("\u4e3b\u673a"), 0, 0)
         layout.addWidget(self.backend_host_label, 0, 1)
-        layout.addWidget(QLabel("端口"), 1, 0)
+        layout.addWidget(QLabel("\u7aef\u53e3"), 1, 0)
         layout.addWidget(self.backend_port_label, 1, 1)
         layout.addWidget(reconnect_btn, 2, 0, 1, 2)
         parent.addWidget(frame)
 
     def _create_map_view(self, layout: QVBoxLayout) -> None:
         if QWebEngineView is None or QWebChannel is None:
-            fallback = QLabel("未安装 PySide6 WebEngine，无法显示离线地图。")
+            fallback = QLabel("\u672a\u5b89\u88c5 PySide6 WebEngine\uff0c\u65e0\u6cd5\u663e\u793a AirSim \u5750\u6807\u5730\u56fe\u3002")
             fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(fallback)
             return
@@ -324,24 +354,25 @@ class AirSimGroundStationWindow(QMainWindow):
     def _wire_signals(self) -> None:
         self.uav_combo.currentTextChanged.connect(self._on_uav_changed)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        self.nav_mode_combo.currentTextChanged.connect(self._on_nav_mode_changed)
         self.bridge.clicked.connect(self._on_map_clicked)
 
     def _connect_backend(self, *, initial: bool = False) -> None:
         try:
             self.backend.connect()
-            self.status_label.setText("已连接")
+            self.status_label.setText("\u5df2\u8fde\u63a5")
             self.status_label.setObjectName("StatusPill")
             self.status_label.style().unpolish(self.status_label)
             self.status_label.style().polish(self.status_label)
             self._refresh_uav_combo()
             if not initial:
-                self.log("AirSim 后端已重新连接。", "INFO")
+                self.log("AirSim \u540e\u7aef\u5df2\u91cd\u65b0\u8fde\u63a5\u3002", "INFO")
         except Exception as exc:
-            self.status_label.setText("失败")
+            self.status_label.setText("\u8fde\u63a5\u5931\u8d25")
             self.status_label.setObjectName("StatusPillError")
             self.status_label.style().unpolish(self.status_label)
             self.status_label.style().polish(self.status_label)
-            self.log(f"AirSim 连接失败: {exc}", "ERROR")
+            self.log(f"AirSim \u8fde\u63a5\u5931\u8d25: {exc}", "ERROR")
 
     def _reconnect_backend(self) -> None:
         try:
@@ -373,7 +404,12 @@ class AirSimGroundStationWindow(QMainWindow):
             self.selected_uav = 1
 
     def _on_mode_changed(self, text: str) -> None:
-        self.map_mode = "waypoint" if "航点" in text else "goto"
+        lowered = text.lower()
+        self.map_mode = "waypoint" if "waypoint" in lowered or "\u822a\u70b9" in text else "goto"
+
+    def _on_nav_mode_changed(self, text: str) -> None:
+        lowered = text.lower()
+        self.navigation_mode = "expert" if "expert" in lowered or "\u4e13\u5bb6" in text else "direct"
 
     def _toggle_theme(self) -> None:
         self.current_theme = "dark" if self.current_theme != "dark" else "light"
@@ -386,7 +422,7 @@ class AirSimGroundStationWindow(QMainWindow):
     def update_dashboard(self) -> None:
         telemetry = self.backend.refresh()
         self.header_info.setText(
-            f"飞机数 {len(self.backend.vehicle_bindings)}  默认速度 {self.backend.command_speed_mps:.1f} m/s  目标Z {self.alt_spin.value():.1f}"
+            f"\u98de\u673a {len(self.backend.vehicle_bindings)} \u67b6  \u901f\u5ea6 {self.backend.command_speed_mps:.1f} m/s  \u76ee\u6807\u9ad8\u5ea6 {self.alt_spin.value():.1f} m"
         )
         self._update_fleet_table(telemetry)
         self._update_command_table()
@@ -403,18 +439,18 @@ class AirSimGroundStationWindow(QMainWindow):
             values = [
                 f"UAV{sysid}",
                 tele.display_name,
-                "在线" if tele.is_online(now, 3.0) else "离线",
+                "\u5728\u7ebf" if tele.is_online(now, 3.0) else "\u79bb\u7ebf",
                 tele.mode,
-                "是" if tele.armed else "否",
+                "\u662f" if tele.armed else "\u5426",
                 f"{tele.alt:.1f}",
                 f"{tele.speed:.1f}",
-                f"{tele.lat:.6f}",
-                f"{tele.lon:.6f}",
-                f"X {tele.local_x:.1f}, Y {tele.local_y:.1f}",
+                f"{tele.local_x:.1f}",
+                f"{tele.local_y:.1f}",
+                f"{tele.local_z:.1f}",
             ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col == 2 and value == "离线":
+                if col == 2 and value == "\u79bb\u7ebf":
                     item.setForeground(QColor("#d64545"))
                 self.fleet_table.setItem(row, col, item)
 
@@ -441,11 +477,11 @@ class AirSimGroundStationWindow(QMainWindow):
         armed = [tele for tele in online if tele.armed]
         avg_speed = sum(tele.speed for tele in online) / len(online) if online else 0.0
         metrics = [
-            ("在线飞机", str(len(online))),
-            ("已解锁", str(len(armed))),
-            ("平均速度", f"{avg_speed:.1f} m/s"),
-            ("地图航点", str(len(self.waypoints))),
-            ("目标Z坐标", f"{self.alt_spin.value():.1f} m"),
+            ("\u5728\u7ebf\u98de\u673a", str(len(online))),
+            ("\u5df2\u89e3\u9501\u98de\u673a", str(len(armed))),
+            ("\u5e73\u5747\u901f\u5ea6", f"{avg_speed:.1f} m/s"),
+            ("\u5730\u56fe\u822a\u70b9", str(len(self.waypoints))),
+            ("\u76ee\u6807\u9ad8\u5ea6", f"{self.alt_spin.value():.1f} m"),
         ]
         for row, (name, value) in enumerate(metrics):
             self.overview_table.setItem(row, 0, QTableWidgetItem(name))
@@ -456,32 +492,20 @@ class AirSimGroundStationWindow(QMainWindow):
         if tele is None:
             return
         online = tele.is_online(datetime.now().timestamp(), 3.0)
-        self.quick_labels["连接状态"].setText("在线" if online else "离线")
-        self.quick_labels["飞行模式"].setText(tele.mode)
-        self.quick_labels["当前位置"].setText(f"{tele.lat:.6f}, {tele.lon:.6f}")
-        self.quick_labels["本地坐标"].setText(f"X {tele.local_x:.1f} / Y {tele.local_y:.1f} / Z {tele.local_z:.1f}")
-        self.quick_labels["当前高度"].setText(f"Z {tele.local_z:.1f}  |  H {tele.alt:.1f} m")
-        self.quick_labels["当前速度"].setText(f"{tele.speed:.1f} m/s")
+        self.quick_labels["\u8fde\u63a5"].setText("\u5728\u7ebf" if online else "\u79bb\u7ebf")
+        self.quick_labels["\u6a21\u5f0f"].setText(tele.mode)
+        self.quick_labels["\u4f4d\u7f6e"].setText(f"X {tele.local_x:.1f}, Y {tele.local_y:.1f}")
+        self.quick_labels["\u672c\u5730\u5750\u6807"].setText(f"X {tele.local_x:.1f} / Y {tele.local_y:.1f} / Z {tele.local_z:.1f}")
+        self.quick_labels["\u9ad8\u5ea6"].setText(f"\u9ad8\u5ea6 {tele.alt:.1f} m  |  AirSim Z {tele.local_z:.1f}")
+        self.quick_labels["\u901f\u5ea6"].setText(f"{tele.speed:.1f} m/s")
 
     def _update_map_state(self, telemetry: dict[int, object]) -> None:
         if not self.map_ready:
             return
-
-        center_lat = self.config.ui.default_map_center_lat
-        center_lon = self.config.ui.default_map_center_lon
-        for tele in telemetry.values():
-            if tele.gps_valid:
-                center_lat = tele.lat
-                center_lon = tele.lon
-                break
-
         payload = {
-            "center": {"lat": center_lat, "lon": center_lon},
             "uavs": [
                 {
                     "sysid": tele.sysid,
-                    "lat": tele.lat,
-                    "lon": tele.lon,
                     "x": tele.local_x,
                     "y": tele.local_y,
                     "z": tele.local_z,
@@ -489,20 +513,13 @@ class AirSimGroundStationWindow(QMainWindow):
                     "mode": tele.mode,
                     "armed": tele.armed,
                     "trail": [
-                        {"lat": lat, "lon": lon, "x": x, "y": y}
+                        {"x": x, "y": y}
                         for lat, lon, x, y, _ts in list(tele.trail)[-120:]
                     ],
                 }
                 for tele in telemetry.values()
             ],
-            "waypoints": [
-                {
-                    "lat": wp.lat,
-                    "lon": wp.lon,
-                    "idx": idx + 1,
-                }
-                for idx, wp in enumerate(self.waypoints)
-            ],
+            "waypoints": [{"x": wp.x, "y": wp.y, "z": wp.z, "idx": idx + 1} for idx, wp in enumerate(self.waypoints)],
         }
         self._run_js(f"window.updateAirSimState({json.dumps(payload, ensure_ascii=True)});")
 
@@ -510,8 +527,8 @@ class AirSimGroundStationWindow(QMainWindow):
         if command in CRITICAL_COMMANDS:
             answer = QMessageBox.question(
                 self,
-                "确认命令",
-                f"确认向 UAV{self.selected_uav} 发送“{COMMAND_LABELS.get(command, command)}”吗？",
+                "\u786e\u8ba4\u547d\u4ee4",
+                f"\u5411 UAV{self.selected_uav} \u53d1\u9001 {COMMAND_LABELS.get(command, command)} \u547d\u4ee4\uff1f",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -519,53 +536,133 @@ class AirSimGroundStationWindow(QMainWindow):
                 return
         try:
             self.backend.send_basic_command(self.selected_uav, command)
-            self.log(f"命令已发送 -> UAV{self.selected_uav}: {COMMAND_LABELS.get(command, command)}", "COMMAND")
+            self.log(f"\u547d\u4ee4\u5df2\u53d1\u9001 -> UAV{self.selected_uav}: {COMMAND_LABELS.get(command, command)}", "COMMAND")
         except Exception as exc:
-            self.log(f"命令发送失败 -> UAV{self.selected_uav}: {exc}", "ERROR")
+            self.log(f"\u547d\u4ee4\u5931\u8d25 -> UAV{self.selected_uav}: {exc}", "ERROR")
 
-    def _on_map_clicked(self, lat: float, lon: float) -> None:
-        target_z = float(self.alt_spin.value())
+    def _on_map_clicked(self, x: float, y: float) -> None:
+        target_z = self._target_z()
         if self.map_mode == "waypoint":
-            self.waypoints.append(Waypoint(lat=lat, lon=lon, alt_m=target_z))
-            self.log(
-                f"已添加航点 #{len(self.waypoints)}: lat={lat:.6f}, lon={lon:.6f}, z={target_z:.1f}",
-                "INFO",
-            )
+            self.waypoints.append(Waypoint(x=x, y=y, z=target_z))
+            self.log(f"\u822a\u70b9 #{len(self.waypoints)} \u5df2\u6dfb\u52a0: x={x:.1f}, y={y:.1f}, z={target_z:.1f}", "INFO")
             self._update_map_state(self.backend.telemetry)
             return
-
         answer = QMessageBox.question(
             self,
-            "确认导航",
-            f"确认让 UAV{self.selected_uav} 飞往该点吗？\n\n纬度={lat:.6f}\n经度={lon:.6f}\nZ={target_z:.1f}",
+            "\u786e\u8ba4\u6307\u70b9\u98de\u884c",
+            f"\u8ba9 UAV{self.selected_uav} \u98de\u5230\u8fd9\u4e2a AirSim \u5750\u6807\u70b9\uff1f\n\nX={x:.1f}\nY={y:.1f}\nZ={target_z:.1f}\n\u9ad8\u5ea6={-target_z:.1f} m",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.backend.goto_gps(self.selected_uav, lat, lon, target_z)
-            self.log(
-                f"地图导航命令已发送 -> UAV{self.selected_uav}: lat={lat:.6f}, lon={lon:.6f}, z={target_z:.1f}",
-                "COMMAND",
-            )
-            self.waypoints = [Waypoint(lat=lat, lon=lon, alt_m=target_z)]
+            if self.navigation_mode == "expert":
+                self.backend.start_expert_goto_local(self.selected_uav, x, y, target_z)
+                self.log(f"\u4e13\u5bb6\u907f\u969c\u5bfc\u822a\u5df2\u542f\u52a8 -> UAV{self.selected_uav}: x={x:.1f}, y={y:.1f}, z={target_z:.1f}", "COMMAND")
+            else:
+                self.backend.goto_local(self.selected_uav, x, y, target_z)
+                self.log(f"\u76f4\u63a5\u6307\u70b9\u5df2\u53d1\u9001 -> UAV{self.selected_uav}: x={x:.1f}, y={y:.1f}, z={target_z:.1f}", "COMMAND")
+            self.waypoints = [Waypoint(x=x, y=y, z=target_z)]
         except Exception as exc:
-            self.log(f"导航失败: {exc}", "ERROR")
+            self.log(f"\u5bfc\u822a\u5931\u8d25: {exc}", "ERROR")
 
     def _clear_waypoints(self) -> None:
         self.waypoints.clear()
-        self.log("航点已清空。", "INFO")
+        self.log("\u822a\u70b9\u5df2\u6e05\u7a7a\u3002", "INFO")
 
     def _run_waypoints(self) -> None:
         if not self.waypoints:
-            self.log("当前没有可执行的航点。", "WARN")
+            self.log("\u6ca1\u6709\u53ef\u6267\u884c\u7684\u822a\u70b9\u3002", "WARN")
             return
         try:
             self.backend.run_waypoints(self.selected_uav, list(self.waypoints))
-            self.log(f"航点任务已启动 -> UAV{self.selected_uav}: 共 {len(self.waypoints)} 个点", "COMMAND")
+            self.log(f"\u822a\u70b9\u4efb\u52a1\u5df2\u542f\u52a8 -> UAV{self.selected_uav}: {len(self.waypoints)} \u4e2a\u70b9", "COMMAND")
         except Exception as exc:
-            self.log(f"航点任务执行失败: {exc}", "ERROR")
+            self.log(f"\u822a\u70b9\u4efb\u52a1\u5931\u8d25: {exc}", "ERROR")
+
+    def _preview_llm_command(self) -> None:
+        try:
+            plan = self._parse_llm_command(self.llm_input.toPlainText())
+            self.llm_preview.setPlainText(json.dumps(plan, ensure_ascii=False, indent=2))
+        except Exception as exc:
+            self.llm_preview.setPlainText(f"\u89e3\u6790\u5931\u8d25: {exc}")
+
+    def _execute_llm_command(self) -> None:
+        try:
+            plan = self._parse_llm_command(self.llm_input.toPlainText())
+            self.llm_preview.setPlainText(json.dumps(plan, ensure_ascii=False, indent=2))
+            self._run_llm_plan(plan)
+        except Exception as exc:
+            self.log(f"\u81ea\u7136\u8bed\u8a00\u547d\u4ee4\u5931\u8d25: {exc}", "ERROR")
+
+    def _parse_llm_command(self, text: str) -> dict:
+        raw = text.strip()
+        if not raw:
+            return {"steps": []}
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list):
+                return {"steps": parsed}
+        except json.JSONDecodeError:
+            pass
+        lowered = raw.lower()
+        steps: list[dict] = []
+        z = self._extract_z(raw)
+        x_match = re.search(r"\bX\s*=?\s*(-?\d+(?:\.\d+)?)", raw, re.IGNORECASE)
+        y_match = re.search(r"\bY\s*=?\s*(-?\d+(?:\.\d+)?)", raw, re.IGNORECASE)
+        if "takeoff" in lowered or "\u8d77\u98de" in raw:
+            steps.append({"command": "takeoff", "args": {}})
+        if x_match and y_match:
+            steps.append({"command": "expert_goto_local", "args": {"x": float(x_match.group(1)), "y": float(y_match.group(1)), "z": z}})
+        if "hover" in lowered or "stop" in lowered or "\u60ac\u505c" in raw or "\u505c\u6b62" in raw:
+            steps.append({"command": "hover", "args": {}})
+        if "rtl" in lowered or "go home" in lowered or "return" in lowered or "\u8fd4\u822a" in raw:
+            steps.append({"command": "rtl", "args": {}})
+        if "land" in lowered or "\u964d\u843d" in raw:
+            steps.append({"command": "land", "args": {}})
+        return {"task": raw, "steps": steps}
+
+    def _extract_z(self, text: str) -> float:
+        explicit = re.search(r"\bZ\s*=?\s*(-?\d+(?:\.\d+)?)", text, re.IGNORECASE)
+        if explicit:
+            return float(explicit.group(1))
+        height = re.search(r"(\d+(?:\.\d+)?)\s*(?:m|meter|meters)", text, re.IGNORECASE)
+        if height:
+            return -abs(float(height.group(1)))
+        return self._target_z()
+
+    def _target_z(self) -> float:
+        return -abs(float(self.alt_spin.value()))
+
+    def _run_llm_plan(self, plan: dict) -> None:
+        steps = plan.get("steps", plan.get("plan", []))
+        if not isinstance(steps, list) or not steps:
+            self.log("\u81ea\u7136\u8bed\u8a00\u547d\u4ee4\u6ca1\u6709\u53ef\u6267\u884c\u6b65\u9aa4\u3002", "WARN")
+            return
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            command = str(step.get("command", step.get("skill", ""))).strip()
+            args = step.get("args", step.get("parameters", {}))
+            if not isinstance(args, dict):
+                args = {}
+            if command in {"navigate_with_expert", "expert_goto_local", "goto_local"}:
+                target_z = float(args.get("target_z", args.get("z", self._target_z())))
+                self.backend.start_expert_goto_local(
+                    self.selected_uav,
+                    float(args.get("target_x", args.get("x"))),
+                    float(args.get("target_y", args.get("y"))),
+                    target_z,
+                )
+                self.log(f"\u81ea\u7136\u8bed\u8a00\u5df2\u542f\u52a8\u4e13\u5bb6\u907f\u969c\u6307\u70b9 -> UAV{self.selected_uav}", "COMMAND")
+            elif command in COMMAND_LABELS or command in {"hover", "rtl", "land", "takeoff", "arm", "disarm"}:
+                self.backend.send_basic_command(self.selected_uav, command)
+                self.log(f"\u81ea\u7136\u8bed\u8a00\u547d\u4ee4\u5df2\u53d1\u9001 -> UAV{self.selected_uav}: {COMMAND_LABELS.get(command, command)}", "COMMAND")
+            else:
+                raise ValueError(f"\u4e0d\u652f\u6301\u7684\u81ea\u7136\u8bed\u8a00\u547d\u4ee4: {command}")
 
     def _run_js(self, script: str) -> None:
         if self.map_view is None or not self.map_ready:
@@ -583,9 +680,7 @@ class AirSimGroundStationWindow(QMainWindow):
             super().closeEvent(event)
 
     def _map_html(self) -> str:
-        return MAP_HTML.replace("__LAT__", str(self.config.ui.default_map_center_lat)).replace(
-            "__LON__", str(self.config.ui.default_map_center_lon)
-        )
+        return MAP_HTML
 
 
 MAP_HTML = """<!doctype html>
@@ -596,34 +691,19 @@ MAP_HTML = """<!doctype html>
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <style>
 html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #f7f4ee; }
-body { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
 #map { position: relative; }
 #canvas { width: 100%; height: 100%; display: block; }
-.hud {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 10;
-  display: flex;
-  gap: 8px;
-}
-.badge {
-  background: rgba(255,253,248,0.82);
-  border: 1px solid rgba(177,168,145,0.45);
-  color: #32433a;
-  padding: 5px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  box-shadow: 0 6px 18px rgba(41,56,48,0.08);
-}
+.hud { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
+.badge { background: rgba(255,253,248,0.9); border: 1px solid rgba(177,168,145,0.45); color: #32433a; padding: 5px 9px; border-radius: 999px; font-size: 11px; }
 </style>
 </head>
 <body>
 <div id="map">
   <canvas id="canvas"></canvas>
   <div class="hud">
-    <div class="badge" id="statusBadge">已就绪</div>
-    <div class="badge" id="scaleBadge">比例 1格 ≈ 10m</div>
+    <div class="badge" id="statusBadge">&#24050;&#23601;&#32490;</div>
+    <div class="badge" id="scaleBadge">&#27604;&#20363; 10m</div>
+    <div class="badge" id="cursorBadge">X 0.0 / Y 0.0</div>
   </div>
 </div>
 <script>
@@ -631,460 +711,66 @@ let bridge = null;
 if (typeof QWebChannel !== 'undefined') {
   new QWebChannel(qt.webChannelTransport, function(channel) { bridge = channel.objects.bridge; });
 }
-
-const state = {
-  center: { lat: __LAT__, lon: __LON__ },
-  uavs: [],
-  waypoints: [],
-  scaleMetersPerGrid: 10,
-};
-
+const state = { uavs: [], waypoints: [], scaleMetersPerGrid: 10 };
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const statusBadge = document.getElementById('statusBadge');
-
-function resize() {
-  canvas.width = canvas.clientWidth = document.getElementById('map').clientWidth;
-  canvas.height = canvas.clientHeight = document.getElementById('map').clientHeight;
-  draw();
-}
-
-function emitClick(lat, lon) {
-  if (bridge) bridge.mapClicked(lat, lon);
-}
-
-function allPoints() {
-  const points = [];
-  for (const uav of state.uavs) {
-    points.push([uav.x || 0, uav.y || 0]);
-    for (const p of (uav.trail || [])) points.push([p.x || 0, p.y || 0]);
-  }
-  return points;
-}
-
-function fitScale() {
-  const pts = allPoints();
-  if (!pts.length) return 10;
-  let maxAbs = 20;
-  for (const [x, y] of pts) {
-    maxAbs = Math.max(maxAbs, Math.abs(x), Math.abs(y));
-  }
-  const smallerSide = Math.max(300, Math.min(canvas.width, canvas.height));
-  const metersVisibleHalf = maxAbs + 20;
-  const pxPerMeter = (smallerSide * 0.42) / metersVisibleHalf;
-  return Math.max(4, Math.min(30, 1 / Math.max(pxPerMeter / 40, 0.01)));
-}
-
-function metersToPixels(meters) {
-  return meters * (40 / state.scaleMetersPerGrid);
-}
-
-function localToCanvas(x, y) {
-  return [
-    canvas.width / 2 + metersToPixels(y),
-    canvas.height / 2 - metersToPixels(x),
-  ];
-}
-
-function canvasToLocal(x, y) {
-  return [
-    (canvas.height / 2 - y) / (40 / state.scaleMetersPerGrid),
-    (x - canvas.width / 2) / (40 / state.scaleMetersPerGrid),
-  ];
-}
-
-function llToLocal(lat, lon) {
-  const lat0 = state.center.lat;
-  const lon0 = state.center.lon;
-  const earthRadius = 6378137.0;
-  const x = (lat - lat0) * Math.PI / 180 * earthRadius;
-  const y = (lon - lon0) * Math.PI / 180 * earthRadius * Math.cos(lat0 * Math.PI / 180);
-  return [x, y];
-}
-
-function localToLL(x, y) {
-  const lat0 = state.center.lat;
-  const lon0 = state.center.lon;
-  const earthRadius = 6378137.0;
-  const lat = lat0 + (x / earthRadius) * 180 / Math.PI;
-  const lon = lon0 + (y / (earthRadius * Math.cos(lat0 * Math.PI / 180))) * 180 / Math.PI;
-  return [lat, lon];
-}
-
-function drawGrid() {
-  const step = 40;
-  const cols = Math.ceil(canvas.width / step);
-  const rows = Math.ceil(canvas.height / step);
-  const bg = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-  bg.addColorStop(0, '#f7f3ea');
-  bg.addColorStop(1, '#efe7d8');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.strokeStyle = 'rgba(115,120,102,0.14)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= cols; i++) {
-    const x = i * step;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-  for (let i = 0; i <= rows; i++) {
-    const y = i * step;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-  }
-
-  ctx.strokeStyle = 'rgba(43,71,57,0.30)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(canvas.width / 2, 0);
-  ctx.lineTo(canvas.width / 2, canvas.height);
-  ctx.moveTo(0, canvas.height / 2);
-  ctx.lineTo(canvas.width, canvas.height / 2);
-  ctx.stroke();
-}
-
-function drawTrail(trail) {
-  if (!trail || trail.length < 2) return;
-  ctx.strokeStyle = 'rgba(15,157,88,0.55)';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  trail.forEach((p, index) => {
-    const [cx, cy] = localToCanvas(p.x || 0, p.y || 0);
-    if (index === 0) ctx.moveTo(cx, cy);
-    else ctx.lineTo(cx, cy);
-  });
-  ctx.stroke();
-}
-
-function drawWaypoints() {
-  if (state.waypoints.length > 1) {
-    ctx.strokeStyle = '#f57c00';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 8]);
-    ctx.beginPath();
-    state.waypoints.forEach((wp, index) => {
-      const [lx, ly] = llToLocal(wp.lat, wp.lon);
-      const [cx, cy] = localToCanvas(lx, ly);
-      if (index === 0) ctx.moveTo(cx, cy);
-      else ctx.lineTo(cx, cy);
-    });
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  state.waypoints.forEach((wp) => {
-    const [lx, ly] = llToLocal(wp.lat, wp.lon);
-    const [cx, cy] = localToCanvas(lx, ly);
-    ctx.fillStyle = '#f57c00';
-    ctx.beginPath();
-    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = '#8a4700';
-    ctx.font = '600 12px Microsoft YaHei';
-    ctx.fillText(String(wp.idx), cx + 10, cy - 8);
-  });
-}
-
-function drawUavs() {
-  for (const uav of state.uavs) {
-    drawTrail(uav.trail || []);
-    const [cx, cy] = localToCanvas(uav.x || 0, uav.y || 0);
-    ctx.fillStyle = '#0f9d58';
-    ctx.beginPath();
-    ctx.arc(cx, cy, 9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-    ctx.fillStyle = '#153b2a';
-    ctx.font = '600 12px Microsoft YaHei';
-    ctx.fillText(`UAV${uav.sysid} ${uav.armed ? '已解锁' : '已上锁'}`, cx + 12, cy - 10);
-  }
-}
-
-function draw() {
-  state.scaleMetersPerGrid = fitScale();
-  document.getElementById('scaleBadge').textContent = `比例 1格 ≈ ${state.scaleMetersPerGrid.toFixed(0)}m`;
-  drawGrid();
-  drawWaypoints();
-  drawUavs();
-}
-
-window.updateAirSimState = function(payload) {
-  state.center = payload.center || state.center;
-  state.uavs = payload.uavs || [];
-  state.waypoints = payload.waypoints || [];
-  statusBadge.textContent = `飞机 ${state.uavs.length} 架`;
-  draw();
-};
-
-canvas.addEventListener('click', function(event) {
-  const rect = canvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  const [lx, ly] = canvasToLocal(x, y);
-  const [lat, lon] = localToLL(lx, ly);
-  emitClick(lat, lon);
-});
-
-window.addEventListener('resize', resize);
-resize();
+const cursorBadge = document.getElementById('cursorBadge');
+function resize() { canvas.width = document.getElementById('map').clientWidth; canvas.height = document.getElementById('map').clientHeight; draw(); }
+function emitClick(x, y) { if (bridge) bridge.mapClicked(x, y); }
+function allPoints() { const points = []; for (const uav of state.uavs) { points.push([uav.x || 0, uav.y || 0]); for (const p of (uav.trail || [])) points.push([p.x || 0, p.y || 0]); } return points; }
+function fitScale() { return state.scaleMetersPerGrid; }
+function metersToPixels(m) { return m * (40 / state.scaleMetersPerGrid); }
+function localToCanvas(x, y) { return [canvas.width / 2 + metersToPixels(y), canvas.height / 2 - metersToPixels(x)]; }
+function canvasToLocal(x, y) { return [(canvas.height / 2 - y) / (40 / state.scaleMetersPerGrid), (x - canvas.width / 2) / (40 / state.scaleMetersPerGrid)]; }
+function drawGrid() { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle='#f7f4ee'; ctx.fillRect(0,0,canvas.width,canvas.height); const s=40; ctx.strokeStyle='rgba(43,71,57,0.12)'; ctx.lineWidth=1; for(let x=canvas.width/2%s;x<canvas.width;x+=s){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();} for(let y=canvas.height/2%s;y<canvas.height;y+=s){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();} ctx.strokeStyle='rgba(43,71,57,0.30)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(canvas.width/2,0);ctx.lineTo(canvas.width/2,canvas.height);ctx.moveTo(0,canvas.height/2);ctx.lineTo(canvas.width,canvas.height/2);ctx.stroke(); }
+function drawTrail(trail) { if (!trail || trail.length < 2) return; ctx.strokeStyle='rgba(15,157,88,0.55)'; ctx.lineWidth=2.5; ctx.beginPath(); trail.forEach((p,i)=>{const [cx,cy]=localToCanvas(p.x||0,p.y||0); if(i===0)ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);}); ctx.stroke(); }
+function drawWaypoints() { if (state.waypoints.length > 1) { ctx.strokeStyle='#f57c00'; ctx.lineWidth=2; ctx.setLineDash([8,8]); ctx.beginPath(); state.waypoints.forEach((wp,i)=>{const [cx,cy]=localToCanvas(wp.x||0,wp.y||0); if(i===0)ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);}); ctx.stroke(); ctx.setLineDash([]); } state.waypoints.forEach((wp)=>{const [cx,cy]=localToCanvas(wp.x||0,wp.y||0); ctx.fillStyle='#f57c00'; ctx.beginPath(); ctx.arc(cx,cy,7,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); ctx.fillStyle='#8a4700'; ctx.font='600 12px Arial'; ctx.fillText(String(wp.idx),cx+10,cy-8);}); }
+function drawUavs() { for (const uav of state.uavs) { drawTrail(uav.trail || []); const [cx,cy]=localToCanvas(uav.x||0,uav.y||0); ctx.fillStyle='#0f9d58'; ctx.beginPath(); ctx.arc(cx,cy,9,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2.5; ctx.stroke(); ctx.fillStyle='#153b2a'; ctx.font='600 12px Arial'; ctx.fillText(`UAV${uav.sysid}`,cx+12,cy-10); } }
+function draw() { state.scaleMetersPerGrid = fitScale(); document.getElementById('scaleBadge').textContent = `\u6bd4\u4f8b ${state.scaleMetersPerGrid.toFixed(0)}m`; drawGrid(); drawWaypoints(); drawUavs(); }
+window.updateAirSimState = function(payload) { state.uavs = payload.uavs || []; state.waypoints = payload.waypoints || []; statusBadge.textContent = `\u98de\u673a ${state.uavs.length} \u67b6`; draw(); };
+canvas.addEventListener('click', function(event) { const rect=canvas.getBoundingClientRect(); const x=event.clientX-rect.left; const y=event.clientY-rect.top; const [lx,ly]=canvasToLocal(x,y); emitClick(lx,ly); });
+canvas.addEventListener('mousemove', function(event) { const rect=canvas.getBoundingClientRect(); const x=event.clientX-rect.left; const y=event.clientY-rect.top; const [lx,ly]=canvasToLocal(x,y); cursorBadge.textContent = `X ${lx.toFixed(1)} / Y ${ly.toFixed(1)}`; });
+window.addEventListener('resize', resize); resize();
 </script>
 </body>
 </html>
 """
 
-
 APP_STYLE = """
-QMainWindow { background: #f5f7f8; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
-QScrollArea#SidebarScroll {
-    background: transparent;
-    border: none;
-}
-QWidget#Sidebar { background: transparent; }
-QMenuBar {
-    background: #ffffff;
-    color: #25313a;
-    border: 1px solid #d8e0e6;
-    border-radius: 8px;
-    padding: 3px 6px;
-}
-QMenuBar::item {
-    padding: 6px 10px;
-    border-radius: 6px;
-}
-QMenuBar::item:selected { background: #e8eef2; }
-QFrame#Hero, QFrame#MapPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView {
-    background: #ffffff;
-    border: 1px solid #d8e0e6;
-    border-radius: 8px;
-}
-QGroupBox#Card {
-    margin-top: 10px;
-    color: #25313a;
-}
-QGroupBox#Card::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 6px;
-    color: #1f5f7a;
-    font-size: 13px;
-    font-weight: 700;
-}
-QLabel#HeaderInfo {
-    color: #62717c;
-    font-size: 12px;
-}
-QLabel#StatusPill, QLabel#StatusPillWarn, QLabel#StatusPillError {
-    color: #ffffff;
-    border-radius: 999px;
-    padding: 4px 10px;
-    font-weight: 700;
-    min-width: 72px;
-}
-QLabel#StatusPill { background: #22845d; }
-QLabel#StatusPillWarn { background: #b7791f; }
-QLabel#StatusPillError { background: #bf3f3f; }
-QLabel#FieldName {
-    color: #667783;
-    font-size: 12px;
-}
-QLabel#QuickValue {
-    color: #1f3948;
-    font-size: 13px;
-    font-weight: 700;
-}
-QPushButton {
-    background: #216b84;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 14px;
-    font-weight: 700;
-    min-height: 34px;
-}
+QMainWindow { background: #f5f7f8; font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; }
+QScrollArea#SidebarScroll { background: transparent; border: none; }
+QFrame#Hero, QFrame#MapPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { background: #ffffff; border: 1px solid #d8e0e6; border-radius: 8px; }
+QGroupBox#Card { margin-top: 10px; color: #25313a; }
+QGroupBox#Card::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; color: #1f5f7a; font-size: 13px; font-weight: 700; }
+QLabel#HeaderInfo, QLabel#FieldName { color: #667783; font-size: 12px; }
+QLabel#QuickValue { color: #1f3948; font-size: 13px; font-weight: 700; }
+QLabel#StatusPill, QLabel#StatusPillWarn, QLabel#StatusPillError { color: #ffffff; border-radius: 999px; padding: 4px 10px; font-weight: 700; min-width: 72px; }
+QLabel#StatusPill { background: #22845d; } QLabel#StatusPillWarn { background: #b7791f; } QLabel#StatusPillError { background: #bf3f3f; }
+QPushButton { background: #216b84; color: #ffffff; border: none; border-radius: 8px; padding: 6px 8px; font-size: 14px; font-weight: 700; min-height: 34px; }
 QPushButton:hover { background: #18576d; }
-QPushButton:pressed { background: #123f50; }
-QComboBox, QDoubleSpinBox {
-    background: #ffffff;
-    color: #25313a;
-    border: 1px solid #cfd9df;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 13px;
-    min-height: 28px;
-}
-QComboBox:disabled {
-    background: #eef2f4;
-    color: #84919a;
-}
-QTabBar::tab {
-    background: #e8eef2;
-    color: #53636f;
-    padding: 8px 14px;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    margin-right: 4px;
-}
-QTabBar::tab:selected {
-    background: #ffffff;
-    color: #1f5f7a;
-    font-weight: 700;
-}
-QHeaderView::section {
-    background: #edf2f5;
-    color: #3f515d;
-    border: none;
-    border-bottom: 1px solid #d8e0e6;
-    padding: 8px;
-    font-size: 12px;
-    font-weight: 700;
-}
-QTableWidget#InfoTable {
-    gridline-color: #e4eaee;
-    color: #25313a;
-}
-QTableWidget#InfoTable::item { padding: 7px; }
-QTextEdit#LogView {
-    color: #25313a;
-    padding: 8px;
-    font-size: 13px;
-}
-QTextEdit#LogView {
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 12px;
-}
+QComboBox, QDoubleSpinBox { background: #ffffff; color: #25313a; border: 1px solid #cfd9df; border-radius: 8px; padding: 6px 8px; font-size: 13px; min-height: 28px; }
+QHeaderView::section { background: #edf2f5; color: #3f515d; border: none; border-bottom: 1px solid #d8e0e6; padding: 8px; font-size: 12px; font-weight: 700; }
+QTableWidget#InfoTable { gridline-color: #e4eaee; color: #25313a; }
+QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { color: #25313a; padding: 8px; font-size: 13px; }
+QTextEdit#LogView, QTextEdit#LlmPreview { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
 """
 
-
 DARK_STYLE = """
-QMainWindow { background: #172026; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
-QScrollArea#SidebarScroll {
-    background: transparent;
-    border: none;
-}
-QWidget#Sidebar { background: transparent; }
-QMenuBar {
-    background: #202c33;
-    color: #e8eef2;
-    border: 1px solid #33444e;
-    border-radius: 8px;
-    padding: 3px 6px;
-}
-QMenuBar::item {
-    padding: 6px 10px;
-    border-radius: 6px;
-}
-QMenuBar::item:selected { background: #2b3a43; }
-QFrame#Hero, QFrame#MapPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView,
-QTextEdit#AgentInput, QTextEdit#AgentPlanView {
-    background: #202c33;
-    border: 1px solid #33444e;
-    border-radius: 8px;
-}
-QGroupBox#Card {
-    margin-top: 10px;
-    color: #e8eef2;
-}
-QGroupBox#Card::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 6px;
-    color: #7cc4df;
-    font-size: 13px;
-    font-weight: 700;
-}
-QLabel#HeaderInfo {
-    color: #9eb0bb;
-    font-size: 12px;
-}
-QLabel#StatusPill, QLabel#StatusPillWarn, QLabel#StatusPillError {
-    color: #ffffff;
-    border-radius: 999px;
-    padding: 4px 10px;
-    font-weight: 700;
-    min-width: 72px;
-}
-QLabel#StatusPill { background: #2ea043; }
-QLabel#StatusPillWarn { background: #d29922; }
-QLabel#StatusPillError { background: #f85149; }
-QLabel#FieldName {
-    color: #9eb0bb;
-    font-size: 12px;
-}
-QLabel#QuickValue {
-    color: #b5e8f7;
-    font-size: 13px;
-    font-weight: 700;
-}
-QPushButton {
-    background: #26738c;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 14px;
-    font-weight: 700;
-    min-height: 34px;
-}
+QMainWindow { background: #172026; font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; }
+QScrollArea#SidebarScroll { background: transparent; border: none; }
+QFrame#Hero, QFrame#MapPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { background: #202c33; border: 1px solid #33444e; border-radius: 8px; }
+QGroupBox#Card { margin-top: 10px; color: #e8eef2; }
+QGroupBox#Card::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; color: #7cc4df; font-size: 13px; font-weight: 700; }
+QLabel#HeaderInfo, QLabel#FieldName { color: #9eb0bb; font-size: 12px; }
+QLabel#QuickValue { color: #b5e8f7; font-size: 13px; font-weight: 700; }
+QLabel#StatusPill, QLabel#StatusPillWarn, QLabel#StatusPillError { color: #ffffff; border-radius: 999px; padding: 4px 10px; font-weight: 700; min-width: 72px; }
+QLabel#StatusPill { background: #2ea043; } QLabel#StatusPillWarn { background: #d29922; } QLabel#StatusPillError { background: #f85149; }
+QPushButton { background: #26738c; color: #ffffff; border: none; border-radius: 8px; padding: 6px 8px; font-size: 14px; font-weight: 700; min-height: 34px; }
 QPushButton:hover { background: #2f88a6; }
-QPushButton:pressed { background: #1e5d72; }
-QComboBox, QDoubleSpinBox {
-    background: #172026;
-    color: #e8eef2;
-    border: 1px solid #33444e;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 13px;
-    min-height: 28px;
-}
-QComboBox:disabled {
-    background: #1b262d;
-    color: #7f929e;
-}
-QTabBar::tab {
-    background: #172026;
-    color: #9eb0bb;
-    padding: 8px 14px;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    margin-right: 4px;
-}
-QTabBar::tab:selected {
-    background: #202c33;
-    color: #7cc4df;
-    font-weight: 700;
-}
-QHeaderView::section {
-    background: #172026;
-    color: #c8d5dc;
-    border: none;
-    border-bottom: 1px solid #33444e;
-    padding: 8px;
-    font-size: 12px;
-    font-weight: 700;
-}
-QTableWidget#InfoTable {
-    gridline-color: #2d3e47;
-    color: #e8eef2;
-}
-QTableWidget#InfoTable::item { padding: 7px; }
-QTextEdit#LogView, QTextEdit#AgentInput, QTextEdit#AgentPlanView {
-    color: #e8eef2;
-    padding: 8px;
-    font-size: 13px;
-}
-QTextEdit#LogView, QTextEdit#AgentPlanView {
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 12px;
-}
+QComboBox, QDoubleSpinBox { background: #172026; color: #e8eef2; border: 1px solid #33444e; border-radius: 8px; padding: 6px 8px; font-size: 13px; min-height: 28px; }
+QHeaderView::section { background: #172026; color: #c8d5dc; border: none; border-bottom: 1px solid #33444e; padding: 8px; font-size: 12px; font-weight: 700; }
+QTableWidget#InfoTable { gridline-color: #2d3e47; color: #e8eef2; }
+QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { color: #e8eef2; padding: 8px; font-size: 13px; }
+QTextEdit#LogView, QTextEdit#LlmPreview { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
 """
