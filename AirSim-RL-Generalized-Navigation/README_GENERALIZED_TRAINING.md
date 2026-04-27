@@ -1,28 +1,48 @@
-## 3D Path Planning Mode
+## 三维路径规划模式
 
-The generalized training environment supports full 3D reinforcement-learning path planning:
+当前 generalized 训练环境已经支持三维强化学习路径规划：
 
-- Start and target positions are sampled in XYZ.
-- The action is `[vx, vy, vz]`; `vz` is no longer forced to zero.
-- The state includes six LiDAR clearance values: front, left, right, back, up, and down.
-- Reward, success radius, path length, and final distance are computed in 3D.
-- Training/evaluation CSV files include `Start_Z` and `Target_Z`.
+- 起点和终点可以在 `X/Y/Z` 三个方向随机采样。
+- 动作是 `[vx, vy, vz]`，三维模式下 `vz` 不再强制为 `0`。
+- 状态包含六个方向的 LiDAR 距离：前、左、右、后、上、下。
+- 奖励、成功半径、路径长度、最终距离都按三维距离计算。
+- 训练和评估 CSV 会记录 `Start_Z` 和 `Target_Z`。
 
-Because the observation vector changed from 13 to 16 dimensions, train a new model for this version.
+注意：三维 LiDAR 模式会把状态向量从旧版 `13` 维变成 `16` 维，所以旧的二维 `.pth` 模型不能直接加载到三维模式里继续训练。三维模式需要重新训练新模型。
 
-Example 3D training:
+### 继续训练旧二维模型
 
-```powershell
-python train_generalized.py --episodes 300 --x-min -60 --x-max 80 --y-min -50 --y-max 50 --z-min -10 --z-max -2
-```
-
-Example 3D evaluation:
+如果你要继续使用之前训练出来的固定高度二维模型，请使用 `--lidar-mode basic`。这个模式会保持旧版 `13` 维状态，并且在 `--z -2` 这类固定高度训练中把 `vz` 保持为 `0`。
 
 ```powershell
-python evaluate_generalized.py --model runs\YYYYMMDD_HHMMSS\sac_model_generalized_latest.pth --episodes 50 --z-min -10 --z-max -2
+python train_generalized.py --episodes 1000 --z -2 --max-distance 100 --expert-weight 0.2 --lidar-mode basic --model-in runs\你的训练目录\sac_model_generalized_latest.pth
 ```
 
-For old fixed-altitude behavior, keep using `--z -2`.
+评估旧二维模型时也要加 `--lidar-mode basic`：
+
+```powershell
+python evaluate_generalized.py --model runs\你的训练目录\sac_model_generalized_latest.pth --z -2 --lidar-mode basic
+```
+
+### 训练新的三维模型
+
+如果要训练新的三维路径规划模型，请使用 `--lidar-mode 3d`，并通过 `--z-min` 和 `--z-max` 指定高度随机范围。
+
+```powershell
+python train_generalized.py --episodes 300 --x-min -60 --x-max 80 --y-min -50 --y-max 50 --z-min -10 --z-max -2 --lidar-mode 3d
+```
+
+评估三维模型：
+
+```powershell
+python evaluate_generalized.py --model runs\YYYYMMDD_HHMMSS\sac_model_generalized_latest.pth --episodes 50 --z-min -10 --z-max -2 --lidar-mode 3d
+```
+
+简单记忆：
+
+- 继续训练旧二维模型：使用 `--z -2 --lidar-mode basic`
+- 训练新三维模型：使用 `--z-min ... --z-max ... --lidar-mode 3d`
+- 旧 `13` 维模型不能直接加载到新 `16` 维三维模式中
 
 # Generalized AirSim RL Navigation Training
 

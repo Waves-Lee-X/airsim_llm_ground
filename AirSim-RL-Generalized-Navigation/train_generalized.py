@@ -22,8 +22,8 @@ class ThreeDExpertPolicy:
         front_distance = float(state[6])
         left_free_space = float(state[7])
         right_free_space = float(state[8])
-        up_distance = float(state[10])
-        down_distance = float(state[11])
+        up_distance = float(state[10]) if len(state) >= 16 else 10.0
+        down_distance = float(state[11]) if len(state) >= 16 else 10.0
 
         direction = target_pos - current_pos
         norm = float(np.linalg.norm(direction))
@@ -91,6 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--z", type=float, default=None, help="Optional fixed NED altitude for backward-compatible 2D-style training.")
     parser.add_argument("--z-min", type=float, default=-8.0)
     parser.add_argument("--z-max", type=float, default=-2.0)
+    parser.add_argument("--lidar-mode", choices=["basic", "3d"], default="3d", help="basic keeps the old 13D state; 3d uses six-direction LiDAR and a 16D state.")
     parser.add_argument("--min-distance", type=float, default=20.0)
     parser.add_argument("--max-distance", type=float, default=120.0)
     return parser.parse_args()
@@ -123,7 +124,7 @@ def main() -> None:
         min_start_goal_distance=args.min_distance,
         max_start_goal_distance=args.max_distance,
     )
-    env = GeneralizedAirSimDroneEnv(area=area, max_episode_steps=args.max_steps)
+    env = GeneralizedAirSimDroneEnv(area=area, max_episode_steps=args.max_steps, lidar_mode=args.lidar_mode)
     agent = GeneralizedSACAgent(state_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0], expert_weight=args.expert_weight)
 
     if args.model_in and os.path.exists(args.model_in):

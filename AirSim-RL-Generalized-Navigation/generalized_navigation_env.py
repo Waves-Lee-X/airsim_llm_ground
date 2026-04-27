@@ -40,14 +40,19 @@ class GeneralizedAirSimDroneEnv(AirSimDroneEnv):
         max_episode_steps: int = 400,
         success_radius_m: float = 1.5,
         target_altitude: float = -2.0,
+        lidar_mode: str = "3d",
     ) -> None:
+        if lidar_mode not in {"basic", "3d"}:
+            raise ValueError("lidar_mode must be 'basic' or '3d'")
         self.area = area or TrainingArea.from_fixed_altitude(target_altitude)
+        self.lidar_mode = lidar_mode
         self.max_episode_steps = int(max_episode_steps)
         self.success_radius_m = float(success_radius_m)
         self.episode_step = 0
         self.start_position = np.array([0.0, 0.0, self._sample_z()], dtype=np.float32)
         super().__init__()
-        self.observation_space = spaces.Box(low=-100, high=100, shape=(16,), dtype=np.float32)
+        state_dim = 13 if self.lidar_mode == "basic" else 16
+        self.observation_space = spaces.Box(low=-100, high=100, shape=(state_dim,), dtype=np.float32)
         self.target_position = self.sample_target_position()
 
     def _sample_z(self) -> float:
@@ -102,14 +107,16 @@ class GeneralizedAirSimDroneEnv(AirSimDroneEnv):
         vx = float(np.clip(action[0], -2.0, 2.0))
         vy = float(np.clip(action[1], -2.0, 2.0))
         vz = float(np.clip(action[2], -2.0, 2.0))
+        if self.lidar_mode == "basic" and np.isclose(self.area.z_min, self.area.z_max):
+            vz = 0.0
         self.client.moveByVelocityAsync(vx, vy, vz, 1.0, vehicle_name="Drone1").join()
 
         state = self._build_state()
         current_position = state[:3]
         current_distance = np.linalg.norm(self.target_position - current_position)
         front_distance = float(state[6])
-        up_distance = float(state[10])
-        down_distance = float(state[11])
+        up_distance = float(state[10]) if self.lidar_mode == "3d" else 10.0
+        down_distance = float(state[11]) if self.lidar_mode == "3d" else 10.0
         movement = np.array([vx, vy, vz], dtype=np.float32)
 
         progress_reward = (prev_distance - current_distance) * 8.0
@@ -165,7 +172,7 @@ class GeneralizedAirSimDroneEnv(AirSimDroneEnv):
 
     def _build_state(self) -> np.ndarray:
         current_pos = self._current_position()
-        lidar_features = self._get_lidar_3d_features()
+        lidar_features = self._get_lidar_basic_features() if self.lidar_mode == "basic" else self._get_lidar_3d_features()
         front_distance = lidar_features["front"]
         left_free_space = lidar_features["left"]
         right_free_space = lidar_features["right"]
@@ -175,22 +182,50 @@ class GeneralizedAirSimDroneEnv(AirSimDroneEnv):
         self.predict_obstacle_position(obstacle_position)
         if np.isnan(self.obstacle_velocity).any():
             self.obstacle_velocity = np.array([0.0, 0.0])
+        lidar_state = [
+            lidar_features["front"],
+            lidar_features["left"],
+            lidar_features["right"],
+        ]
+        if self.lidar_mode == "3d":
+            lidar_state.extend(
+                [
+                    lidar_features["back"],
+                    lidar_features["up"],
+                    lidar_features["down"],
+                ]
+            )
+
         return np.concatenate(
             [
                 current_pos,
                 self.target_position,
-                [
-                    lidar_features["front"],
-                    lidar_features["left"],
-                    lidar_features["right"],
-                    lidar_features["back"],
-                    lidar_features["up"],
-                    lidar_features["down"],
-                ],
+                lidar_state,
                 self.obstacle_velocity.flatten(),
                 [left_edge, right_edge],
             ]
         ).astype(np.float32)
+
+    def _get_lidar_basic_features(self) -> dict[str, float]:
+        front_distance, left_free_space, right_free_space, left_edge, right_edge = self.get_lidar_data()
+        values = {
+            "front": front_distance,
+            "left": left_free_space,
+            "right": right_free_space,
+            "left_edge": left_edge,
+            "right_edge": right_edge,
+        }
+        defaults = {
+            "front": 10.0,
+            "left": 0.5,
+            "right": -0.5,
+            "left_edge": 0.0,
+            "right_edge": 0.0,
+        }
+        for key, default in defaults.items():
+            if np.isnan(values[key]):
+                values[key] = default
+        return values
 
     def _get_lidar_3d_features(self) -> dict[str, float]:
         defaults = {
