@@ -42,8 +42,14 @@ class ExpertNavigationMission:
     clear_ticks: int = 0
     stuck_recovery_count: int = 0
     distance_history: list[float] | None = None
+    hazard_history: list[int] | None = None
     best_horizontal_m: float = float("inf")
     no_progress_ticks: int = 0
+    escape_x: float | None = None
+    escape_y: float | None = None
+    escape_z: float | None = None
+    escape_counter: int = 0
+    escape_attempts: int = 0
 
 
 @dataclass
@@ -53,7 +59,7 @@ class HoldPositionMission:
     z: float
     yaw_deg: float
     last_tick_at: float = 0.0
-    refresh_s: float = 0.8
+    refresh_s: float = 0.35
 
 
 class AirSimBackend:
@@ -453,7 +459,7 @@ class AirSimBackend:
         self._dispatch_waypoint(target_id)
         self.record_command(target_id, "waypoints", "RUNNING", f"count={len(points)}")
 
-    def start_hold_position(self, target_id: int) -> None:
+    def start_hold_position(self, target_id: int, x: float | None = None, y: float | None = None, z: float | None = None) -> None:
         binding = self._binding(target_id)
         self._ensure_api_control(binding)
         self._expert_missions.pop(target_id, None)
@@ -465,16 +471,16 @@ class AirSimBackend:
             position = kinematics.position
             roll, pitch, yaw = self.airsim.to_eularian_angles(kinematics.orientation)
             hold = HoldPositionMission(
-                x=float(position.x_val),
-                y=float(position.y_val),
-                z=float(position.z_val),
+                x=float(position.x_val if x is None else x),
+                y=float(position.y_val if y is None else y),
+                z=float(position.z_val if z is None else z),
                 yaw_deg=math.degrees(yaw),
             )
         else:
             hold = HoldPositionMission(
-                x=float(tele.local_x),
-                y=float(tele.local_y),
-                z=float(tele.local_z),
+                x=float(tele.local_x if x is None else x),
+                y=float(tele.local_y if y is None else y),
+                z=float(tele.local_z if z is None else z),
                 yaw_deg=float(tele.yaw_deg),
             )
         self._hold_missions[target_id] = hold
@@ -482,7 +488,7 @@ class AirSimBackend:
             self.client.cancelLastTask(vehicle_name=binding.vehicle_name)
         except Exception:
             pass
-        self._issue_hold_position(binding, hold)
+        self._issue_hold_velocity_z(target_id, binding, hold)
 
     def _tick_hold_positions(self, now: float) -> None:
         for target_id, hold in list(self._hold_missions.items()):
@@ -490,10 +496,39 @@ class AirSimBackend:
                 continue
             binding = self._binding(target_id)
             try:
-                self._issue_hold_position(binding, hold)
+                self._issue_hold_velocity_z(target_id, binding, hold)
             except Exception as exc:
                 self.record_command(target_id, "hover", "FAILED", str(exc))
                 self._hold_missions.pop(target_id, None)
+
+    def _issue_hold_velocity_z(self, target_id: int, binding: VehicleBinding, hold: HoldPositionMission) -> None:
+        hold.last_tick_at = time.time()
+        self._ensure_api_control(binding)
+        tele = self.telemetry.get(target_id)
+        if tele is not None and tele.local_valid:
+            vx = self._clamp((hold.x - tele.local_x) * 0.35, -0.45, 0.45)
+            vy = self._clamp((hold.y - tele.local_y) * 0.35, -0.45, 0.45)
+        else:
+            vx = 0.0
+            vy = 0.0
+        try:
+            self.client.moveByVelocityZAsync(
+                vx=float(vx),
+                vy=float(vy),
+                z=float(hold.z),
+                duration=float(hold.refresh_s * 1.4),
+                drivetrain=self.airsim.DrivetrainType.MaxDegreeOfFreedom,
+                yaw_mode=self.airsim.YawMode(False, float(hold.yaw_deg)),
+                vehicle_name=binding.vehicle_name,
+            )
+        except TypeError:
+            self.client.moveByVelocityZAsync(
+                vx=float(vx),
+                vy=float(vy),
+                z=float(hold.z),
+                duration=float(hold.refresh_s * 1.4),
+                vehicle_name=binding.vehicle_name,
+            )
 
     def _issue_hold_position(self, binding: VehicleBinding, hold: HoldPositionMission) -> None:
         hold.last_tick_at = time.time()
@@ -503,7 +538,7 @@ class AirSimBackend:
                 x=float(hold.x),
                 y=float(hold.y),
                 z=float(hold.z),
-                velocity=0.8,
+                velocity=0.35,
                 drivetrain=self.airsim.DrivetrainType.MaxDegreeOfFreedom,
                 yaw_mode=self.airsim.YawMode(False, float(hold.yaw_deg)),
                 vehicle_name=binding.vehicle_name,
@@ -513,7 +548,7 @@ class AirSimBackend:
                 x=float(hold.x),
                 y=float(hold.y),
                 z=float(hold.z),
-                velocity=0.8,
+                velocity=0.35,
                 vehicle_name=binding.vehicle_name,
             )
 
@@ -563,7 +598,7 @@ class AirSimBackend:
                 mission.no_progress_ticks += 1
             if horizontal <= mission.safety_radius_m and abs(altitude_error) <= max(1.8, mission.safety_radius_m):
                 mission.previous_velocity = (0.0, 0.0, 0.0)
-                self.start_hold_position(target_id)
+                self.start_hold_position(target_id, x=mission.target_x, y=mission.target_y, z=mission.target_z)
                 self.record_command(target_id, "expert_goto", "DONE", f"distance={horizontal:.2f}")
                 finished.append(target_id)
                 continue
@@ -573,7 +608,9 @@ class AirSimBackend:
                 finished.append(target_id)
                 continue
 
-            front, left_space, right_space, _left_edge, _right_edge = self._read_lidar_summary(binding.vehicle_name)
+            front, left_space, right_space, _left_edge, _right_edge, hazard_score = self._read_lidar_summary(
+                binding.vehicle_name
+            )
             collision_stamp = self._collision_stamp(binding.vehicle_name)
             collided = collision_stamp > 0 and collision_stamp != mission.last_collision_stamp
             if collided:
@@ -589,8 +626,13 @@ class AirSimBackend:
                     self.client.cancelLastTask(vehicle_name=binding.vehicle_name)
                 except Exception:
                     pass
+                self._start_hard_escape(mission, tele, left_space, right_space)
             no_progress_s = mission.no_progress_ticks * mission.step_duration_s
-            if no_progress_s > 8.0 and horizontal > mission.safety_radius_m * 2.0 and front < 4.5:
+            if (
+                no_progress_s > 8.0
+                and horizontal > mission.safety_radius_m * 2.0
+                and (front < 5.0 or hazard_score > 0)
+            ):
                 mission.phase = "recovery"
                 if mission.recovery_direction == "right" and left_space <= right_space + 1.2:
                     mission.recovery_direction = "right"
@@ -601,7 +643,8 @@ class AirSimBackend:
                 mission.recovery_counter = max(mission.recovery_counter, 12)
                 mission.stuck_recovery_count += 1
                 mission.no_progress_ticks = 0
-            if mission.stuck_recovery_count >= 4 and no_progress_s > 10.0:
+                self._start_hard_escape(mission, tele, left_space, right_space)
+            if mission.stuck_recovery_count >= 5 and mission.escape_attempts >= 6 and no_progress_s > 10.0:
                 self.start_hold_position(target_id)
                 self.record_command(target_id, "expert_goto", "FAILED", "target may be unreachable")
                 finished.append(target_id)
@@ -611,10 +654,10 @@ class AirSimBackend:
             if near_goal and front >= 4.0 and mission.recovery_counter <= 0:
                 mission.avoid_counter = 0
                 mission.avoid_direction = None
-            vx, vy = self._expert_xy_velocity(mission, tele, front, left_space, right_space, collided)
+            vx, vy = self._expert_xy_velocity(mission, tele, front, left_space, right_space, hazard_score, collided)
             vertical_limit = mission.max_speed_mps if not near_goal else 0.8
             vz = self._clamp(mission.altitude_gain * altitude_error, -vertical_limit, vertical_limit)
-            if collided or front < 4.0 or mission.recovery_counter > 0:
+            if collided or front < 4.0 or mission.recovery_counter > 0 or mission.escape_counter > 0:
                 vz = max(0.0, vz)
             vx, vy, vz = self._smooth_velocity(mission, vx, vy, vz)
             try:
@@ -626,6 +669,50 @@ class AirSimBackend:
         for target_id in finished:
             self._expert_missions.pop(target_id, None)
 
+    def _start_hard_escape(
+        self,
+        mission: ExpertNavigationMission,
+        tele: TelemetryData,
+        left_space: float,
+        right_space: float,
+    ) -> None:
+        dx = mission.target_x - tele.local_x
+        dy = mission.target_y - tele.local_y
+        norm = math.hypot(dx, dy)
+        if norm > 1e-6:
+            ux = dx / norm
+            uy = dy / norm
+        else:
+            yaw = math.radians(float(tele.yaw_deg))
+            ux = math.cos(yaw)
+            uy = math.sin(yaw)
+
+        if mission.recovery_direction in {"left", "right"}:
+            direction = mission.recovery_direction
+        else:
+            direction = "right" if right_space > left_space else "left"
+
+        if mission.escape_attempts % 2 == 1 and abs(left_space - right_space) < 1.5:
+            direction = "left" if direction == "right" else "right"
+
+        if direction == "right":
+            lx, ly = uy, -ux
+        else:
+            lx, ly = -uy, ux
+
+        attempt_scale = min(3.0, float(mission.escape_attempts) * 0.6)
+        back_m = 4.5 + attempt_scale
+        side_m = 5.5 + attempt_scale
+        mission.escape_x = tele.local_x - ux * back_m + lx * side_m
+        mission.escape_y = tele.local_y - uy * back_m + ly * side_m
+        mission.escape_z = tele.local_z
+        mission.escape_counter = 18
+        mission.escape_attempts += 1
+        mission.recovery_direction = direction
+        mission.recovery_counter = max(mission.recovery_counter, 14)
+        mission.phase = "escape"
+        mission.previous_velocity = (0.0, 0.0, 0.0)
+
     def _expert_xy_velocity(
         self,
         mission: ExpertNavigationMission,
@@ -633,6 +720,7 @@ class AirSimBackend:
         front: float,
         left_space: float,
         right_space: float,
+        hazard_score: int,
         collided: bool,
     ) -> tuple[float, float]:
         dx = mission.target_x - tele.local_x
@@ -646,13 +734,14 @@ class AirSimBackend:
             uy = 0.0
 
         approach_scale = self._clamp(norm / 8.0, 0.18, 1.0)
+        hazard_speed_scale = 0.65 if hazard_score > 0 else 1.0
 
         def steer(forward: float, lateral: float, direction: str | None, *, scale_near_goal: bool = True) -> tuple[float, float]:
             if direction == "right":
                 lx, ly = uy, -ux
             else:
                 lx, ly = -uy, ux
-            speed = mission.max_speed_mps * (approach_scale if scale_near_goal else 1.0)
+            speed = mission.max_speed_mps * hazard_speed_scale * (approach_scale if scale_near_goal else 1.0)
             return (
                 speed * (forward * ux + lateral * lx),
                 speed * (forward * uy + lateral * ly),
@@ -669,13 +758,18 @@ class AirSimBackend:
             mission.distance_history = []
         mission.distance_history.append(front)
         mission.distance_history = mission.distance_history[-5:]
+        if mission.hazard_history is None:
+            mission.hazard_history = []
+        mission.hazard_history.append(int(hazard_score))
+        mission.hazard_history = mission.hazard_history[-4:]
+        persistent_hazard = sum(1 for item in mission.hazard_history if item > 0) >= 2
         closing_in = (
             len(mission.distance_history) == 5
             and all(mission.distance_history[i] > mission.distance_history[i + 1] for i in range(4))
-            and front < 3.0
+            and front < 4.5
         )
 
-        if front >= 5.5 and not collided and mission.recovery_counter <= 0:
+        if front >= 7.0 and hazard_score <= 0 and not collided and mission.recovery_counter <= 0:
             mission.clear_ticks += 1
             if mission.clear_ticks >= 3:
                 mission.phase = "direct"
@@ -684,7 +778,25 @@ class AirSimBackend:
         else:
             mission.clear_ticks = 0
 
-        if collided or front < 1.2:
+        if mission.escape_counter > 0 and mission.escape_x is not None and mission.escape_y is not None:
+            ex = mission.escape_x - tele.local_x
+            ey = mission.escape_y - tele.local_y
+            escape_norm = math.hypot(ex, ey)
+            if escape_norm <= 1.2:
+                mission.escape_counter = 0
+                mission.escape_x = None
+                mission.escape_y = None
+                mission.escape_z = None
+                mission.recovery_counter = 0
+            else:
+                mission.phase = "escape"
+                mission.escape_counter -= 1
+                speed = mission.max_speed_mps
+                if front < 3.0 or hazard_score > 0:
+                    speed *= 0.8
+                return speed * ex / escape_norm, speed * ey / escape_norm
+
+        if collided or front < 1.4:
             mission.phase = "recovery"
             if mission.recovery_counter <= 0:
                 mission.recovery_direction = choose_side(mission.recovery_direction)
@@ -702,7 +814,7 @@ class AirSimBackend:
             mission.avoid_counter -= 1
             return steer(0.15, 1.0, mission.avoid_direction)
 
-        if front < 1.8:
+        if front < 2.2:
             mission.phase = "recovery"
             mission.avoid_direction = None
             mission.avoid_counter = 0
@@ -710,48 +822,66 @@ class AirSimBackend:
             mission.recovery_counter = 8
             return steer(-0.75, 0.85, mission.recovery_direction)
 
-        if front < 3.0 or closing_in:
+        small_obstacle_ahead = persistent_hazard and front < 7.5
+        if front < 4.2 or closing_in or small_obstacle_ahead:
             mission.phase = "avoid"
             if mission.avoid_direction is None or mission.avoid_counter <= 0:
                 mission.avoid_direction = choose_side(mission.avoid_direction)
-                mission.avoid_counter = 8
-            return steer(0.1, 1.0, mission.avoid_direction)
+                mission.avoid_counter = 14 if small_obstacle_ahead else 10
+            forward = 0.0 if small_obstacle_ahead else 0.05
+            return steer(forward, 1.0, mission.avoid_direction)
 
-        if front < 5.5:
+        if front < 7.0 or hazard_score > 0:
             mission.phase = "slow"
             mission.avoid_direction = None
             mission.avoid_counter = 0
-            return steer(0.65, 0.0, None)
+            return steer(0.45, 0.0, None)
 
         mission.phase = "direct"
         mission.avoid_direction = None
         mission.avoid_counter = 0
         return ux * mission.max_speed_mps * approach_scale, uy * mission.max_speed_mps * approach_scale
 
-    def _read_lidar_summary(self, vehicle_name: str) -> tuple[float, float, float, float, float]:
+    def _read_lidar_summary(self, vehicle_name: str) -> tuple[float, float, float, float, float, int]:
         try:
             data = self.client.getLidarData(lidar_name="LidarSensor1", vehicle_name=vehicle_name)
             if len(data.point_cloud) < 3:
-                return 10.0, 10.0, 10.0, 0.0, 0.0
+                return 10.0, 10.0, 10.0, 0.0, 0.0, 0
             try:
                 import numpy as np  # type: ignore
             except Exception:
-                return 10.0, 10.0, 10.0, 0.0, 0.0
+                return 10.0, 10.0, 10.0, 0.0, 0.0, 0
             points = np.array(data.point_cloud, dtype=np.float32).reshape(-1, 3)
             valid = points[(points[:, 0] > 0.1) & (points[:, 0] < 100)]
             if valid.size == 0:
-                return 10.0, 10.0, 10.0, 0.0, 0.0
-            front_points = valid[(valid[:, 0] > 0) & (valid[:, 0] < 10.0) & (abs(valid[:, 1]) < 1.3)]
-            left_points = valid[(valid[:, 0] > 0) & (valid[:, 0] < 8.0) & (valid[:, 1] > 0.4)]
-            right_points = valid[(valid[:, 0] > 0) & (valid[:, 0] < 8.0) & (valid[:, 1] < -0.4)]
+                return 10.0, 10.0, 10.0, 0.0, 0.0, 0
+            corridor_points = valid[
+                (valid[:, 0] > 0)
+                & (valid[:, 0] < 12.0)
+                & (abs(valid[:, 1]) < 1.7)
+                & (abs(valid[:, 2]) < 2.5)
+            ]
+            front_points = valid[
+                (valid[:, 0] > 0)
+                & (valid[:, 0] < 10.0)
+                & (abs(valid[:, 1]) < 1.0)
+                & (abs(valid[:, 2]) < 2.5)
+            ]
+            left_points = valid[(valid[:, 0] > 0) & (valid[:, 0] < 9.0) & (valid[:, 1] > 0.4)]
+            right_points = valid[(valid[:, 0] > 0) & (valid[:, 0] < 9.0) & (valid[:, 1] < -0.4)]
+            corridor_front = float(np.min(corridor_points[:, 0])) if len(corridor_points) else 10.0
             front = float(np.min(front_points[:, 0])) if len(front_points) else 10.0
+            front = min(front, corridor_front)
             left = float(np.min(np.linalg.norm(left_points[:, :2], axis=1))) if len(left_points) else 10.0
             right = float(np.min(np.linalg.norm(right_points[:, :2], axis=1))) if len(right_points) else 10.0
-            left_edge = float(np.min(front_points[:, 1])) if len(front_points) else 0.0
-            right_edge = float(np.max(front_points[:, 1])) if len(front_points) else 0.0
-            return front, left, right, left_edge, right_edge
+            edge_points = corridor_points if len(corridor_points) else front_points
+            left_edge = float(np.min(edge_points[:, 1])) if len(edge_points) else 0.0
+            right_edge = float(np.max(edge_points[:, 1])) if len(edge_points) else 0.0
+            near_thin_points = corridor_points[corridor_points[:, 0] < 7.0] if len(corridor_points) else corridor_points
+            hazard_score = int(len(near_thin_points))
+            return front, left, right, left_edge, right_edge, hazard_score
         except Exception:
-            return 10.0, 10.0, 10.0, 0.0, 0.0
+            return 10.0, 10.0, 10.0, 0.0, 0.0, 0
 
     def _collision_stamp(self, vehicle_name: str) -> int:
         try:

@@ -692,7 +692,8 @@ MAP_HTML = """<!doctype html>
 <style>
 html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #f7f4ee; }
 #map { position: relative; }
-#canvas { width: 100%; height: 100%; display: block; }
+#canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+#canvas.dragging { cursor: grabbing; }
 .hud { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
 .badge { background: rgba(255,253,248,0.9); border: 1px solid rgba(177,168,145,0.45); color: #32433a; padding: 5px 9px; border-radius: 999px; font-size: 11px; }
 </style>
@@ -711,7 +712,7 @@ let bridge = null;
 if (typeof QWebChannel !== 'undefined') {
   new QWebChannel(qt.webChannelTransport, function(channel) { bridge = channel.objects.bridge; });
 }
-const state = { uavs: [], waypoints: [], scaleMetersPerGrid: 10 };
+const state = { uavs: [], waypoints: [], scaleMetersPerGrid: 10, viewX: 0, viewY: 0, dragging: false, moved: false, lastX: 0, lastY: 0 };
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const statusBadge = document.getElementById('statusBadge');
@@ -721,16 +722,21 @@ function emitClick(x, y) { if (bridge) bridge.mapClicked(x, y); }
 function allPoints() { const points = []; for (const uav of state.uavs) { points.push([uav.x || 0, uav.y || 0]); for (const p of (uav.trail || [])) points.push([p.x || 0, p.y || 0]); } return points; }
 function fitScale() { return state.scaleMetersPerGrid; }
 function metersToPixels(m) { return m * (40 / state.scaleMetersPerGrid); }
-function localToCanvas(x, y) { return [canvas.width / 2 + metersToPixels(y), canvas.height / 2 - metersToPixels(x)]; }
-function canvasToLocal(x, y) { return [(canvas.height / 2 - y) / (40 / state.scaleMetersPerGrid), (x - canvas.width / 2) / (40 / state.scaleMetersPerGrid)]; }
-function drawGrid() { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle='#f7f4ee'; ctx.fillRect(0,0,canvas.width,canvas.height); const s=40; ctx.strokeStyle='rgba(43,71,57,0.12)'; ctx.lineWidth=1; for(let x=canvas.width/2%s;x<canvas.width;x+=s){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();} for(let y=canvas.height/2%s;y<canvas.height;y+=s){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();} ctx.strokeStyle='rgba(43,71,57,0.30)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(canvas.width/2,0);ctx.lineTo(canvas.width/2,canvas.height);ctx.moveTo(0,canvas.height/2);ctx.lineTo(canvas.width,canvas.height/2);ctx.stroke(); }
+function pixelsToMeters(px) { return px / (40 / state.scaleMetersPerGrid); }
+function localToCanvas(x, y) { return [canvas.width / 2 + metersToPixels(y - state.viewY), canvas.height / 2 - metersToPixels(x - state.viewX)]; }
+function canvasToLocal(x, y) { return [state.viewX + pixelsToMeters(canvas.height / 2 - y), state.viewY + pixelsToMeters(x - canvas.width / 2)]; }
+function drawGrid() { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle='#f7f4ee'; ctx.fillRect(0,0,canvas.width,canvas.height); const s=40; const origin=localToCanvas(0,0); ctx.strokeStyle='rgba(43,71,57,0.12)'; ctx.lineWidth=1; for(let x=origin[0]%s;x<canvas.width;x+=s){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();} for(let y=origin[1]%s;y<canvas.height;y+=s){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();} ctx.strokeStyle='rgba(43,71,57,0.30)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(origin[0],0);ctx.lineTo(origin[0],canvas.height);ctx.moveTo(0,origin[1]);ctx.lineTo(canvas.width,origin[1]);ctx.stroke(); }
 function drawTrail(trail) { if (!trail || trail.length < 2) return; ctx.strokeStyle='rgba(15,157,88,0.55)'; ctx.lineWidth=2.5; ctx.beginPath(); trail.forEach((p,i)=>{const [cx,cy]=localToCanvas(p.x||0,p.y||0); if(i===0)ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);}); ctx.stroke(); }
 function drawWaypoints() { if (state.waypoints.length > 1) { ctx.strokeStyle='#f57c00'; ctx.lineWidth=2; ctx.setLineDash([8,8]); ctx.beginPath(); state.waypoints.forEach((wp,i)=>{const [cx,cy]=localToCanvas(wp.x||0,wp.y||0); if(i===0)ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);}); ctx.stroke(); ctx.setLineDash([]); } state.waypoints.forEach((wp)=>{const [cx,cy]=localToCanvas(wp.x||0,wp.y||0); ctx.fillStyle='#f57c00'; ctx.beginPath(); ctx.arc(cx,cy,7,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); ctx.fillStyle='#8a4700'; ctx.font='600 12px Arial'; ctx.fillText(String(wp.idx),cx+10,cy-8);}); }
 function drawUavs() { for (const uav of state.uavs) { drawTrail(uav.trail || []); const [cx,cy]=localToCanvas(uav.x||0,uav.y||0); ctx.fillStyle='#0f9d58'; ctx.beginPath(); ctx.arc(cx,cy,9,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2.5; ctx.stroke(); ctx.fillStyle='#153b2a'; ctx.font='600 12px Arial'; ctx.fillText(`UAV${uav.sysid}`,cx+12,cy-10); } }
 function draw() { state.scaleMetersPerGrid = fitScale(); document.getElementById('scaleBadge').textContent = `\u6bd4\u4f8b ${state.scaleMetersPerGrid.toFixed(0)}m`; drawGrid(); drawWaypoints(); drawUavs(); }
 window.updateAirSimState = function(payload) { state.uavs = payload.uavs || []; state.waypoints = payload.waypoints || []; statusBadge.textContent = `\u98de\u673a ${state.uavs.length} \u67b6`; draw(); };
-canvas.addEventListener('click', function(event) { const rect=canvas.getBoundingClientRect(); const x=event.clientX-rect.left; const y=event.clientY-rect.top; const [lx,ly]=canvasToLocal(x,y); emitClick(lx,ly); });
+canvas.addEventListener('click', function(event) { if (state.moved) { state.moved=false; return; } const rect=canvas.getBoundingClientRect(); const x=event.clientX-rect.left; const y=event.clientY-rect.top; const [lx,ly]=canvasToLocal(x,y); emitClick(lx,ly); });
 canvas.addEventListener('mousemove', function(event) { const rect=canvas.getBoundingClientRect(); const x=event.clientX-rect.left; const y=event.clientY-rect.top; const [lx,ly]=canvasToLocal(x,y); cursorBadge.textContent = `X ${lx.toFixed(1)} / Y ${ly.toFixed(1)}`; });
+canvas.addEventListener('mousedown', function(event) { if (event.button !== 0) return; state.dragging=true; state.moved=false; state.lastX=event.clientX; state.lastY=event.clientY; canvas.classList.add('dragging'); });
+window.addEventListener('mouseup', function() { state.dragging=false; canvas.classList.remove('dragging'); });
+window.addEventListener('mousemove', function(event) { if (!state.dragging) return; const dx=event.clientX-state.lastX; const dy=event.clientY-state.lastY; if (Math.abs(dx)+Math.abs(dy)>2) state.moved=true; state.viewY -= pixelsToMeters(dx); state.viewX += pixelsToMeters(dy); state.lastX=event.clientX; state.lastY=event.clientY; draw(); });
+canvas.addEventListener('wheel', function(event) { event.preventDefault(); const rect=canvas.getBoundingClientRect(); const cx=event.clientX-rect.left; const cy=event.clientY-rect.top; const before=canvasToLocal(cx,cy); const factor=event.deltaY<0 ? 0.85 : 1.18; state.scaleMetersPerGrid=Math.max(1, Math.min(80, state.scaleMetersPerGrid*factor)); const after=canvasToLocal(cx,cy); state.viewX += before[0]-after[0]; state.viewY += before[1]-after[1]; draw(); }, { passive: false });
 window.addEventListener('resize', resize); resize();
 </script>
 </body>
