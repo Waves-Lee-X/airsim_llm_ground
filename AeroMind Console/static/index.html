@@ -3,26 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AeroMind 无人机任务控制台</title>
-  <link rel="stylesheet" href="/styles.css?v=20260510-live-telemetry" />
+  <title>LLM UAV Mission Console</title>
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
       <div class="brand">
-        <span class="eyebrow">AEROMIND UAV OPERATIONS</span>
-        <h1>&#33258;&#28982;&#35821;&#35328;&#26080;&#20154;&#26426;&#20219;&#21153;&#25511;&#21046;&#21488;</h1>
+        <span class="eyebrow">LLM UAV OPERATIONS</span>
+        <!-- <h1>&#33258;&#28982;&#35821;&#35328;&#26080;&#20154;&#26426;&#20219;&#21153;&#25511;&#21046;&#21488;</h1> -->
         <p id="systemLine">&#31561;&#24453;&#20223;&#30495;&#19982;&#24863;&#30693;&#27169;&#22359;&#25509;&#20837;</p>
       </div>
       <div class="statusCluster">
-        <label class="vehicleSelector">
-          <span>&#26080;&#20154;&#26426;</span>
-          <select id="vehicleSelect">
-            <option value="Drone1">Drone1</option>
-            <option value="Drone2">Drone2</option>
-            <option value="Drone3">Drone3</option>
-          </select>
-        </label>
         <span id="connectionPill" class="pill offline">&#20223;&#30495;&#26410;&#36830;&#25509;</span>
         <span id="visionPill" class="pill neutral">&#35270;&#35273;&#24453;&#25509;&#20837;</span>
         <span id="taskPill" class="pill neutral">&#31354;&#38386;</span>
@@ -30,40 +22,60 @@
     </header>
 
     <main class="stage">
-      <section class="videoStage">
-        <div class="videoFrame" id="videoFrame">
-          <img id="cameraFeed" alt="" />
-          <div id="videoFallback" class="videoFallback">
-            <div class="scanHalo">
-              <div class="reticle"></div>
+      <div class="topDeck">
+        <section class="videoStage">
+          <div class="videoFrame" id="videoFrame">
+            <img id="cameraFeed" alt="" />
+            <div id="videoFallback" class="videoFallback">
+              <div class="scanHalo">
+                <div class="reticle"></div>
+              </div>
+              <strong>&#31561;&#24453; AirSim / UE &#30011;&#38754;</strong>
+              <span>&#21487;&#25509;&#20837; AirSim &#21069;&#35270;&#25668;&#20687;&#22836;&#12289;UE Pixel Streaming &#25110;&#20219;&#21153;&#35266;&#23519;&#35270;&#35282;</span>
             </div>
-            <strong>&#31561;&#24453; AirSim / UE &#30011;&#38754;</strong>
-            <span>&#21487;&#25509;&#20837; AirSim &#21069;&#35270;&#25668;&#20687;&#22836;&#12289;UE Pixel Streaming &#25110;&#20219;&#21153;&#35266;&#23519;&#35270;&#35282;</span>
-          </div>
 
-          <div class="videoOverlay topLeft">
-            <span id="uavName">UAV1</span>
-            <span id="uavMode">LLM-MISSION</span>
+            <div class="videoOverlay topLeft">
+              <span id="uavName">UAV1</span>
+              <span id="uavMode">LLM-MISSION</span>
+            </div>
+            <div class="videoOverlay topRight">
+              <span id="clockText">00:00:00</span>
+              <span>SIM CAM</span>
+            </div>
+            <div class="videoOverlay bottomLeft">
+              <span id="telemetryLine">ALT 0.0m / SPD 0.0m/s / X 0.0 Y 0.0</span>
+            </div>
+            <div class="cameraSwitcher" id="cameraSwitcher">
+              <button class="cameraChip active" type="button" data-camera="front_center">FRONT</button>
+              <button class="cameraChip" type="button" data-camera="bottom_center">BOTTOM</button>
+              <button class="cameraChip" type="button" data-camera="front_left">LEFT</button>
+              <button class="cameraChip" type="button" data-camera="front_right">RIGHT</button>
+              <button class="cameraChip" type="button" data-camera="0">CAM 0</button>
+            </div>
           </div>
-          <div class="videoOverlay topRight">
-            <span id="clockText">00:00:00</span>
-            <span>仿真相机</span>
-          </div>
-          <div class="videoOverlay bottomLeft">
-            <span id="telemetryLine">高度 0.0m / 速度 0.0m/s / X 0.0 Y 0.0</span>
-          </div>
-          <div class="cameraSwitcher" id="cameraSwitcher">
-            <button class="cameraChip active" type="button" data-camera="front_center">前视</button>
-            <button class="cameraChip" type="button" data-camera="bottom_center">俯视</button>
-            <button class="cameraChip" type="button" data-camera="front_left">左前</button>
-            <button class="cameraChip" type="button" data-camera="front_right">右前</button>
-            <button class="cameraChip" type="button" data-camera="0">相机0</button>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="mapStage">
-      </section>
+        <section class="mapStage">
+          <section class="missionMapCard">
+            <div class="mapHead">
+              <span>MISSION MAP</span>
+              <div class="mapTools">
+                <button id="mapFollowBtn" class="miniBtn active" type="button">FOLLOW</button>
+                <button id="mapFitBtn" class="miniBtn" type="button">FIT</button>
+                <em id="mapCursor">X 0.0 / Y 0.0 / 4.0 px/m</em>
+              </div>
+            </div>
+            <div id="mapStatus" class="mapStatus">UAV: waiting for telemetry</div>
+            <div class="mapLegend">
+              <i class="legendTrail"></i><span>trail</span>
+              <i class="legendRoute"></i><span>mission</span>
+              <i class="legendPlan"></i><span>A*</span>
+              <i class="legendObstacle"></i><span>LiDAR</span>
+            </div>
+            <canvas id="missionMap"></canvas>
+          </section>
+        </section>
+      </div>
 
       <aside class="missionPanel">
         <section class="promptPanel">
@@ -109,40 +121,15 @@
                 <span>&#38388;&#36317;</span>
                 <input id="spacingInput" type="number" min="2" max="30" step="1" value="10" />
               </label>
-              <label>
-                <span>&#25195;&#25551;&#36793;&#36317;</span>
-                <input id="scanMarginInput" type="number" min="0" max="12" step="1" value="4" />
-              </label>
-              <label>
-                <span>&#25506;&#38556;&#36317;&#31163;</span>
-                <input id="obstacleDistanceInput" type="number" min="3" max="20" step="1" value="8" />
-              </label>
-              <label>
-                <span>&#32469;&#38556;&#20559;&#31227;</span>
-                <input id="avoidanceOffsetInput" type="number" min="2" max="15" step="1" value="6" />
-              </label>
-              <label>
-                <span>&#26550;&#25968;</span>
-                <input id="formationCountInput" type="number" min="2" max="6" step="1" value="3" />
-              </label>
-              <label>
-                <span>&#38431;&#24418;</span>
-                <select id="formationShapeSelect">
-                  <option value="v">V &#23383;</option>
-                  <option value="line">&#30452;&#32447;</option>
-                </select>
-              </label>
             </div>
             <div class="toggleRow">
               <label><input id="preScanInput" type="checkbox" checked /> <span>&#39044;&#25195;&#25551;</span></label>
               <label><input id="avoidanceInput" type="checkbox" checked /> <span>A* &#36991;&#38556;</span></label>
-              <label><input id="stopOnRiskInput" type="checkbox" checked /> <span>&#39640;&#39118;&#38505;&#20572;&#27490;</span></label>
             </div>
           </div>
           <div class="promptActions">
             <button id="voiceBtn" class="iconBtn secondaryBtn">&#35821;&#38899;</button>
             <button id="previewBtn" class="secondaryBtn">&#39044;&#35272;&#35745;&#21010;</button>
-            <button id="detectBtn" class="secondaryBtn">&#30446;&#26631;&#26816;&#27979;</button>
             <button id="runBtn">&#25191;&#34892;&#20219;&#21153;</button>
           </div>
         </section>
@@ -151,28 +138,6 @@
           <div class="sectionHead">
             <h2>&#22823;&#27169;&#22411;&#20219;&#21153;&#35745;&#21010;</h2>
             <span id="intentLabel">&#31561;&#24453;&#35299;&#26512;</span>
-          </div>
-          <div class="opsSummary">
-            <div class="opsItem">
-              <span>&#38454;&#27573;</span>
-              <strong id="phaseBadge">IDLE</strong>
-            </div>
-            <div class="opsItem">
-              <span>&#33322;&#28857;</span>
-              <strong id="waypointBadge">0/0</strong>
-            </div>
-            <div class="opsItem">
-              <span>&#36317;&#31163;</span>
-              <strong id="distanceBadge">- m</strong>
-            </div>
-            <div class="opsItem">
-              <span>&#39118;&#38505;</span>
-              <strong id="riskBadge">-</strong>
-            </div>
-          </div>
-          <div id="issueBanner" class="issueBanner">
-            <b id="issueTitle">&#26410;&#21457;&#29616;&#24322;&#24120;</b>
-            <span id="issueDetail">&#36816;&#34892;&#20013;&#33509;&#20986;&#29616;&#38459;&#22622;&#12289;&#36215;&#39134;&#22833;&#36133;&#12289;&#36335;&#32447;&#19981;&#21487;&#36798;&#65292;&#20250;&#22312;&#36825;&#37324;&#31435;&#21363;&#26174;&#31034;&#12290;</span>
           </div>
           <div class="confidenceBar">
             <span>&#24847;&#22270;&#32534;&#25490;</span>
@@ -194,8 +159,8 @@
 
         <section class="logPanel">
           <div class="sectionHead">
-            <h2>&#20219;&#21153;&#26085;&#24535;</h2>
-            <button id="clearLogBtn" class="miniBtn">&#28165;&#31354;</button>
+            <h2>&#20219;&#21153;&#26085;&#21697;</h2>
+            <button id="clearLogBtn" class="secondaryBtn">&#26631;&#20140;&#26085;&#21697;</button>
           </div>
           <div id="missionLog" class="missionLog"></div>
         </section>
@@ -211,39 +176,35 @@
       <div class="infoCard">
         <span>&#24403;&#21069;&#20301;&#32622;</span>
         <strong id="positionText">X 0.0 / Y 0.0 / Z 0.0</strong>
-        <em id="altitudeText">高度 0.0m / 速度 0.0m/s</em>
+        <em id="altitudeText">ALT 0.0m / SPD 0.0m/s</em>
       </div>
       <div class="infoCard routeCard">
         <span>&#20219;&#21153;&#36827;&#24230;</span>
         <div class="routeLine" id="routeLine"></div>
       </div>
-      <div class="infoCard perceptionCard">
-        <span>&#24863;&#30693;&#19982;&#36991;&#38556;</span>
-        <strong id="riskText">风险 -</strong>
-        <em id="plannerText">A* 等待中</em>
-        <em id="detectionText">&#26816;&#27979;&#24453;&#21629;</em>
-        <div id="sensorList" class="sensorList"></div>
-      </div>
-      <div class="infoCard missionMapCard">
-        <div class="mapHead">
-          <span>&#20219;&#21153;&#22320;&#22270;</span>
-          <div class="mapTools">
-            <button id="mapFollowBtn" class="miniBtn active" type="button">&#36319;&#38543;</button>
-            <button id="mapFitBtn" class="miniBtn" type="button">&#36866;&#37197;</button>
-            <button id="mapZoomOutBtn" class="miniBtn mapZoomBtn" type="button" title="&#32553;&#23567;" aria-label="&#32553;&#23567;">-</button>
-            <strong id="mapZoomLevel" class="zoomLevel" title="4.0 px/m">L5</strong>
-            <button id="mapZoomInBtn" class="miniBtn mapZoomBtn" type="button" title="&#25918;&#22823;" aria-label="&#25918;&#22823;">+</button>
-            <em id="mapCursor">X 0.0 / Y 0.0 / 4.0 px/m</em>
+      <div class="infoCard statusCard">
+        <div class="opsSummary">
+          <div class="statusTile">
+            <span>当前阶段</span>
+            <strong id="phaseBadge">-</strong>
+          </div>
+          <div class="statusTile">
+            <span>航点</span>
+            <strong id="waypointBadge">-</strong>
+          </div>
+          <div class="statusTile">
+            <span>距离</span>
+            <strong id="distanceBadge">-</strong>
+          </div>
+          <div class="statusTile">
+            <span>风险</span>
+            <strong id="riskBadge">-</strong>
           </div>
         </div>
-        <div id="mapStatus" class="mapStatus">无人机：等待遥测数据</div>
-        <div class="mapLegend">
-          <i class="legendTrail"></i><span>轨迹</span>
-          <i class="legendRoute"></i><span>任务</span>
-          <i class="legendPlan"></i><span>A*</span>
-          <i class="legendObstacle"></i><span>雷达点</span>
+        <div id="issueBanner" class="issueBanner">
+          <b id="issueTitle">No Immediate Issue</b>
+          <span id="issueDetail">任务运行状态将在这里集中显示。</span>
         </div>
-        <canvas id="missionMap"></canvas>
       </div>
       <div class="infoCard eventsCard">
         <span>&#20107;&#20214;&#27969;</span>
@@ -253,6 +214,6 @@
   </div>
 
   <div id="toastHost" class="toastHost"></div>
-  <script src="/app.js?v=20260510-live-telemetry"></script>
+  <script src="/app.js"></script>
 </body>
 </html>
