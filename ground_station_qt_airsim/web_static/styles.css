@@ -1,0 +1,494 @@
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --surface-soft: #f8fafb;
+  --ink: #20272d;
+  --muted: #66737d;
+  --line: #dce3e8;
+  --line-strong: #c7d1d8;
+  --accent: #137a72;
+  --accent-dark: #0d5f59;
+  --blue: #2869a6;
+  --amber: #a56616;
+  --red: #b83a3a;
+  --green: #1f7a4f;
+  --shadow: 0 10px 30px rgba(37, 48, 56, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+}
+
+button, select, input, textarea {
+  font: inherit;
+}
+
+button {
+  min-height: 34px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  padding: 7px 12px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+
+.ghostBtn {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.ghostBtn:hover {
+  background: #eef3f4;
+  border-color: #aebcc4;
+}
+
+.primaryAction {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+
+.primaryAction:hover {
+  background: #20598e;
+  border-color: #20598e;
+}
+
+.dangerAction {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.dangerAction:hover {
+  background: #992f2f;
+  border-color: #992f2f;
+}
+
+select, input, textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  padding: 7px 9px;
+}
+
+textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+pre {
+  display: none;
+  max-height: 128px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: #35434b;
+  font-size: 12px;
+}
+
+pre:not(:empty) { display: block; }
+
+.appShell {
+  min-height: 100vh;
+  padding: 12px;
+}
+
+.commandBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 64px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.productName {
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.subText {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flightStrip {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.statusPill {
+  min-width: 76px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.statusPill.good { background: var(--green); }
+.statusPill.warn { background: var(--amber); }
+.statusPill.bad { background: var(--red); }
+
+.compactField {
+  display: grid;
+  grid-template-columns: auto minmax(74px, 110px);
+  align-items: center;
+  gap: 7px;
+}
+
+.compactField span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.altitudeField {
+  grid-template-columns: auto 88px;
+}
+
+.missionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.workspace,
+.operatorRail,
+.dataDeck {
+  min-width: 0;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 590px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.mapToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfd;
+}
+
+.segmented {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #edf2f4;
+}
+
+.segmented button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.segmented button.active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(31, 42, 48, 0.12);
+}
+
+.mapToolbar > button:last-child {
+  margin-left: auto;
+}
+
+.mapSurface {
+  position: relative;
+  flex: 1;
+  min-height: 520px;
+  background: #f7f9f7;
+  overflow: hidden;
+}
+
+#mapCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+#mapCanvas.dragging { cursor: grabbing; }
+
+.mapHud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  pointer-events: none;
+}
+
+.mapHud span {
+  border: 1px solid rgba(160, 176, 168, 0.5);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #33443c;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.selectedCard {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  min-width: 180px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(188, 199, 205, 0.8);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(31, 42, 48, 0.14);
+}
+
+.selectedCard span,
+.selectedCard em {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.selectedCard strong {
+  display: block;
+  margin: 3px 0;
+  font-size: 22px;
+}
+
+.operatorRail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+
+.panelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.panelHead h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.panelHead span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.controlMatrix {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.controlMatrix button {
+  min-height: 42px;
+}
+
+.inlineActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric {
+  min-height: 68px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.metric span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.metric strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 21px;
+}
+
+.dataDeck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.95fr) minmax(260px, 0.72fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.tablePanel,
+.logPanel {
+  min-height: 230px;
+}
+
+.tableWrap {
+  max-height: 260px;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+th, td {
+  padding: 8px 9px;
+  border-bottom: 1px solid #e7edf1;
+  text-align: left;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f3f6f8;
+  color: #53616a;
+  font-weight: 800;
+}
+
+tr:hover td { background: #fafcfd; }
+
+.offline,
+.failed {
+  color: var(--red);
+  font-weight: 800;
+}
+
+#logRows {
+  max-height: 260px;
+  overflow: auto;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+.logItem {
+  padding: 5px 0;
+  border-bottom: 1px solid #e7edf1;
+  color: #344047;
+}
+
+.logItem b {
+  color: var(--blue);
+}
+
+@media (max-width: 1180px) {
+  .missionGrid,
+  .dataDeck {
+    grid-template-columns: 1fr;
+  }
+
+  .operatorRail {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mapSurface {
+    min-height: 470px;
+  }
+}
+
+@media (max-width: 820px) {
+  .appShell {
+    padding: 8px;
+  }
+
+  .commandBar,
+  .flightStrip,
+  .mapToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .flightStrip {
+    width: 100%;
+  }
+
+  .compactField,
+  .altitudeField {
+    grid-template-columns: 70px 1fr;
+  }
+
+  .operatorRail {
+    grid-template-columns: 1fr;
+  }
+
+  .mapSurface {
+    min-height: 420px;
+  }
+}

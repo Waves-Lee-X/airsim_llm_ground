@@ -1,0 +1,6 @@
+airsim
+numpy
+PySide6
+PySide6-Addons
+PyYAML
+pywin32; platform_system == "Windows"

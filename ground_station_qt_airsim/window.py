@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 
 try:
-    from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal, Slot
+    from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal, Slot
     from PySide6.QtGui import QAction, QColor
     from PySide6.QtWidgets import (
         QApplication,
@@ -39,6 +39,17 @@ except Exception as exc:  # pragma: no cover
     raise RuntimeError("PySide6 is required for the AirSim Qt ground station.") from exc
 
 from ground_station_qt_airsim.backend import AirSimBackend
+from ground_station_qt_airsim.airsim_window_embedder import (
+    DEFAULT_AIRSIM_PROCESS_KEYWORDS,
+    DEFAULT_AIRSIM_WINDOW_KEYWORDS,
+    detach_external_window,
+    describe_visible_windows,
+    embed_external_window,
+    find_window_by_keywords,
+    is_window_alive,
+    list_visible_windows,
+    resize_embedded_window,
+)
 from ground_station_qt_airsim.config import GroundStationAirSimConfig
 from ground_station_qt_airsim.models import Waypoint
 
@@ -83,6 +94,10 @@ class AirSimGroundStationWindow(QMainWindow):
         self.waypoints: list[Waypoint] = []
         self.current_theme = config.ui.theme_mode or "light"
         self.quick_labels: dict[str, QLabel] = {}
+        self.embedded_sim_hwnd: int | None = None
+        self.embedded_sim_title = ""
+        self.available_sim_windows: dict[int, object] = {}
+        self.sim_scene_expanded = False
 
         self.setWindowTitle(config.ui.title)
         try:
@@ -156,16 +171,22 @@ class AirSimGroundStationWindow(QMainWindow):
         right.setSpacing(12)
         content.addLayout(right, stretch=1)
 
-        map_panel = QFrame()
-        map_panel.setObjectName("MapPanel")
-        map_layout = QVBoxLayout(map_panel)
+        self.scene_split = QHBoxLayout()
+        self.scene_split.setSpacing(12)
+        right.addLayout(self.scene_split, stretch=3)
+
+        self.map_panel = QFrame()
+        self.map_panel.setObjectName("MapPanel")
+        map_layout = QVBoxLayout(self.map_panel)
         map_layout.setContentsMargins(0, 0, 0, 0)
         map_layout.setSpacing(0)
         self._create_map_view(map_layout)
-        right.addWidget(map_panel, stretch=2)
+        self.scene_split.addWidget(self.map_panel, stretch=1)
 
-        tabs = QTabWidget()
-        tabs.setObjectName("ContentTabs")
+        self._add_sim_scene_panel(self.scene_split)
+
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("ContentTabs")
 
         self.fleet_table = QTableWidget(0, 10)
         self.fleet_table.setObjectName("InfoTable")
@@ -173,21 +194,21 @@ class AirSimGroundStationWindow(QMainWindow):
             ["\u7f16\u53f7", "\u540d\u79f0", "\u5728\u7ebf", "\u6a21\u5f0f", "\u89e3\u9501", "\u9ad8\u5ea6(m)", "\u901f\u5ea6", "X", "Y", "Z"]
         )
         self.fleet_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        tabs.addTab(self.fleet_table, "\u98de\u673a\u72b6\u6001")
+        self.tabs.addTab(self.fleet_table, "\u98de\u673a\u72b6\u6001")
 
         self.command_table = QTableWidget(0, 5)
         self.command_table.setObjectName("InfoTable")
         self.command_table.setHorizontalHeaderLabels(["\u5e8f\u53f7", "\u76ee\u6807", "\u547d\u4ee4", "\u72b6\u6001", "\u65f6\u95f4"])
         self.command_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        tabs.addTab(self.command_table, "\u63a7\u5236\u8bb0\u5f55")
+        self.tabs.addTab(self.command_table, "\u63a7\u5236\u8bb0\u5f55")
 
         self.overview_table = QTableWidget(5, 2)
         self.overview_table.setObjectName("InfoTable")
         self.overview_table.setHorizontalHeaderLabels(["\u9879\u76ee", "\u503c"])
         self.overview_table.verticalHeader().setVisible(False)
         self.overview_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        tabs.addTab(self.overview_table, "\u8fd0\u884c\u6982\u89c8")
-        right.addWidget(tabs, stretch=1)
+        self.tabs.addTab(self.overview_table, "\u8fd0\u884c\u6982\u89c8")
+        right.addWidget(self.tabs, stretch=1)
 
         self.log_view = QTextEdit()
         self.log_view.setObjectName("LogView")
@@ -204,6 +225,57 @@ class AirSimGroundStationWindow(QMainWindow):
         reconnect_action = QAction("\u91cd\u65b0\u8fde\u63a5 AirSim", self)
         reconnect_action.triggered.connect(self._reconnect_backend)
         conn_menu.addAction(reconnect_action)
+
+    def _add_sim_scene_panel(self, parent: QHBoxLayout | QVBoxLayout) -> None:
+        panel = QFrame()
+        panel.setObjectName("SimPanel")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(12, 12, 12, 12)
+        panel_layout.setSpacing(8)
+
+        toolbar = QHBoxLayout()
+        title = QLabel("\u4eff\u771f\u573a\u666f\u663e\u793a\u533a\u57df")
+        title.setObjectName("PanelTitle")
+        self.sim_embed_status = QLabel("\u672a\u5d4c\u5165")
+        self.sim_embed_status.setObjectName("HeaderInfo")
+        self.expand_sim_btn = QPushButton("\u653e\u5927\u573a\u666f")
+        self.expand_sim_btn.setMinimumHeight(36)
+        self.expand_sim_btn.clicked.connect(self._toggle_sim_scene_expanded)
+        toolbar.addWidget(title)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self.sim_embed_status)
+        toolbar.addWidget(self.expand_sim_btn)
+        panel_layout.addLayout(toolbar)
+
+        selector = QHBoxLayout()
+        self.sim_window_combo = QComboBox()
+        self.sim_window_combo.setMinimumWidth(360)
+        self.sim_window_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        refresh_btn = QPushButton("\u5237\u65b0\u7a97\u53e3")
+        refresh_btn.setMinimumHeight(36)
+        refresh_btn.clicked.connect(self._refresh_sim_window_choices)
+        embed_selected_btn = QPushButton("\u5d4c\u5165\u9009\u4e2d\u7a97\u53e3")
+        embed_selected_btn.setMinimumHeight(36)
+        embed_selected_btn.clicked.connect(self._embed_selected_sim_window)
+        auto_embed_btn = QPushButton("\u81ea\u52a8\u5d4c\u5165")
+        auto_embed_btn.setMinimumHeight(36)
+        auto_embed_btn.clicked.connect(self._embed_airsim_window)
+        selector.addWidget(self.sim_window_combo, stretch=1)
+        selector.addWidget(refresh_btn)
+        selector.addWidget(embed_selected_btn)
+        selector.addWidget(auto_embed_btn)
+        panel_layout.addLayout(selector)
+
+        self.sim_container = QWidget()
+        self.sim_container.setObjectName("SimContainer")
+        self.sim_container.setMinimumHeight(360)
+        self.sim_container.setMinimumWidth(520)
+        self.sim_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.sim_container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self.sim_container.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
+        self.sim_container.installEventFilter(self)
+        panel_layout.addWidget(self.sim_container, stretch=1)
+        parent.addWidget(panel, stretch=2)
 
     def _wrap_card(self, title: str) -> tuple[QGroupBox, QGridLayout]:
         frame = QGroupBox(title)
@@ -429,6 +501,7 @@ class AirSimGroundStationWindow(QMainWindow):
         self._update_overview_table(telemetry)
         self._update_quick_status(telemetry)
         self._update_map_state(telemetry)
+        self._resize_embedded_sim_window()
 
     def _update_fleet_table(self, telemetry: dict[int, object]) -> None:
         now = datetime.now().timestamp()
@@ -664,6 +737,137 @@ class AirSimGroundStationWindow(QMainWindow):
             else:
                 raise ValueError(f"\u4e0d\u652f\u6301\u7684\u81ea\u7136\u8bed\u8a00\u547d\u4ee4: {command}")
 
+    def _list_visible_windows(self) -> None:
+        try:
+            self.log("\u5f53\u524d\u53ef\u89c1\u7a97\u53e3\u5217\u8868\uff08HWND | PID | \u8fdb\u7a0b | \u6807\u9898\uff09:", "INFO")
+            for line in describe_visible_windows():
+                self.log(line, "WINDOW")
+        except Exception as exc:
+            self.log(f"\u5217\u51fa\u7cfb\u7edf\u7a97\u53e3\u5931\u8d25: {exc}", "ERROR")
+            QMessageBox.warning(self, "\u5217\u51fa\u7a97\u53e3", f"\u5217\u51fa\u7a97\u53e3\u5931\u8d25: {exc}")
+
+    def _refresh_sim_window_choices(self) -> None:
+        try:
+            excluded = {int(self.winId()), int(self.sim_container.winId())}
+            self.available_sim_windows.clear()
+            self.sim_window_combo.blockSignals(True)
+            self.sim_window_combo.clear()
+            preferred_index = 0
+            for window in list_visible_windows():
+                if window.hwnd in excluded:
+                    continue
+                label = f"{window.process_name or '-'} | {window.title} | HWND {window.hwnd}"
+                self.available_sim_windows[window.hwnd] = window
+                self.sim_window_combo.addItem(label, window.hwnd)
+                lowered = f"{window.process_name} {window.title}".lower()
+                if any(term in lowered for term in ("ue4editor", "unrealeditor", "unreal", "kitbash")):
+                    preferred_index = self.sim_window_combo.count() - 1
+            if self.sim_window_combo.count() == 0:
+                self.sim_window_combo.addItem("\u672a\u627e\u5230\u53ef\u9009\u7a97\u53e3", 0)
+            else:
+                self.sim_window_combo.setCurrentIndex(preferred_index)
+            self.sim_window_combo.blockSignals(False)
+            self.log(f"\u7a97\u53e3\u5217\u8868\u5df2\u5237\u65b0\uff0c\u53ef\u9009 {max(0, self.sim_window_combo.count())} \u9879\u3002", "INFO")
+        except Exception as exc:
+            self.log(f"\u5237\u65b0\u7a97\u53e3\u5217\u8868\u5931\u8d25: {exc}", "ERROR")
+            QMessageBox.warning(self, "\u5237\u65b0\u7a97\u53e3", f"\u5237\u65b0\u7a97\u53e3\u5931\u8d25: {exc}")
+
+    def _embed_selected_sim_window(self) -> None:
+        hwnd = int(self.sim_window_combo.currentData() or 0)
+        if hwnd <= 0:
+            QMessageBox.warning(self, "\u5d4c\u5165\u9009\u4e2d\u7a97\u53e3", "\u8bf7\u5148\u70b9\u51fb\u201c\u5237\u65b0\u7a97\u53e3\u201d\u5e76\u9009\u62e9UE/AirSim\u7a97\u53e3\u3002")
+            return
+        match = self.available_sim_windows.get(hwnd)
+        if match is None or not is_window_alive(hwnd):
+            self.log(f"\u9009\u4e2d\u7a97\u53e3\u5df2\u5931\u6548: hwnd={hwnd}", "WARN")
+            self._refresh_sim_window_choices()
+            return
+        self._embed_window_match(match)
+
+    def _embed_airsim_window(self) -> None:
+        try:
+            excluded = {int(self.winId()), int(self.sim_container.winId())}
+            match = find_window_by_keywords(
+                DEFAULT_AIRSIM_WINDOW_KEYWORDS,
+                process_keywords=DEFAULT_AIRSIM_PROCESS_KEYWORDS,
+                exclude_hwnds=excluded,
+                require_process_match=True,
+            )
+            if match is None:
+                title_keywords = ", ".join(DEFAULT_AIRSIM_WINDOW_KEYWORDS)
+                process_keywords = ", ".join(DEFAULT_AIRSIM_PROCESS_KEYWORDS)
+                message = (
+                    f"\u672a\u627e\u5230UE/AirSim\u7a97\u53e3\uff08\u4e25\u683c\u6807\u9898+\u8fdb\u7a0b\u540d\u5339\u914d\uff09\uff0c"
+                    f"\u8bf7\u786e\u8ba4\u573a\u666f\u5df2\u542f\u52a8\u4e14\u7a97\u53e3\u6807\u9898\u5305\u542b: {title_keywords}; "
+                    f"\u8fdb\u7a0b\u540d\u5305\u542b: {process_keywords}"
+                )
+                self.sim_embed_status.setText("\u672a\u627e\u5230\u7a97\u53e3")
+                self.log(message, "WARN")
+                QMessageBox.warning(self, "\u5d4c\u5165AirSim\u7a97\u53e3", message)
+                return
+
+            self._embed_window_match(match)
+        except Exception as exc:
+            self.embedded_sim_hwnd = None
+            self.sim_embed_status.setText("\u5d4c\u5165\u5931\u8d25")
+            self.log(f"UE/AirSim\u7a97\u53e3\u5d4c\u5165\u5931\u8d25: {exc}", "ERROR")
+            QMessageBox.warning(self, "\u5d4c\u5165AirSim\u7a97\u53e3", f"\u5d4c\u5165\u5931\u8d25: {exc}")
+
+    def _embed_window_match(self, match: object) -> None:
+        try:
+            parent_hwnd = int(self.sim_container.winId())
+            embed_external_window(match.hwnd, parent_hwnd)
+            self.embedded_sim_hwnd = match.hwnd
+            self.embedded_sim_title = match.title
+            self.sim_embed_status.setText(f"\u5df2\u5d4c\u5165: {match.process_name or '-'}")
+            self.log(
+                f"UE/AirSim\u7a97\u53e3\u5df2\u5d4c\u5165: hwnd={match.hwnd}, pid={match.process_id}, process={match.process_name or '-'}, title={match.title}",
+                "INFO",
+            )
+            self._resize_embedded_sim_window()
+        except Exception as exc:
+            self.embedded_sim_hwnd = None
+            self.sim_embed_status.setText("\u5d4c\u5165\u5931\u8d25")
+            self.log(f"\u9009\u4e2d\u7a97\u53e3\u5d4c\u5165\u5931\u8d25: {exc}", "ERROR")
+            QMessageBox.warning(self, "\u5d4c\u5165\u9009\u4e2d\u7a97\u53e3", f"\u5d4c\u5165\u5931\u8d25: {exc}")
+
+    def _toggle_sim_scene_expanded(self) -> None:
+        self.sim_scene_expanded = not self.sim_scene_expanded
+        self.map_panel.setVisible(not self.sim_scene_expanded)
+        self.tabs.setVisible(not self.sim_scene_expanded)
+        self.log_view.setVisible(not self.sim_scene_expanded)
+        self.expand_sim_btn.setText("\u6062\u590d\u5de6\u53f3" if self.sim_scene_expanded else "\u653e\u5927\u573a\u666f")
+        self._resize_embedded_sim_window()
+
+    def _resize_embedded_sim_window(self) -> None:
+        if self.embedded_sim_hwnd is None:
+            return
+        if not is_window_alive(self.embedded_sim_hwnd):
+            self.log(f"UE/AirSim\u7a97\u53e3\u5df2\u5173\u95ed: {self.embedded_sim_title or self.embedded_sim_hwnd}", "WARN")
+            self.embedded_sim_hwnd = None
+            self.embedded_sim_title = ""
+            self.sim_embed_status.setText("\u7a97\u53e3\u5df2\u5173\u95ed")
+            return
+        size = self.sim_container.size()
+        try:
+            resize_embedded_window(self.embedded_sim_hwnd, size.width(), size.height())
+        except Exception as exc:
+            self.log(f"UE/AirSim\u7a97\u53e3\u5c3a\u5bf8\u540c\u6b65\u5931\u8d25: {exc}", "WARN")
+            self.embedded_sim_hwnd = None
+            self.sim_embed_status.setText("\u7a97\u53e3\u5f02\u5e38")
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is getattr(self, "sim_container", None) and event.type() in {
+            QEvent.Type.Resize,
+            QEvent.Type.Show,
+        }:
+            self._resize_embedded_sim_window()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._resize_embedded_sim_window()
+
     def _run_js(self, script: str) -> None:
         if self.map_view is None or not self.map_ready:
             return
@@ -675,6 +879,9 @@ class AirSimGroundStationWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         try:
+            if self.embedded_sim_hwnd is not None and is_window_alive(self.embedded_sim_hwnd):
+                detach_external_window(self.embedded_sim_hwnd)
+            self.embedded_sim_hwnd = None
             self.backend.close()
         finally:
             super().closeEvent(event)
@@ -746,9 +953,11 @@ window.addEventListener('resize', resize); resize();
 APP_STYLE = """
 QMainWindow { background: #f5f7f8; font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; }
 QScrollArea#SidebarScroll { background: transparent; border: none; }
-QFrame#Hero, QFrame#MapPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { background: #ffffff; border: 1px solid #d8e0e6; border-radius: 8px; }
+QFrame#Hero, QFrame#MapPanel, QFrame#SimPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { background: #ffffff; border: 1px solid #d8e0e6; border-radius: 8px; }
+QWidget#SimContainer { background: #111820; border: 1px solid #cfd9df; border-radius: 6px; }
 QGroupBox#Card { margin-top: 10px; color: #25313a; }
 QGroupBox#Card::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; color: #1f5f7a; font-size: 13px; font-weight: 700; }
+QLabel#PanelTitle { color: #25313a; font-size: 13px; font-weight: 700; }
 QLabel#HeaderInfo, QLabel#FieldName { color: #667783; font-size: 12px; }
 QLabel#QuickValue { color: #1f3948; font-size: 13px; font-weight: 700; }
 QLabel#StatusPill, QLabel#StatusPillWarn, QLabel#StatusPillError { color: #ffffff; border-radius: 999px; padding: 4px 10px; font-weight: 700; min-width: 72px; }
@@ -765,9 +974,11 @@ QTextEdit#LogView, QTextEdit#LlmPreview { font-family: Consolas, "Courier New", 
 DARK_STYLE = """
 QMainWindow { background: #172026; font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; }
 QScrollArea#SidebarScroll { background: transparent; border: none; }
-QFrame#Hero, QFrame#MapPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { background: #202c33; border: 1px solid #33444e; border-radius: 8px; }
+QFrame#Hero, QFrame#MapPanel, QFrame#SimPanel, QGroupBox#Card, QTabWidget::pane, QTableWidget#InfoTable, QTextEdit#LogView, QTextEdit#LlmInput, QTextEdit#LlmPreview { background: #202c33; border: 1px solid #33444e; border-radius: 8px; }
+QWidget#SimContainer { background: #0b1117; border: 1px solid #33444e; border-radius: 6px; }
 QGroupBox#Card { margin-top: 10px; color: #e8eef2; }
 QGroupBox#Card::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; color: #7cc4df; font-size: 13px; font-weight: 700; }
+QLabel#PanelTitle { color: #e8eef2; font-size: 13px; font-weight: 700; }
 QLabel#HeaderInfo, QLabel#FieldName { color: #9eb0bb; font-size: 12px; }
 QLabel#QuickValue { color: #b5e8f7; font-size: 13px; font-weight: 700; }
 QLabel#StatusPill, QLabel#StatusPillWarn, QLabel#StatusPillError { color: #ffffff; border-radius: 999px; padding: 4px 10px; font-weight: 700; min-width: 72px; }

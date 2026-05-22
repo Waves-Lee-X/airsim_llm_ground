@@ -1,0 +1,712 @@
+2026-05-06T19:41:47 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-06T19:42:07 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-06T19:42:41 FLIGHT  Land command sent.
+2026-05-06T19:43:22 FLIGHT  Mission stopped.
+2026-05-06T21:04:17 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-06T21:05:18 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 8.0, 'spacing_m': 10.0, 'speed_mps': 3.0, 'strategy': 'lawnmower'}
+2026-05-06T21:05:18 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-06T21:05:49 FLIGHT  Mission stopped.
+2026-05-06T21:10:47 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-06T21:11:03 TOOL    Tool accepted: return_home {'safe_altitude_m': 8.0}
+2026-05-06T21:11:04 TOOL    Tool result: return_home | ok=True | Return-home command sent
+2026-05-06T21:12:42 FLIGHT  Land command sent.
+2026-05-06T21:23:33 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-06T21:23:41 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 8.0, 'spacing_m': 10.0, 'speed_mps': 2.0, 'avoidance': True, 'obstacle_distance_m': 8.0, 'avoidance_offset_m': 6.0, 'strategy': 'lawnmower'}
+2026-05-06T21:23:41 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-06T21:31:10 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-06T21:31:36 TOOL    Tool accepted: recover_from_collision {'climb_m': 6.0, 'backoff_m': 8.0}
+2026-05-06T21:31:37 TOOL    Tool result: recover_from_collision | ok=True | Recovery command sent
+2026-05-06T21:32:07 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 8.0, 'spacing_m': 10.0, 'speed_mps': 2.0, 'avoidance': True, 'obstacle_distance_m': 8.0, 'avoidance_offset_m': 6.0, 'strategy': 'lawnmower'}
+2026-05-06T21:32:07 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-06T21:40:37 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 8.0, 'spacing_m': 10.0, 'speed_mps': 2.0, 'avoidance': True, 'obstacle_distance_m': 8.0, 'avoidance_offset_m': 6.0, 'strategy': 'lawnmower'}
+2026-05-06T21:40:37 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-06T22:56:15 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-06T22:56:38 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 8.0, 'spacing_m': 10.0, 'speed_mps': 2.0, 'avoidance': True, 'obstacle_distance_m': 8.0, 'avoidance_offset_m': 6.0, 'strategy': 'lawnmower'}
+2026-05-06T22:56:38 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-06T22:57:43 FLIGHT  Mission stopped.
+2026-05-06T22:57:49 FLIGHT  Hover command sent.
+2026-05-06T22:57:56 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-06T22:58:12 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 8.0, 'spacing_m': 10.0, 'speed_mps': 2.0, 'avoidance': True, 'obstacle_distance_m': 8.0, 'avoidance_offset_m': 6.0, 'strategy': 'lawnmower'}
+2026-05-06T22:58:12 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T16:07:29 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T17:09:29 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T17:45:27 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'strategy': 'lawnmower'}
+2026-05-07T17:45:27 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T17:51:16 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T17:51:55 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'strategy': 'lawnmower'}
+2026-05-07T17:51:56 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T18:11:26 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T18:11:41 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'strategy': 'lawnmower'}
+2026-05-07T18:11:41 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T18:18:33 FLIGHT  Mission stopped.
+2026-05-07T18:18:39 FLIGHT  Hover command sent.
+2026-05-07T18:29:12 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T18:29:54 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'strategy': 'lawnmower'}
+2026-05-07T18:29:54 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T18:37:04 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T18:37:24 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'strategy': 'lawnmower'}
+2026-05-07T18:37:24 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T18:59:36 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T18:59:47 AIRSIM  Camera selected: bottom_center
+2026-05-07T18:59:49 AIRSIM  Camera selected: front_left
+2026-05-07T18:59:51 AIRSIM  Camera selected: front_right
+2026-05-07T18:59:52 AIRSIM  Camera selected: 0
+2026-05-07T18:59:55 AIRSIM  Camera selected: front_center
+2026-05-07T19:00:55 AIRSIM  Camera selected: bottom_center
+2026-05-07T19:01:02 TASK    Mission received: 起飞
+2026-05-07T19:01:02 PLAN    Intent resolved: general_uav_task
+2026-05-07T19:01:02 PLAN    Structured plan generated. AirSim executor is not connected yet.
+2026-05-07T19:01:22 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-07T19:16:39 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T19:17:04 AIRSIM  Camera selected: front_left
+2026-05-07T19:17:07 AIRSIM  Camera selected: front_right
+2026-05-07T19:17:10 AIRSIM  Camera selected: 0
+2026-05-07T19:17:12 AIRSIM  Camera selected: front_center
+2026-05-07T19:17:21 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'strategy': 'lawnmower'}
+2026-05-07T19:17:22 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T19:18:03 AIRSIM  Camera selected: bottom_center
+2026-05-07T19:18:16 AIRSIM  Camera selected: front_center
+2026-05-07T19:23:10 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T19:23:26 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'strategy': 'lawnmower'}
+2026-05-07T19:23:26 TOOL    Tool result: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-07T19:24:50 AIRSIM  Camera selected: front_left
+2026-05-07T19:24:53 AIRSIM  Camera selected: front_right
+2026-05-07T19:24:56 AIRSIM  Camera selected: bottom_center
+2026-05-07T19:25:00 AIRSIM  Camera selected: front_left
+2026-05-07T19:48:03 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T19:48:14 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-07T19:48:14 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-07T19:52:03 AIRSIM  Camera selected: bottom_center
+2026-05-07T19:52:04 AIRSIM  Camera selected: front_left
+2026-05-07T19:55:55 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-07T19:56:04 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-07T19:56:04 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-08T11:32:28 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T11:40:33 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T11:41:39 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T11:52:40 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T11:58:00 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T11:58:52 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T12:01:32 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T12:02:29 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-08T12:02:29 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-08T12:06:25 FLIGHT  Mission stopped.
+2026-05-08T12:06:28 FLIGHT  Land command sent.
+2026-05-08T12:07:18 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T12:11:08 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-08T12:11:08 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-08T12:11:34 AIRSIM  Camera selected: front_left
+2026-05-08T12:11:38 AIRSIM  Camera selected: bottom_center
+2026-05-08T12:11:40 AIRSIM  Camera selected: front_center
+2026-05-08T12:13:14 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T12:13:33 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-08T12:13:33 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-08T12:13:55 AIRSIM  Camera selected: bottom_center
+2026-05-08T12:14:02 AIRSIM  Camera selected: front_left
+2026-05-08T12:14:06 AIRSIM  Camera selected: front_right
+2026-05-08T12:14:13 AIRSIM  Camera selected: front_center
+2026-05-08T12:14:17 AIRSIM  Camera selected: front_left
+2026-05-08T12:15:13 AIRSIM  Camera selected: front_center
+2026-05-08T12:15:17 AIRSIM  Camera selected: bottom_center
+2026-05-08T12:15:20 AIRSIM  Camera selected: front_left
+2026-05-08T12:15:46 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T12:25:47 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T12:26:18 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-08T12:26:18 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-08T12:26:59 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-08T12:27:26 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-08T12:27:27 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-08T12:28:00 AIRSIM  Camera selected: bottom_center
+2026-05-08T12:28:04 AIRSIM  Camera selected: front_left
+2026-05-08T12:28:07 AIRSIM  Camera selected: front_right
+2026-05-08T12:28:13 AIRSIM  Camera selected: front_center
+2026-05-08T12:28:30 AIRSIM  Camera selected: front_left
+2026-05-09T20:27:48 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T20:40:21 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T20:41:53 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T20:48:42 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T20:50:17 TASK    Mission received: 搜索前方60米区域
+2026-05-09T20:50:17 PLAN    Intent resolved: area_search
+2026-05-09T20:50:18 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-09T20:50:47 FLIGHT  Mission stopped.
+2026-05-09T21:04:55 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T21:06:44 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T21:08:38 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T21:10:02 INFO    AeroMind Console started. Waiting for AirSim/UE video input.
+2026-05-09T21:20:31 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T21:22:40 AIRSIM  Camera selected: bottom_center
+2026-05-09T21:22:41 AIRSIM  Camera selected: front_right
+2026-05-09T21:22:44 AIRSIM  Camera selected: front_center
+2026-05-09T21:34:40 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T21:37:03 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:18:56 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:19:23 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-09T22:19:42 AIRSIM  Camera selected: bottom_center
+2026-05-09T22:19:44 AIRSIM  Camera selected: front_left
+2026-05-09T22:19:47 AIRSIM  Camera selected: front_right
+2026-05-09T22:19:50 AIRSIM  Camera selected: 0
+2026-05-09T22:20:04 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:21:07 TOOL    Tool accepted: detect_objects {'target': 'vehicle', 'camera': '0'}
+2026-05-09T22:21:07 ERROR   Tool result: detect_objects | ok=False | 无法加载 YOLO：No module named 'ultralytics'
+2026-05-09T22:21:07 WARN    Detection completed: 无法加载 YOLO：No module named 'ultralytics'
+2026-05-09T22:21:18 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:24:25 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:36:02 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:38:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:46:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T22:51:01 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T23:04:11 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T23:04:43 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-09T23:04:43 PLAN    Intent resolved: formation_flight
+2026-05-09T23:04:43 ERROR   Natural-language tool dispatched: formation_flight | ok=False | formation_flight failed: AgentToolRuntime._formation_slots() takes 3 positional arguments but 4 were given
+2026-05-09T23:05:25 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-09T23:05:25 PLAN    Intent resolved: formation_flight
+2026-05-09T23:05:25 ERROR   Natural-language tool dispatched: formation_flight | ok=False | formation_flight failed: AgentToolRuntime._formation_slots() takes 3 positional arguments but 4 were given
+2026-05-09T23:05:38 FLIGHT  Mission stopped.
+2026-05-09T23:05:42 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-09T23:05:50 TOOL    Tool accepted: detect_objects {'target': 'object', 'camera': 'front_center'}
+2026-05-09T23:06:11 ERROR   Tool result: detect_objects | ok=False | 无法加载 YOLO：ERROR  D:\workspace\airsim_llm_ground\Airsim_Yolov5_ODRT-master\my_best.pt appears to be an Ultralytics YOLOv5 model originally trained with https://github.com/ultralytics/yolov5.
+This model is NOT forwards compatible with YOLOv8 at https://github.com/ultralytics/ultralytics.
+Recommend fixes are to train a new model using the latest 'ultralytics' package or to run a command with an official Ultralytics model, i.e. 'yolo predict model=yolo26n.pt'
+2026-05-09T23:06:11 WARN    Detection completed: 无法加载 YOLO：ERROR  D:\workspace\airsim_llm_ground\Airsim_Yolov5_ODRT-master\my_best.pt appears to be an Ultralytics YOLOv5 model originally trained with https://github.com/ultralytics/yolov5.
+This model is NOT forwards compatible with YOLOv8 at https://github.com/ultralytics/ultralytics.
+Recommend fixes are to train a new model using the latest 'ultralytics' package or to run a command with an official Ultralytics model, i.e. 'yolo predict model=yolo26n.pt'
+2026-05-09T23:53:42 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T23:55:51 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T23:57:11 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-09T23:58:14 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-09T23:58:14 PLAN    Intent resolved: formation_flight
+2026-05-09T23:58:14 ERROR   Natural-language tool dispatched: formation_flight | ok=False | formation_flight failed: AgentToolRuntime._formation_slots() takes 3 positional arguments but 4 were given
+2026-05-10T00:01:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:02:29 FLIGHT  Mission stopped.
+2026-05-10T00:02:41 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:03:14 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T00:03:14 PLAN    Intent resolved: formation_flight
+2026-05-10T00:03:14 ERROR   Natural-language tool dispatched: formation_flight | ok=False | formation_flight failed: AgentToolRuntime._formation_slots() takes 3 positional arguments but 4 were given
+2026-05-10T00:03:56 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:06:48 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:07:45 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:08:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:09:20 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:11:05 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:11:48 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:12:57 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:13:56 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:14:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:15:12 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:15:26 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:16:03 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:16:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:17:11 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:18:38 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:19:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:19:32 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:19:32 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:19:32 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:19:32 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:19:32 DEBUG   Returning 3 UAVs
+2026-05-10T00:19:33 AIRSIM  Camera selected: front_center
+2026-05-10T00:19:34 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:19:34 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:19:34 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:19:34 DEBUG   Returning 3 UAVs
+2026-05-10T00:19:53 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:19:53 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:19:53 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:19:53 DEBUG   Returning 3 UAVs
+2026-05-10T00:19:55 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:19:55 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:19:55 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:19:55 DEBUG   Returning 3 UAVs
+2026-05-10T00:19:56 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T00:19:56 PLAN    Intent resolved: formation_flight
+2026-05-10T00:19:56 PLAN    Structured plan generated; no executable tool dispatched. High risk obstacle blocking the path
+2026-05-10T00:19:56 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:19:56 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:19:56 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:19:56 DEBUG   Returning 3 UAVs
+2026-05-10T00:22:11 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:22:11 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:22:11 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:22:11 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:22:11 DEBUG   Returning 3 UAVs
+2026-05-10T00:22:14 AIRSIM  Camera selected: front_center
+2026-05-10T00:22:14 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:22:15 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:22:15 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:22:15 DEBUG   Returning 3 UAVs
+2026-05-10T00:22:29 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:22:29 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:22:29 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:22:29 DEBUG   Returning 3 UAVs
+2026-05-10T00:23:37 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:23:48 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:23:48 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:23:48 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:23:48 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:23:48 DEBUG   Returning 3 UAVs
+2026-05-10T00:23:50 AIRSIM  Camera selected: front_center
+2026-05-10T00:23:50 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:23:51 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:23:51 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:23:51 DEBUG   Returning 3 UAVs
+2026-05-10T00:23:56 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:23:56 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:23:56 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:23:56 DEBUG   Returning 3 UAVs
+2026-05-10T00:23:58 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:23:58 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:23:58 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:23:58 DEBUG   Returning 3 UAVs
+2026-05-10T00:23:59 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T00:23:59 PLAN    Intent resolved: formation_flight
+2026-05-10T00:23:59 PLAN    Structured plan generated; no executable tool dispatched. High risk obstacle blocking the path
+2026-05-10T00:23:59 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:23:59 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:23:59 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:23:59 DEBUG   Returning 3 UAVs
+2026-05-10T00:27:50 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:27:57 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:27:57 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:27:57 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:27:57 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:27:57 DEBUG   Returning 3 UAVs
+2026-05-10T00:27:58 AIRSIM  Camera selected: front_center
+2026-05-10T00:27:59 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:27:59 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:27:59 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:27:59 DEBUG   Returning 3 UAVs
+2026-05-10T00:29:03 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:29:03 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:29:03 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:29:03 DEBUG   Returning 3 UAVs
+2026-05-10T00:29:05 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:29:05 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:29:05 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:29:05 DEBUG   Returning 3 UAVs
+2026-05-10T00:29:05 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T00:29:05 PLAN    Intent resolved: formation_flight
+2026-05-10T00:29:05 PLAN    Structured plan generated; no executable tool dispatched. High risk obstacle blocking the path
+2026-05-10T00:29:06 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:29:06 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:29:06 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:29:06 DEBUG   Returning 3 UAVs
+2026-05-10T00:30:28 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:30:39 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:30:40 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:30:40 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:30:40 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:30:40 DEBUG   Returning 3 UAVs
+2026-05-10T00:30:42 AIRSIM  Camera selected: front_center
+2026-05-10T00:30:42 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:30:42 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:30:42 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:30:42 DEBUG   Returning 3 UAVs
+2026-05-10T00:30:50 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:30:50 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:30:50 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:30:50 DEBUG   Returning 3 UAVs
+2026-05-10T00:30:51 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:30:51 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:30:51 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:30:51 DEBUG   Returning 3 UAVs
+2026-05-10T00:30:51 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T00:30:51 PLAN    Intent resolved: formation_flight
+2026-05-10T00:30:51 PLAN    Structured plan generated; no executable tool dispatched. High risk obstacle blocking the path
+2026-05-10T00:30:52 DEBUG   Got telemetry for Drone1: x=0.00, y=0.00
+2026-05-10T00:30:52 DEBUG   Got telemetry for Drone2: x=0.00, y=0.00
+2026-05-10T00:30:52 DEBUG   Got telemetry for Drone3: x=0.00, y=0.00
+2026-05-10T00:30:52 DEBUG   Returning 3 UAVs
+2026-05-10T00:35:19 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:35:35 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:35:36 AIRSIM  Camera selected: front_center
+2026-05-10T00:45:44 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:46:02 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:46:08 AIRSIM  Camera selected: front_center
+2026-05-10T00:46:54 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:47:04 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:47:06 AIRSIM  Camera selected: front_center
+2026-05-10T00:51:52 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:52:37 AIRSIM  AirSim connection established.
+2026-05-10T00:52:38 AIRSIM  AirSim connection established.
+2026-05-10T00:54:29 TASK    Mission received: 三架无人机组成 V 字编队
+2026-05-10T00:54:29 PLAN    Intent resolved: formation_flight
+2026-05-10T00:54:29 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T00:56:46 TASK    Mission received: 三架无人机组成 V 字编队
+2026-05-10T00:56:46 PLAN    Intent resolved: formation_flight
+2026-05-10T00:56:46 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T00:56:56 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T00:57:05 AIRSIM  AirSim connection established.
+2026-05-10T00:57:12 AIRSIM  Camera selected: bottom_center
+2026-05-10T00:57:14 AIRSIM  Camera selected: front_center
+2026-05-10T01:00:44 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:00:54 AIRSIM  AirSim connection established.
+2026-05-10T01:00:59 AIRSIM  Camera selected: front_center
+2026-05-10T01:01:17 TASK    Mission received: 三架无人机组成 V 字编队
+2026-05-10T01:01:17 PLAN    Intent resolved: formation_flight
+2026-05-10T01:01:17 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T01:01:32 TASK    Mission received: 三架无人机组成 V 字编队
+2026-05-10T01:01:32 PLAN    Intent resolved: formation_flight
+2026-05-10T01:01:32 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T01:01:52 AIRSIM  Camera selected: front_center
+2026-05-10T01:02:02 AIRSIM  AirSim connection established.
+2026-05-10T01:02:03 AIRSIM  AirSim connection established.
+2026-05-10T01:02:07 FLIGHT  Mission stopped.
+2026-05-10T01:02:12 TASK    Mission received: 三架无人机组成 V 字编队
+2026-05-10T01:02:12 PLAN    Intent resolved: formation_flight
+2026-05-10T01:02:12 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T01:02:14 TOOL    Tool accepted: detect_objects {'target': 'object', 'camera': 'front_center'}
+2026-05-10T01:04:16 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:04:22 AIRSIM  AirSim connection established.
+2026-05-10T01:04:23 AIRSIM  Camera selected: front_center
+2026-05-10T01:05:50 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-10T01:06:13 FLIGHT  Land command sent.
+2026-05-10T01:09:18 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:09:26 AIRSIM  AirSim connection established.
+2026-05-10T01:09:30 AIRSIM  Camera selected: front_center
+2026-05-10T01:09:42 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T01:09:42 PLAN    Intent resolved: formation_flight
+2026-05-10T01:09:42 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T01:10:53 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:11:02 AIRSIM  AirSim connection established.
+2026-05-10T01:11:04 AIRSIM  Camera selected: front_center
+2026-05-10T01:11:15 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T01:11:15 PLAN    Intent resolved: formation_flight
+2026-05-10T01:11:15 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T01:33:10 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:33:29 AIRSIM  AirSim connection established.
+2026-05-10T01:33:30 AIRSIM  Camera selected: front_center
+2026-05-10T01:33:45 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T01:33:45 PLAN    Intent resolved: formation_flight
+2026-05-10T01:33:45 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T01:38:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:39:13 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:39:45 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:51:01 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:51:22 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:52:39 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:54:23 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T01:54:34 AIRSIM  AirSim connection established.
+2026-05-10T01:55:00 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T01:55:00 PLAN    Intent resolved: formation_flight
+2026-05-10T01:55:00 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T02:00:52 AIRSIM  AirSim connection established.
+2026-05-10T02:01:10 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T02:01:10 PLAN    Intent resolved: formation_flight
+2026-05-10T02:01:10 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T02:02:16 AIRSIM  Camera selected: bottom_center
+2026-05-10T02:02:21 AIRSIM  Camera selected: bottom_center
+2026-05-10T02:08:31 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T02:08:40 AIRSIM  AirSim connection established.
+2026-05-10T02:09:01 TASK    Mission received: 三架无人机组成 V 字编队，沿 X 轴飞行 40 米并保持避障
+2026-05-10T02:09:01 PLAN    Intent resolved: formation_flight
+2026-05-10T02:09:01 TOOL    Natural-language tool dispatched: formation_flight | ok=True | 编队飞行已启动：3 架，队形 V
+2026-05-10T10:10:47 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:15:14 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:15:24 AIRSIM  AirSim connection established.
+2026-05-10T10:18:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:31:27 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:31:57 WARN    AirSim connection failed: Request timed out
+2026-05-10T10:41:08 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:41:17 AIRSIM  AirSim connection established.
+2026-05-10T10:41:19 AIRSIM  AirSim connection established.
+2026-05-10T10:41:19 AIRSIM  AirSim connection established.
+2026-05-10T10:42:44 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:42:55 AIRSIM  AirSim connection established.
+2026-05-10T10:42:55 AIRSIM  AirSim connection established.
+2026-05-10T10:42:55 AIRSIM  AirSim connection established.
+2026-05-10T10:42:56 AIRSIM  AirSim connection established.
+2026-05-10T10:44:24 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-10T10:44:24 PLAN    Intent resolved: area_search
+2026-05-10T10:44:25 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-10T10:46:03 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:46:08 AIRSIM  AirSim connection established.
+2026-05-10T10:48:05 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:48:11 AIRSIM  AirSim connection established.
+2026-05-10T10:48:12 AIRSIM  AirSim connection established.
+2026-05-10T10:51:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:51:50 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:51:59 AIRSIM  AirSim connection established.
+2026-05-10T10:51:59 AIRSIM  AirSim connection established.
+2026-05-10T10:52:10 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-10T10:52:10 PLAN    Intent resolved: area_search
+2026-05-10T10:52:10 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-10T10:57:26 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:58:21 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:58:45 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T10:59:08 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:07:08 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:07:39 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:07:48 AIRSIM  AirSim connection established.
+2026-05-10T11:09:51 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:10:09 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:10:26 AIRSIM  AirSim connection established.
+2026-05-10T11:10:26 AIRSIM  AirSim connection established.
+2026-05-10T11:10:27 AIRSIM  AirSim connection established.
+2026-05-10T11:10:27 AIRSIM  AirSim connection established.
+2026-05-10T11:10:27 AIRSIM  AirSim connection established.
+2026-05-10T11:10:28 AIRSIM  AirSim connection established.
+2026-05-10T11:11:23 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:11:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:11:53 AIRSIM  AirSim connection established.
+2026-05-10T11:15:20 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-10T11:15:52 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-10T11:15:57 FLIGHT  Hover command sent.
+2026-05-10T11:17:19 FLIGHT  Mission stopped.
+2026-05-10T11:17:53 TASK    Mission received: 搜索前方 10 米左右 10 米范围内的车辆，高度 8 米
+2026-05-10T11:17:53 PLAN    Intent resolved: area_search
+2026-05-10T11:17:53 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 4 waypoints
+2026-05-10T11:20:34 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:20:40 AIRSIM  AirSim connection established.
+2026-05-10T11:20:57 FLIGHT  Takeoff command sent: altitude=8.0m
+2026-05-10T11:31:09 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:32:39 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:32:39 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:34:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T11:40:00 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T16:41:03 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-10T16:41:15 AIRSIM  AirSim connection established.
+2026-05-10T16:41:15 AIRSIM  AirSim connection established.
+2026-05-10T16:41:15 AIRSIM  AirSim connection established.
+2026-05-10T16:41:16 AIRSIM  AirSim connection established.
+2026-05-10T16:41:37 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-10T16:41:37 PLAN    Intent resolved: area_search
+2026-05-10T16:41:37 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-10T16:42:51 FLIGHT  Mission stopped.
+2026-05-11T21:44:48 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T21:45:37 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:09:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:10:39 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:11:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:12:38 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:21:33 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:22:23 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:23:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:23:32 WARN    AirSim connection failed: Request timed out
+2026-05-11T22:23:35 WARN    AirSim connection failed: Request timed out
+2026-05-11T22:23:38 WARN    AirSim connection failed: Request timed out
+2026-05-11T22:23:38 AIRSIM  AirSim connection established.
+2026-05-11T22:23:38 AIRSIM  AirSim connection established.
+2026-05-11T22:23:39 AIRSIM  AirSim connection established.
+2026-05-11T22:23:39 AIRSIM  AirSim connection established.
+2026-05-11T22:23:39 AIRSIM  AirSim connection established.
+2026-05-11T22:25:27 TASK    Mission received: 采集图像数据集，用于 YOLO 训练，扫描前方 40 米，宽度 20 米，高度 8 米，最多采集 80 张图片
+2026-05-11T22:25:27 PLAN    Intent resolved: image_collection
+2026-05-11T22:25:27 TOOL    Natural-language tool dispatched: collect_images | ok=True | Image collection started: collect_1778509526
+2026-05-11T22:26:15 FLIGHT  Mission stopped.
+2026-05-11T22:26:41 TASK    Mission received: 起飞并 采集图像数据集，用于 YOLO 训练，扫描前方 40 米，宽度 20 米，高度 8 米，最多采集 80 张图片
+2026-05-11T22:26:41 PLAN    Intent resolved: image_collection
+2026-05-11T22:26:41 TOOL    Natural-language tool dispatched: collect_images | ok=True | Image collection started: collect_1778509600
+2026-05-11T22:35:27 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:35:52 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:36:10 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:37:57 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:38:03 AIRSIM  AirSim connection established.
+2026-05-11T22:38:03 AIRSIM  AirSim connection established.
+2026-05-11T22:38:11 TASK    Mission received: 扫描图像，采集 20 张训练图片，高度 8 米，前方 20 米，宽度 10 米
+2026-05-11T22:38:11 PLAN    Intent resolved: object_or_area_scan
+2026-05-11T22:38:11 PLAN    Structured plan generated; no executable tool dispatched.
+2026-05-11T22:39:02 FLIGHT  Mission stopped.
+2026-05-11T22:39:29 TASK    Mission received: 采集图像数据集，用于 YOLO 训练，扫描前方 40 米，宽度 20 米，高度 8 米，最多采集 80 张图片
+2026-05-11T22:39:29 PLAN    Intent resolved: image_collection
+2026-05-11T22:39:29 TOOL    Natural-language tool dispatched: collect_images | ok=True | Image collection started: collect_1778510369
+2026-05-11T22:41:29 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:41:39 AIRSIM  AirSim connection established.
+2026-05-11T22:41:40 AIRSIM  AirSim connection established.
+2026-05-11T22:41:52 TASK    Mission received: 起飞
+2026-05-11T22:41:52 PLAN    Intent resolved: takeoff
+2026-05-11T22:41:58 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-11T22:43:32 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:45:39 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:45:44 AIRSIM  AirSim connection established.
+2026-05-11T22:45:44 AIRSIM  AirSim connection established.
+2026-05-11T22:45:54 TASK    Mission received: 起飞
+2026-05-11T22:45:54 PLAN    Intent resolved: takeoff
+2026-05-11T22:46:00 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-11T22:46:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:47:05 AIRSIM  AirSim connection established.
+2026-05-11T22:47:05 AIRSIM  AirSim connection established.
+2026-05-11T22:47:17 TASK    Mission received: 起飞
+2026-05-11T22:47:17 PLAN    Intent resolved: takeoff
+2026-05-11T22:47:24 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-11T22:52:43 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:53:27 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:54:44 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:54:48 AIRSIM  AirSim connection established.
+2026-05-11T22:54:48 AIRSIM  AirSim connection established.
+2026-05-11T22:54:55 TASK    Mission received: 起飞
+2026-05-11T22:54:55 PLAN    Intent resolved: takeoff
+2026-05-11T22:55:01 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-11T22:57:55 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:58:18 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:58:42 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:59:40 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T22:59:49 AIRSIM  AirSim connection established.
+2026-05-11T22:59:57 TASK    Mission received: 起飞
+2026-05-11T22:59:57 PLAN    Intent resolved: takeoff
+2026-05-11T23:00:03 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-11T23:02:26 AIRSIM  Camera selected: front_left
+2026-05-11T23:02:42 AIRSIM  Camera selected: front_left
+2026-05-11T23:03:01 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:04:03 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:04:10 AIRSIM  AirSim connection established.
+2026-05-11T23:04:10 AIRSIM  AirSim connection established.
+2026-05-11T23:04:19 TASK    Mission received: 起飞
+2026-05-11T23:04:19 PLAN    Intent resolved: takeoff
+2026-05-11T23:04:24 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-11T23:05:13 FLIGHT  Mission stopped.
+2026-05-11T23:05:24 TASK    Mission received: 采集图像数据集，用于 YOLO 训练，扫描前方 40 米，宽度 20 米，高度 8 米，最多采集 80 张图片
+2026-05-11T23:05:24 PLAN    Intent resolved: image_collection
+2026-05-11T23:05:24 PLAN    Structured plan generated; no executable tool dispatched. Cannot execute flight command while in collision state
+2026-05-11T23:06:50 FLIGHT  Mission stopped.
+2026-05-11T23:07:00 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-11T23:07:00 PLAN    Intent resolved: area_search
+2026-05-11T23:07:00 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-11T23:08:10 AIRSIM  Camera selected: front_center
+2026-05-11T23:17:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:20:12 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:20:19 AIRSIM  AirSim connection established.
+2026-05-11T23:20:19 AIRSIM  AirSim connection established.
+2026-05-11T23:20:33 TASK    Mission received: 起飞
+2026-05-11T23:20:33 PLAN    Intent resolved: takeoff
+2026-05-11T23:20:38 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-11T23:20:57 FLIGHT  Mission stopped.
+2026-05-11T23:21:14 SAFE    Tool rejected: detect_objects | Cannot execute flight command while in collision state
+2026-05-11T23:21:44 TASK    Mission received: 采集图像数据集，用于 YOLO 训练，扫描前方 40 米，宽度 20 米，高度 8 米，最多采集 80 张图片
+2026-05-11T23:21:44 PLAN    Intent resolved: image_collection
+2026-05-11T23:21:44 TOOL    Natural-language tool dispatched: collect_images | ok=True | Image collection started: collect_1778512903
+2026-05-11T23:23:26 FLIGHT  Mission stopped.
+2026-05-11T23:23:51 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-11T23:23:51 PLAN    Intent resolved: area_search
+2026-05-11T23:23:51 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-11T23:27:15 FLIGHT  Mission stopped.
+2026-05-11T23:27:24 AIRSIM  AirSim connection established.
+2026-05-11T23:27:24 AIRSIM  AirSim connection established.
+2026-05-11T23:27:36 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-11T23:27:51 FLIGHT  Hover command sent.
+2026-05-11T23:28:36 FLIGHT  Mission stopped.
+2026-05-11T23:29:52 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:29:58 AIRSIM  AirSim connection established.
+2026-05-11T23:29:59 AIRSIM  AirSim connection established.
+2026-05-11T23:30:00 AIRSIM  AirSim connection established.
+2026-05-11T23:31:44 TOOL    Tool accepted: search_area {'target': 'vehicle', 'area': {'x_min': 0.0, 'x_max': 40.0, 'y_min': -15.0, 'y_max': 15.0}, 'altitude_m': 15.0, 'spacing_m': 10.0, 'speed_mps': 1.5, 'avoidance': True, 'planned_avoidance': True, 'obstacle_distance_m': 12.0, 'avoidance_offset_m': 8.0, 'scan_margin_m': 4.0, 'pre_scan': True, 'pre_scan_stop_on_high_risk': True, 'strategy': 'lawnmower'}
+2026-05-11T23:31:44 TOOL    Tool result: search_area | ok=True | Search area mission started with 6 waypoints
+2026-05-11T23:34:05 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:36:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:36:42 AIRSIM  AirSim connection established.
+2026-05-11T23:36:42 AIRSIM  AirSim connection established.
+2026-05-11T23:36:51 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-11T23:36:51 PLAN    Intent resolved: area_search
+2026-05-11T23:36:51 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-11T23:36:51 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-11T23:44:03 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:44:52 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:44:56 AIRSIM  AirSim connection established.
+2026-05-11T23:44:57 AIRSIM  AirSim connection established.
+2026-05-11T23:44:57 MISSION Mission progress: idle | No active tool mission.
+2026-05-11T23:45:04 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-11T23:45:04 PLAN    Intent resolved: area_search
+2026-05-11T23:45:04 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-11T23:45:04 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-11T23:45:12 MISSION Mission progress: taking_off | Climbing before search_area: ALT 5.3/8.0m. | waypoint 0/8
+2026-05-11T23:48:25 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:48:28 AIRSIM  AirSim connection established.
+2026-05-11T23:48:30 AIRSIM  AirSim connection established.
+2026-05-11T23:48:30 MISSION Mission progress: idle | No active tool mission.
+2026-05-11T23:48:33 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-11T23:48:33 PLAN    Intent resolved: area_search
+2026-05-11T23:48:33 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-11T23:48:34 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-11T23:48:44 MISSION Mission progress: taking_off | Climbing before search_area: ALT 3.6/8.0m. | waypoint 0/8
+2026-05-11T23:49:27 FLIGHT  Mission stopped.
+2026-05-11T23:49:29 MISSION Mission progress: failed | Takeoff before search_area timed out. | waypoint 0/8
+2026-05-11T23:58:29 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-11T23:59:23 AIRSIM  AirSim connection established.
+2026-05-11T23:59:23 AIRSIM  AirSim connection established.
+2026-05-11T23:59:23 MISSION Mission progress: idle | No active tool mission.
+2026-05-11T23:59:36 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-11T23:59:36 PLAN    Intent resolved: area_search
+2026-05-11T23:59:36 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-11T23:59:36 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-11T23:59:46 MISSION Mission progress: taking_off | Climbing before search_area: ALT 5.1/8.0m. | waypoint 0/8
+2026-05-12T00:03:41 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:03:45 AIRSIM  AirSim connection established.
+2026-05-12T00:03:46 AIRSIM  AirSim connection established.
+2026-05-12T00:03:46 MISSION Mission progress: idle | No active tool mission.
+2026-05-12T00:03:51 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-12T00:03:51 PLAN    Intent resolved: area_search
+2026-05-12T00:03:51 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-12T00:03:52 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-12T00:04:03 MISSION Mission progress: pre_scanning | Pre-scan: sample 2/5, mapped 128 obstacle points. | waypoint 0/8
+2026-05-12T00:06:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:08:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:08:34 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:09:12 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:09:16 AIRSIM  AirSim connection established.
+2026-05-12T00:09:16 AIRSIM  AirSim connection established.
+2026-05-12T00:09:16 MISSION Mission progress: idle | No active tool mission.
+2026-05-12T00:09:21 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-12T00:09:21 PLAN    Intent resolved: area_search
+2026-05-12T00:09:21 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-12T00:09:21 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-12T00:09:30 MISSION Mission progress: pre_scanning | Pre-scan: collecting LiDAR samples before area search. | waypoint 0/8
+2026-05-12T00:12:30 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:13:23 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:13:33 WARN    AirSim connection failed: Request timed out
+2026-05-12T00:13:36 WARN    AirSim connection failed: Request timed out
+2026-05-12T00:13:39 MISSION Mission progress: idle | No active tool mission.
+2026-05-12T00:13:42 WARN    AirSim connection failed: Request timed out
+2026-05-12T00:13:45 WARN    AirSim connection failed: Request timed out
+2026-05-12T00:13:48 WARN    AirSim connection failed: Request timed out
+2026-05-12T00:13:51 WARN    AirSim connection failed: Request timed out
+2026-05-12T00:13:53 AIRSIM  AirSim connection established.
+2026-05-12T00:13:55 AIRSIM  AirSim connection established.
+2026-05-12T00:13:55 AIRSIM  AirSim connection established.
+2026-05-12T00:13:55 AIRSIM  AirSim connection established.
+2026-05-12T00:13:57 AIRSIM  AirSim connection established.
+2026-05-12T00:14:02 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-12T00:14:02 PLAN    Intent resolved: area_search
+2026-05-12T00:14:02 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-12T00:14:02 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-12T00:14:14 MISSION Mission progress: taking_off | Climbing before search_area: ALT 1.8/8.0m. | waypoint 0/8
+2026-05-12T00:15:42 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-12T00:15:43 MISSION Mission progress: failed | Takeoff before search_area timed out. | waypoint 0/8
+2026-05-12T00:16:43 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:21:05 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:21:39 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-12T00:21:47 AIRSIM  AirSim connection established.
+2026-05-12T00:21:47 AIRSIM  AirSim connection established.
+2026-05-12T00:21:47 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-12T00:21:54 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-12T00:21:54 PLAN    Intent resolved: area_search
+2026-05-12T00:21:54 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-12T00:21:54 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-12T00:22:15 MISSION Mission progress: taking_off | Climbing before search_area: ALT 0.0/8.0m. | waypoint 0/8 | alt=2.9m speed=1.6m/s d2wp=8.0m risk=- obs=- front=- planner=wait
+2026-05-12T00:23:53 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:06:22 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:11:08 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:12:34 AIRSIM  AirSim connection established.
+2026-05-14T11:12:38 AIRSIM  AirSim connection established.
+2026-05-14T11:12:39 AIRSIM  AirSim connection established.
+2026-05-14T11:12:46 AIRSIM  AirSim connection established.
+2026-05-14T11:12:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:13:12 AIRSIM  AirSim connection established.
+2026-05-14T11:13:18 AIRSIM  AirSim connection established.
+2026-05-14T11:14:09 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:16:59 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:17:12 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:29:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T11:30:49 AIRSIM  AirSim connection established.
+2026-05-14T11:30:50 AIRSIM  AirSim connection established.
+2026-05-14T11:30:50 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-14T11:33:51 TASK    Mission received: 起飞
+2026-05-14T11:33:51 PLAN    Intent resolved: takeoff
+2026-05-14T11:33:51 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 1, 'formation_flight': 0, 'area_search': 0, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-14T11:33:58 TOOL    Natural-language tool dispatched: takeoff | ok=True | Takeoff command sent to 8.0m
+2026-05-14T11:33:59 MISSION Mission progress: holding | Takeoff complete; holding at 8.0m. | alt=7.5m speed=0.6m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-14T12:33:26 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T12:50:59 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T12:54:35 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T12:57:00 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T12:57:28 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-14T13:10:16 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
