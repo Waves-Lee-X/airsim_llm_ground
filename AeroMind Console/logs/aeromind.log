@@ -710,3 +710,505 @@ Recommend fixes are to train a new model using the latest 'ultralytics' package 
 2026-05-14T12:57:00 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
 2026-05-14T12:57:28 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
 2026-05-14T13:10:16 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T12:01:53 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T12:08:17 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T12:11:34 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T12:14:17 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T12:20:25 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T12:20:31 AIRSIM  AirSim connection established.
+2026-05-22T12:20:32 AIRSIM  AirSim connection established.
+2026-05-22T12:20:32 AIRSIM  AirSim connection established.
+2026-05-22T12:20:32 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T12:20:33 AIRSIM  AirSim connection established.
+2026-05-22T16:30:50 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T16:30:59 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T16:42:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T16:42:57 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T17:14:05 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T20:10:53 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T21:40:02 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T21:40:41 AIRSIM  AirSim connection established.
+2026-05-22T21:40:42 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T21:41:00 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-22T21:47:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T21:52:37 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T21:52:47 AIRSIM  AirSim connection established.
+2026-05-22T21:52:48 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T21:52:55 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-22T21:53:28 FLIGHT  Land command sent.
+2026-05-22T22:33:08 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T22:33:14 AIRSIM  AirSim connection established.
+2026-05-22T22:33:15 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T22:33:24 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-22T22:33:30 FLIGHT  Hover command sent.
+2026-05-22T22:33:44 SAFE    Return-to-launch command sent.
+2026-05-22T22:34:40 FLIGHT  Land command sent.
+2026-05-22T22:36:13 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T22:36:18 AIRSIM  AirSim connection established.
+2026-05-22T22:36:19 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T22:36:35 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T22:36:35 PLAN    Intent resolved: area_search
+2026-05-22T22:36:35 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T22:36:36 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T22:36:39 MISSION Mission progress: taking_off | Climbing before search_area: ALT 3.6/8.0m. | waypoint 0/8 | alt=4.6m speed=2.0m/s d2wp=4.4m risk=- obs=- front=- planner=wait
+2026-05-22T22:50:03 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T22:50:07 AIRSIM  AirSim connection established.
+2026-05-22T22:50:07 AIRSIM  AirSim connection established.
+2026-05-22T22:50:07 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T22:50:15 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T22:50:15 PLAN    Intent resolved: area_search
+2026-05-22T22:50:15 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T22:50:15 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T22:50:20 MISSION Mission progress: taking_off | Climbing before search_area: ALT 4.3/8.0m. | waypoint 0/8 | alt=4.4m speed=0.7m/s d2wp=3.7m risk=- obs=- front=- planner=wait
+2026-05-22T22:59:18 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:03:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:03:40 AIRSIM  AirSim connection established.
+2026-05-22T23:03:40 AIRSIM  AirSim connection established.
+2026-05-22T23:03:40 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T23:03:46 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T23:03:46 PLAN    Intent resolved: area_search
+2026-05-22T23:03:46 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T23:03:46 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T23:03:54 MISSION Mission progress: pre_scanning | Pre-scan: sampling 1/5 at X 30.0, Y 0.0. | waypoint 0/8 | alt=7.9m speed=0.1m/s d2wp=0.2m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:11:18 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:12:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:13:04 AIRSIM  AirSim connection established.
+2026-05-22T23:13:04 AIRSIM  AirSim connection established.
+2026-05-22T23:13:04 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T23:13:09 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T23:13:09 PLAN    Intent resolved: area_search
+2026-05-22T23:13:09 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T23:13:09 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T23:13:16 MISSION Mission progress: pre_scanning | Pre-scan: collecting LiDAR samples before area search. | waypoint 0/8 | alt=7.9m speed=0.1m/s d2wp=0.2m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:16:01 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:21:05 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:21:15 AIRSIM  AirSim connection established.
+2026-05-22T23:21:16 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T23:21:19 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T23:21:19 PLAN    Intent resolved: area_search
+2026-05-22T23:21:19 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T23:21:20 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T23:21:27 MISSION Mission progress: pre_scanning | Pre-scan: airborne, confirming obstacle map before A* planning. | waypoint 0/8 | alt=7.7m speed=0.0m/s d2wp=0.3m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:26:31 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:30:54 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:32:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:32:51 AIRSIM  AirSim connection established.
+2026-05-22T23:32:52 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T23:32:55 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T23:32:55 PLAN    Intent resolved: area_search
+2026-05-22T23:32:55 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T23:32:56 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T23:33:03 MISSION Mission progress: pre_scanning | Pre-scan: collecting LiDAR samples before area search. | waypoint 0/8 | alt=7.8m speed=0.0m/s d2wp=0.2m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:40:57 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:46:33 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:47:03 AIRSIM  AirSim connection established.
+2026-05-22T23:47:04 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T23:47:08 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T23:47:08 PLAN    Intent resolved: area_search
+2026-05-22T23:47:08 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T23:47:09 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T23:47:16 MISSION Mission progress: pre_scanning | Pre-scan: collecting LiDAR samples before area search. | waypoint 0/8 | alt=7.7m speed=0.0m/s d2wp=0.3m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:50:22 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:52:25 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:52:33 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T23:52:33 PLAN    Intent resolved: area_search
+2026-05-22T23:52:33 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T23:52:39 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T23:52:41 AIRSIM  AirSim connection established.
+2026-05-22T23:52:41 AIRSIM  AirSim connection established.
+2026-05-22T23:52:41 AIRSIM  AirSim connection established.
+2026-05-22T23:52:43 AIRSIM  AirSim connection established.
+2026-05-22T23:52:44 MISSION Mission progress: taking_off | Climbing before search_area: ALT 7.7/8.0m. | waypoint 0/8 | alt=7.7m speed=0.0m/s d2wp=0.3m risk=- obs=- front=- planner=wait
+2026-05-22T23:52:44 MISSION Mission progress: pre_scanning | Pre-scan: airborne, confirming obstacle map before A* planning. | waypoint 0/8 | alt=7.7m speed=0.0m/s d2wp=0.3m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:52:44 AIRSIM  AirSim connection established.
+2026-05-22T23:52:44 MISSION Mission progress: pre_scanning | Pre-scan: collecting LiDAR samples before area search. | waypoint 0/8 | alt=7.7m speed=0.2m/s d2wp=0.3m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:52:44 AIRSIM  AirSim connection established.
+2026-05-22T23:52:44 MISSION Mission progress: pre_scanning | Pre-scan: sampling 1/5 at X 30.0, Y 0.0. | waypoint 0/8 | alt=7.7m speed=1.2m/s d2wp=0.3m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-22T23:58:11 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:58:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-22T23:58:51 AIRSIM  AirSim connection established.
+2026-05-22T23:58:52 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-22T23:58:56 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-22T23:58:56 PLAN    Intent resolved: area_search
+2026-05-22T23:58:56 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-22T23:58:57 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-22T23:59:04 MISSION Mission progress: pre_scanning | Pre-scan: collecting LiDAR samples before area search. | waypoint 0/8 | alt=7.7m speed=0.1m/s d2wp=0.3m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-23T00:01:39 AIRSIM  Camera selected: bottom_center
+2026-05-23T00:01:41 MISSION Mission progress: blocked | Pre-scan could not create a safe scan route: Area contains dense obstacles or the planned scan route intersects blocked cells; split or shrink the mission area. | waypoint 0/8 | alt=0.0m speed=0.3m/s d2wp=0.3m risk=- obs=- front=- planner=wait/pre_scan
+2026-05-23T00:01:42 AIRSIM  Camera selected: front_left
+2026-05-23T00:02:48 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T00:03:55 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T00:03:59 AIRSIM  AirSim connection established.
+2026-05-23T00:03:59 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T00:04:03 AIRSIM  Camera selected: front_center
+2026-05-23T00:04:15 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T00:04:15 PLAN    Intent resolved: area_search
+2026-05-23T00:04:15 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T00:04:15 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T00:04:22 MISSION Mission progress: running | Flying to waypoint 1/8. | waypoint 1/8 | alt=7.8m speed=0.0m/s d2wp=0.2m risk=- obs=- front=- planner=wait
+2026-05-23T00:08:45 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T00:09:59 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T00:10:02 AIRSIM  AirSim connection established.
+2026-05-23T00:10:03 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T00:10:11 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T00:10:11 PLAN    Intent resolved: area_search
+2026-05-23T00:10:11 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T00:10:11 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T00:10:15 MISSION Mission progress: taking_off | Climbing before search_area: ALT 5.2/8.0m. | waypoint 0/8 | alt=0.0m speed=0.0m/s d2wp=2.8m risk=- obs=- front=- planner=wait
+2026-05-23T00:17:32 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T00:17:51 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T00:18:03 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T00:18:03 PLAN    Intent resolved: area_search
+2026-05-23T00:18:03 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T00:18:03 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T00:18:07 MISSION Mission progress: taking_off | Climbing before search_area: ALT 5.2/8.0m. | waypoint 0/8 | alt=5.2m speed=0.6m/s d2wp=2.8m risk=- obs=- front=- planner=wait
+2026-05-23T00:18:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T00:18:56 AIRSIM  AirSim connection established.
+2026-05-23T00:18:57 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T00:19:01 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T00:19:01 PLAN    Intent resolved: area_search
+2026-05-23T00:19:01 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T00:19:02 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T00:19:05 MISSION Mission progress: taking_off | Climbing before search_area: ALT 4.7/8.0m. | waypoint 0/8 | alt=5.0m speed=2.0m/s d2wp=3.3m risk=- obs=- front=- planner=wait
+2026-05-23T00:24:07 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T11:53:19 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T11:53:26 AIRSIM  AirSim connection established.
+2026-05-23T11:53:27 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T11:53:34 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T11:53:34 PLAN    Intent resolved: area_search
+2026-05-23T11:53:34 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T11:53:34 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T11:53:41 MISSION Mission progress: running | Flying to waypoint 1/8. | waypoint 1/8 | alt=8.1m speed=0.5m/s d2wp=0.0m risk=- obs=- front=- planner=wait
+2026-05-23T11:58:34 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T11:59:37 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T11:59:45 AIRSIM  AirSim connection established.
+2026-05-23T11:59:45 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T11:59:50 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T11:59:50 PLAN    Intent resolved: area_search
+2026-05-23T11:59:50 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T11:59:50 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T11:59:57 MISSION Mission progress: running | Flying to waypoint 1/8. | waypoint 1/8 | alt=8.1m speed=0.5m/s d2wp=0.0m risk=- obs=- front=- planner=wait
+2026-05-23T12:03:42 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T12:08:51 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T12:08:59 AIRSIM  AirSim connection established.
+2026-05-23T12:08:59 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T12:09:02 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T12:09:02 PLAN    Intent resolved: area_search
+2026-05-23T12:09:02 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T12:09:02 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T12:09:09 MISSION Mission progress: running | Flying to waypoint 1/8. | waypoint 1/8 | alt=8.1m speed=0.8m/s d2wp=0.0m risk=- obs=- front=- planner=wait
+2026-05-23T12:10:44 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T12:10:45 FLIGHT  Mission stopped.
+2026-05-23T12:10:45 MISSION Mission progress: recovered | Collision detected with 'SM_PavementFloor4m461'; recovery attempted and search stopped. | waypoint 1/8 | alt=8.1m speed=0.0m/s d2wp=18.1m risk=- obs=- front=40.0m planner=ok
+2026-05-23T12:10:45 MISSION Mission progress: recovered | Collision detected with 'SM_PavementFloor4m461'; recovery attempted and search stopped. | waypoint 1/8 | alt=8.1m speed=0.0m/s d2wp=18.1m risk=- obs=- front=40.0m planner=ok
+2026-05-23T13:08:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T13:13:47 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T13:13:52 AIRSIM  AirSim connection established.
+2026-05-23T13:13:52 AIRSIM  AirSim connection established.
+2026-05-23T13:13:53 AIRSIM  AirSim connection established.
+2026-05-23T13:13:53 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T13:13:57 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T13:13:57 PLAN    Intent resolved: area_search
+2026-05-23T13:13:57 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T13:13:58 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T13:14:04 MISSION Mission progress: running | Flying to waypoint 1/8. | waypoint 1/8 | alt=8.1m speed=0.7m/s d2wp=0.0m risk=- obs=- front=- planner=wait
+2026-05-23T13:22:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T13:23:48 AIRSIM  AirSim connection established.
+2026-05-23T13:23:48 AIRSIM  AirSim connection established.
+2026-05-23T13:41:22 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T13:41:34 WARN    AirSim connection failed: Request timed out
+2026-05-23T13:41:37 WARN    AirSim connection failed: Request timed out
+2026-05-23T13:41:40 WARN    AirSim connection failed: Request timed out
+2026-05-23T13:41:43 WARN    AirSim connection failed: Request timed out
+2026-05-23T13:51:20 AIRSIM  AirSim connection established.
+2026-05-23T13:51:20 AIRSIM  AirSim connection established.
+2026-05-23T13:51:20 AIRSIM  AirSim connection established.
+2026-05-23T13:52:22 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T13:55:41 AIRSIM  Camera probe completed: [{'camera': 'front_center', 'image_type': 0, 'ok': False, 'bytes': 0, 'content_type': '', 'error': 'Request timed out'}, {'camera': 'bottom_center', 'image_type': 0, 'ok': False, 'bytes': 0, 'content_type': '', 'error': "'NoneType' object has no attribute 'simGetImages'"}, {'camera': '0', 'image_type': 0, 'ok': False, 'bytes': 0, 'content_type': '', 'error': "'NoneType' object has no attribute 'simGetImages'"}, {'camera': 'front_left', 'image_type': 0, 'ok': False, 'bytes': 0, 'content_type': '', 'error': "'NoneType' object has no attribute 'simGetImages'"}, {'camera': 'front_right', 'image_type': 0, 'ok': False, 'bytes': 0, 'content_type': '', 'error': "'NoneType' object has no attribute 'simGetImages'"}]
+2026-05-23T14:00:00 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T14:00:08 AIRSIM  AirSim connection established.
+2026-05-23T14:00:09 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T14:00:15 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T14:00:15 PLAN    Intent resolved: area_search
+2026-05-23T14:00:15 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T14:00:15 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T14:00:22 MISSION Mission progress: running | Flying to waypoint 1/8. | waypoint 1/8 | alt=8.1m speed=0.7m/s d2wp=0.0m risk=- obs=- front=- planner=wait
+2026-05-23T14:01:53 FLIGHT  Mission stopped.
+2026-05-23T14:01:54 MISSION Mission progress: recovered | Collision detected with 'SM_PavementFloor4m461'; recovery attempted and search stopped. | waypoint 1/8 | alt=0.0m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.0m planner=ok
+2026-05-23T14:02:08 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T14:02:57 SAFE    Return-to-launch command sent.
+2026-05-23T14:03:37 FLIGHT  Land command sent.
+2026-05-23T14:04:09 FLIGHT  Land command sent.
+2026-05-23T14:05:17 FLIGHT  Mission stopped.
+2026-05-23T15:09:40 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T15:14:12 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T15:34:45 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T15:36:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T15:37:06 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T15:38:45 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T16:00:44 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T16:00:49 AIRSIM  AirSim connection established.
+2026-05-23T16:00:50 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:00:56 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T16:00:56 PLAN    Intent resolved: area_search
+2026-05-23T16:00:56 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T16:00:57 ERROR   Natural-language tool dispatched: search_area | ok=False | search_area failed: log_event() got multiple values for argument 'event'
+2026-05-23T16:00:57 MISSION Mission progress: running | Search area started for target 'vehicle'. | waypoint 0/8 | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:01:52 FLIGHT  Mission stopped.
+2026-05-23T16:01:53 MISSION Mission progress: running | Search area started for target 'vehicle'. | waypoint 0/8 | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:02:00 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T16:02:00 MISSION Mission progress: running | Search area started for target 'vehicle'. | waypoint 0/8 | alt=8.1m speed=0.4m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:02:18 ERROR   Land failed: AirSim is not connected: Request timed out
+2026-05-23T16:02:18 TRACE   Traceback (most recent call last):
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\server.py", line 594, in flight_land
+    self.executor.land()
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\task_executor.py", line 33, in land
+    self.adapter.land()
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\airsim_adapter.py", line 682, in land
+    client = self._require_client()
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\airsim_adapter.py", line 1500, in _require_client
+    raise RuntimeError(f"AirSim is not connected: {self.last_error}")
+RuntimeError: AirSim is not connected: Request timed out
+
+2026-05-23T16:02:30 MISSION Mission progress: running | Search area started for target 'vehicle'. | waypoint 0/8 | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:02:34 FLIGHT  Land command sent.
+2026-05-23T16:02:34 MISSION Mission progress: running | Search area started for target 'vehicle'. | waypoint 0/8 | alt=7.4m speed=0.3m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:05:50 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T16:05:55 AIRSIM  AirSim connection established.
+2026-05-23T16:05:56 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:05:59 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T16:05:59 PLAN    Intent resolved: area_search
+2026-05-23T16:05:59 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T16:06:00 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T16:06:07 MISSION Mission progress: running | Planner fallback: temporal grid unavailable; flying direct segment with distance safety bubble. | waypoint 1/8 | alt=8.1m speed=0.1m/s d2wp=0.0m risk=- obs=- front=40.2m planner=ok
+2026-05-23T16:06:36 FLIGHT  Mission stopped.
+2026-05-23T16:06:36 MISSION Mission progress: failed | hold_current_position failed, hover fallback also failed: IOLoop is already running | waypoint 1/8 | alt=0.0m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.2m planner=ok
+2026-05-23T16:06:43 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T16:06:43 PLAN    Intent resolved: area_search
+2026-05-23T16:06:43 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T16:06:43 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T16:06:43 MISSION Mission progress: failed | hold_current_position failed, hover fallback also failed: IOLoop is already running | waypoint 0/8 | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=40.2m planner=wait
+2026-05-23T16:06:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T16:07:02 AIRSIM  AirSim connection established.
+2026-05-23T16:07:03 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:07:09 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-23T16:07:09 PLAN    Intent resolved: area_search
+2026-05-23T16:07:09 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-23T16:07:10 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-23T16:07:17 MISSION Mission progress: running | Flying to waypoint 1/8. | waypoint 1/8 | alt=8.1m speed=0.7m/s d2wp=0.0m risk=- obs=- front=- planner=wait
+2026-05-23T16:29:04 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T16:29:09 AIRSIM  AirSim connection established.
+2026-05-23T16:29:10 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:29:23 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T16:30:00 TOOL    Tool accepted: autonomous_nav {'x': 5.9, 'y': -20.5, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:30:09 TOOL    Tool accepted: autonomous_nav {'x': -6.9, 'y': -21.5, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:30:57 TOOL    Tool accepted: autonomous_nav {'x': 13.6, 'y': -18.8, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:31:03 TOOL    Tool accepted: autonomous_nav {'x': -14.9, 'y': -16.3, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:31:06 TOOL    Tool accepted: autonomous_nav {'x': 9.9, 'y': -18.5, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:32:06 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:32:12 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:32:45 MISSION Mission progress: failed | Takeoff before search_area failed: AirSim is not connected: Request timed out | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:32:45 TOOL    Tool accepted: autonomous_nav {'x': -9.8, 'y': -23.5, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:32:51 TOOL    Tool accepted: autonomous_nav {'x': -4.3, 'y': -16.0, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:32:57 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:00 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:05 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:06 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:10 ERROR   Tool result: autonomous_nav | ok=False | autonomous_nav failed: 'NoneType' object has no attribute 'stop_event'
+2026-05-23T16:33:11 MISSION Mission progress: failed | Takeoff before search_area failed: IOLoop is already running | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:33:12 TOOL    Tool accepted: autonomous_nav {'x': -6.8, 'y': -15.3, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:33:12 TOOL    Tool accepted: autonomous_nav {'x': -0.8, 'y': -16.5, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:33:12 TOOL    Tool accepted: autonomous_nav {'x': -0.8, 'y': -16.5, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:33:12 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T16:33:12 TOOL    Tool accepted: autonomous_nav {'x': 18.5, 'y': -26.3, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:33:12 TOOL    Tool accepted: autonomous_nav {'x': 1.5, 'y': -21.5, 'z': -8.078618049621582, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:33:12 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:12 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:12 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:12 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:33:12 MISSION Mission progress: failed | hold_current_position failed, hover fallback also failed: IOLoop is already running | waypoint 0/1 | alt=0.0m speed=0.0m/s d2wp=16.7m risk=- obs=- front=- planner=wait
+2026-05-23T16:33:12 MISSION Mission progress: failed | A* on temporal slice: 16 waypoints | waypoint 0/1 | alt=0.0m speed=0.0m/s d2wp=16.7m risk=- obs=- front=- planner=ok/closed_loop_replan
+2026-05-23T16:33:12 MISSION Mission progress: failed | A* on temporal slice: 16 waypoints | waypoint 0/1 | alt=0.0m speed=0.0m/s d2wp=16.7m risk=- obs=- front=- planner=ok/closed_loop_replan
+2026-05-23T16:33:12 MISSION Mission progress: failed | A* on temporal slice: 16 waypoints | waypoint 0/1 | alt=0.0m speed=0.0m/s d2wp=16.7m risk=- obs=- front=- planner=ok/closed_loop_replan
+2026-05-23T16:43:00 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T16:45:21 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T16:45:28 AIRSIM  AirSim connection established.
+2026-05-23T16:45:29 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T16:45:42 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T16:46:09 TOOL    Tool accepted: autonomous_nav {'x': -10.7, 'y': -22.0, 'z': -8.145794868469238, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:46:18 TOOL    Tool accepted: autonomous_nav {'x': 0.1, 'y': -28.5, 'z': -8.145794868469238, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T16:47:06 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T16:59:32 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T17:00:17 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T17:00:23 AIRSIM  AirSim connection established.
+2026-05-23T17:00:24 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T17:00:34 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T17:00:41 TOOL    Tool accepted: autonomous_nav {'x': -0.7, 'y': -22.0, 'z': -8.06318473815918, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T17:00:41 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T17:00:41 MISSION Mission progress: failed | hold_current_position failed, hover fallback also failed: IOLoop is already running | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T17:00:50 TOOL    Tool accepted: autonomous_nav {'x': 39.1, 'y': -29.0, 'z': -8.06318473815918, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T17:00:50 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T17:01:02 FLIGHT  Land command sent.
+2026-05-23T17:05:04 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T17:05:17 WARN    AirSim connection failed: Request timed out
+2026-05-23T17:05:20 WARN    AirSim connection failed: Request timed out
+2026-05-23T17:05:23 WARN    AirSim connection failed: Request timed out
+2026-05-23T17:05:29 WARN    AirSim connection failed: Request timed out
+2026-05-23T17:05:32 WARN    AirSim connection failed: Request timed out
+2026-05-23T17:05:35 WARN    AirSim connection failed: Request timed out
+2026-05-23T17:05:47 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T17:05:56 WARN    AirSim connection failed: Request timed out
+2026-05-23T17:07:34 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T17:07:43 AIRSIM  AirSim connection established.
+2026-05-23T17:07:44 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T17:07:53 SAFE    Tool rejected: autonomous_nav | Altitude 0.6m is below minimum 1.0m
+2026-05-23T17:08:07 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T17:08:12 TOOL    Tool accepted: autonomous_nav {'x': 72.9, 'y': -57.9, 'z': -8.086102485656738, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T17:08:12 ERROR   Tool result: autonomous_nav | ok=False | Unable to take off before autonomous navigation
+2026-05-23T17:08:12 MISSION Mission progress: failed | hold_current_position failed, hover fallback also failed: IOLoop is already running | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T17:11:15 TOOL    Tool accepted: autonomous_nav {'x': 29.2, 'y': -92.3, 'z': -8.086102485656738, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T17:11:15 TOOL    Tool accepted: autonomous_nav {'x': 34.6, 'y': -37.0, 'z': -8.086102485656738, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T17:11:22 ERROR   Tool result: autonomous_nav | ok=False | autonomous_nav failed: 'NoneType' object has no attribute 'stop_event'
+2026-05-23T17:11:22 ERROR   Tool result: autonomous_nav | ok=False | autonomous_nav failed: 'NoneType' object has no attribute 'stop_event'
+2026-05-23T17:11:23 MISSION Mission progress: taking_off | Taking off before search_area: target altitude 8.1m. | alt=8.1m speed=0.1m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T18:10:25 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T18:10:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T18:11:52 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T18:43:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T18:51:53 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T18:51:59 AIRSIM  AirSim connection established.
+2026-05-23T18:51:59 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T18:52:00 AIRSIM  AirSim connection established.
+2026-05-23T18:52:14 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T18:52:25 TOOL    Tool accepted: autonomous_nav {'x': -4.9, 'y': -48.2, 'z': -7.457463264465332, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T18:52:25 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T18:52:25 MISSION Mission progress: autonomous | Autonomous navigation started to X -4.9, Y -48.2. | waypoint 0/1 | alt=7.3m speed=0.0m/s d2wp=48.5m risk=- obs=- front=40.1m planner=wait
+2026-05-23T19:08:27 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T19:12:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T19:12:55 AIRSIM  AirSim connection established.
+2026-05-23T19:12:57 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T19:12:57 AIRSIM  AirSim connection established.
+2026-05-23T19:13:07 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T19:13:15 TOOL    Tool accepted: autonomous_nav {'x': -12.9, 'y': -47.3, 'z': -7.5459160804748535, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T19:13:15 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T19:13:16 MISSION Mission progress: autonomous | start or goal outside grid slice | waypoint 0/1 | alt=7.4m speed=0.0m/s d2wp=49.0m risk=- obs=- front=40.1m planner=blocked/closed_loop_replan
+2026-05-23T19:13:25 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T19:13:25 MISSION Mission progress: blocked | Autonomous navigation planner blocked: start or goal outside grid slice | waypoint 0/1 | alt=0.0m speed=0.0m/s d2wp=49.0m risk=- obs=- front=40.1m planner=blocked/closed_loop_replan
+2026-05-23T19:13:40 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T19:13:48 SAFE    Tool rejected: autonomous_nav | Validation failed: x: Input should be less than or equal to 120
+2026-05-23T19:13:56 TOOL    Tool accepted: autonomous_nav {'x': 23.1, 'y': -49.8, 'z': -7.671372413635254, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T19:13:56 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T19:13:57 MISSION Mission progress: autonomous | start or goal outside grid slice | waypoint 0/1 | alt=7.2m speed=2.3m/s d2wp=54.9m risk=- obs=- front=39.6m planner=blocked/closed_loop_replan
+2026-05-23T19:22:21 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T19:31:14 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T19:31:20 AIRSIM  AirSim connection established.
+2026-05-23T19:31:21 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T19:31:31 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T19:31:35 TOOL    Tool accepted: autonomous_nav {'x': 2.8, 'y': -15.0, 'z': -7.61736536026001, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T19:31:35 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T19:31:37 MISSION Mission progress: autonomous | A* on temporal slice: 14 waypoints | waypoint 0/1 | alt=7.8m speed=0.7m/s d2wp=15.3m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T19:46:23 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:04:34 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:14:06 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:14:23 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:14:33 AIRSIM  AirSim connection established.
+2026-05-23T20:14:33 AIRSIM  AirSim connection established.
+2026-05-23T20:14:34 AIRSIM  AirSim connection established.
+2026-05-23T20:14:36 AIRSIM  AirSim connection established.
+2026-05-23T20:14:38 AIRSIM  AirSim connection established.
+2026-05-23T20:14:40 AIRSIM  AirSim connection established.
+2026-05-23T20:14:53 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:14:56 AIRSIM  AirSim connection established.
+2026-05-23T20:14:56 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T20:15:08 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T20:15:13 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T20:15:22 TOOL    Tool accepted: autonomous_nav {'x': 9.3, 'y': -7.3, 'z': -8.0, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:15:24 ERROR   Tool result: autonomous_nav | ok=False | autonomous_nav failed: 'NoneType' object has no attribute 'stop_event'
+2026-05-23T20:15:24 MISSION Mission progress: taking_off | Taking off before search_area: target altitude 8.0m. | alt=8.1m speed=0.1m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T20:15:39 TOOL    Tool accepted: autonomous_nav {'x': 8.2, 'y': -4.8, 'z': -8.0, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:15:39 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:15:39 MISSION Mission progress: autonomous | Autonomous navigation started to X 8.2, Y -4.8. | waypoint 0/1 | alt=8.1m speed=0.1m/s d2wp=9.5m risk=- obs=- front=- planner=wait
+2026-05-23T20:22:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:29:29 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:29:43 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:29:50 AIRSIM  AirSim connection established.
+2026-05-23T20:29:51 AIRSIM  AirSim connection established.
+2026-05-23T20:29:51 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T20:30:09 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T20:30:17 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T20:30:24 TOOL    Tool accepted: autonomous_nav {'x': 7.6, 'y': -3.3, 'z': -8.0, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:30:24 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:30:25 MISSION Mission progress: autonomous | Autonomous navigation started to X 7.6, Y -3.3. | waypoint 0/1 | alt=7.8m speed=0.1m/s d2wp=8.3m risk=- obs=- front=- planner=wait
+2026-05-23T20:30:53 FLIGHT  Mission stopped.
+2026-05-23T20:30:53 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.0m speed=0.3m/s d2wp=0.0m risk=- obs=- front=23.8m planner=ok/closed_loop_replan
+2026-05-23T20:30:58 FLIGHT  Land command sent.
+2026-05-23T20:34:33 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:36:14 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:36:25 AIRSIM  AirSim connection established.
+2026-05-23T20:36:25 AIRSIM  AirSim connection established.
+2026-05-23T20:36:26 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T20:36:37 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T20:36:44 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T20:36:51 TOOL    Tool accepted: autonomous_nav {'x': 4.0, 'y': -2.9, 'z': -8.0, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:36:53 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:36:53 MISSION Mission progress: autonomous | Autonomous navigation started to X 4.0, Y -2.9. | waypoint 0/1 | alt=8.0m speed=0.1m/s d2wp=3.0m risk=- obs=- front=- planner=wait
+2026-05-23T20:37:05 FLIGHT  Mission stopped.
+2026-05-23T20:37:06 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.0m speed=0.3m/s d2wp=0.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T20:37:17 TOOL    Tool accepted: autonomous_nav {'x': 0.3, 'y': -0.2, 'z': -8.027765274047852, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:37:17 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:37:17 MISSION Mission progress: autonomous | Autonomous navigation started to X 0.3, Y -0.2. | waypoint 0/1 | alt=8.0m speed=0.3m/s d2wp=5.4m risk=- obs=- front=40.1m planner=wait
+2026-05-23T20:37:31 FLIGHT  Mission stopped.
+2026-05-23T20:37:32 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.0m speed=0.1m/s d2wp=0.0m risk=- obs=- front=40.4m planner=ok/closed_loop_replan
+2026-05-23T20:38:16 TOOL    Tool accepted: autonomous_nav {'x': 5.7, 'y': -0.2, 'z': -8.082268714904785, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:38:16 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:38:17 MISSION Mission progress: autonomous | Autonomous navigation started to X 5.7, Y -0.2. | waypoint 0/1 | alt=8.0m speed=0.1m/s d2wp=4.5m risk=- obs=- front=40.4m planner=wait
+2026-05-23T20:38:35 FLIGHT  Mission stopped.
+2026-05-23T20:38:35 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T20:38:41 TOOL    Tool accepted: autonomous_nav {'x': 22.0, 'y': -4.0, 'z': -8.143399238586426, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:38:41 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:38:42 MISSION Mission progress: autonomous | Autonomous navigation started to X 22.0, Y -4.0. | waypoint 0/1 | alt=8.1m speed=0.1m/s d2wp=16.3m risk=- obs=- front=40.0m planner=wait
+2026-05-23T20:39:00 FLIGHT  Mission stopped.
+2026-05-23T20:39:01 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=0.2m/s d2wp=0.0m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T20:40:52 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:42:35 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:42:39 AIRSIM  AirSim connection established.
+2026-05-23T20:42:39 AIRSIM  AirSim connection established.
+2026-05-23T20:42:39 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T20:42:46 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T20:42:50 TOOL    Tool accepted: autonomous_nav {'x': -0.4, 'y': 0.1, 'z': -8.0, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:42:56 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:42:56 MISSION Mission progress: autonomous | Autonomous navigation started to X -0.4, Y 0.1. | waypoint 0/1 | alt=7.7m speed=1.0m/s d2wp=23.6m risk=- obs=- front=- planner=wait
+2026-05-23T20:43:20 FLIGHT  Mission stopped.
+2026-05-23T20:43:20 MISSION Mission progress: blocked | Autonomous navigation planner blocked: A* could not find a free path on temporal slice (upper +4m and lower -4m slices are free — consider altitude change) | waypoint 1/1 | alt=8.0m speed=0.3m/s d2wp=23.3m risk=- obs=- front=11.6m planner=blocked/closed_loop_replan
+2026-05-23T20:43:26 TOOL    Tool accepted: autonomous_nav {'x': 1.1, 'y': 2.8, 'z': -8.01016616821289, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:43:26 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:43:26 MISSION Mission progress: autonomous | Autonomous navigation started to X 1.1, Y 2.8. | waypoint 0/1 | alt=8.0m speed=0.3m/s d2wp=23.8m risk=- obs=- front=11.6m planner=wait
+2026-05-23T20:44:24 TOOL    Tool accepted: autonomous_nav {'x': 20.1, 'y': -0.8, 'z': -8.01016616821289, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:44:24 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:44:25 MISSION Mission progress: autonomous | Autonomous navigation started to X 20.1, Y -0.8. | waypoint 0/1 | alt=8.1m speed=0.1m/s d2wp=2.7m risk=- obs=- front=12.8m planner=wait
+2026-05-23T20:44:40 TOOL    Tool accepted: autonomous_nav {'x': 27.2, 'y': -2.1, 'z': -8.092172622680664, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:44:40 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:44:41 MISSION Mission progress: autonomous | Autonomous navigation started to X 27.2, Y -2.1. | waypoint 0/1 | alt=7.9m speed=0.2m/s d2wp=6.8m risk=- obs=- front=40.2m planner=wait
+2026-05-23T20:44:57 TOOL    Tool accepted: autonomous_nav {'x': 19.6, 'y': -2.0, 'z': -7.963828086853027, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:44:57 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:44:57 MISSION Mission progress: autonomous | Autonomous navigation started to X 19.6, Y -2.0. | waypoint 0/1 | alt=8.1m speed=0.5m/s d2wp=4.0m risk=- obs=- front=31.6m planner=wait
+2026-05-23T20:45:11 TOOL    Tool accepted: autonomous_nav {'x': -0.3, 'y': 0.1, 'z': -8.11101245880127, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:45:11 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:45:12 MISSION Mission progress: autonomous | Autonomous navigation started to X -0.3, Y 0.1. | waypoint 0/1 | alt=8.0m speed=0.1m/s d2wp=17.8m risk=- obs=- front=22.3m planner=wait
+2026-05-23T20:45:17 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:45:34 FLIGHT  Mission stopped.
+2026-05-23T20:45:35 MISSION Mission progress: blocked | Autonomous navigation planner blocked: A* could not find a free path on temporal slice (upper +4m and lower -4m slices are free — consider altitude change) | waypoint 1/1 | alt=8.0m speed=0.2m/s d2wp=3.9m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T20:46:57 FLIGHT  Mission stopped.
+2026-05-23T20:47:02 FLIGHT  Land command sent.
+2026-05-23T20:56:12 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:57:29 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T20:57:39 AIRSIM  AirSim connection established.
+2026-05-23T20:57:39 AIRSIM  AirSim connection established.
+2026-05-23T20:57:39 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T20:57:50 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T20:57:57 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T20:58:01 TOOL    Tool accepted: autonomous_nav {'x': 0.0, 'y': -2.9, 'z': -8.0, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T20:58:02 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T20:58:03 MISSION Mission progress: autonomous | Autonomous navigation started to X 0.0, Y -2.9. | waypoint 0/1 | alt=7.9m speed=0.1m/s d2wp=2.9m risk=- obs=- front=- planner=wait
+2026-05-23T20:58:17 FLIGHT  Mission stopped.
+2026-05-23T20:58:17 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.2m speed=0.2m/s d2wp=0.0m risk=- obs=- front=39.7m planner=ok/closed_loop_replan

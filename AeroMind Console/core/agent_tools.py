@@ -2,22 +2,33 @@
 
 from dataclasses import dataclass, field
 import json
+import logging
 import math
 from pathlib import Path
 import threading
 import time
 from typing import Any, Callable
 
+logger = logging.getLogger(__name__)
+
+from config import nav_config
 from core.airsim_adapter import AirSimAdapter
-from core.obstacle_avoidance import plan_local_path
+from core.obstacle_avoidance import plan_local_path, plan_local_path_on_slice, AvoidancePlan
 from core.path_planner import lawnmower_path
 from core.path_planner import Waypoint
+from core.temporal_grid import TemporalVoxelGrid
+from core.depth_camera import DepthCamera
+from core.structured_log import log_event, log_mission_event
+from core import preflight
+from core import replay
 from core.task_executor import TaskExecutor
 from core.task_schema import MissionArea
 from core.vision_detector import VisionDetector
 
 
 DATASET_ROOT = Path(__file__).resolve().parents[1] / "datasets" / "yolo_collect"
+VLA_ROOT = Path(__file__).resolve().parents[2] / "VLA"
+DEFAULT_MAP_SPAWN_JSON = VLA_ROOT / "data" / "meta" / "map_spawnarea_info.json"
 
 
 @dataclass(frozen=True)
@@ -54,6 +65,21 @@ class ToolResult:
         }
 
 
+class ActiveMission:
+    """Thread-safe mission handle — ensures only one mission runs at a time."""
+
+    def __init__(self, stop_event: threading.Event, name: str = "pending") -> None:
+        self.thread: threading.Thread | None = None
+        self.stop_event = stop_event
+        self.name = name
+
+    def stop(self) -> None:
+        self.stop_event.set()
+
+    def is_stopped(self) -> bool:
+        return self.stop_event.is_set()
+
+
 class AgentToolRuntime:
     """Mission-level tools that an LLM agent is allowed to call."""
 
@@ -61,9 +87,10 @@ class AgentToolRuntime:
         self.adapter = adapter
         self.executor = executor
         self.detector = detector or VisionDetector()
+        self._temporal_grid: TemporalVoxelGrid | None = None
+        self._depth_camera: DepthCamera | None = None
         self._mission_lock = threading.RLock()
-        self._mission_stop = threading.Event()
-        self._mission_thread: threading.Thread | None = None
+        self._active_mission: ActiveMission | None = None
         self._post_mission_behavior = "keep_state"
         self._terminal_hold_guard = threading.Lock()
         self._terminal_hold_applied_at = 0.0
@@ -99,6 +126,7 @@ class AgentToolRuntime:
             "recover_from_collision": self._recover_from_collision,
             "search_area": self._search_area,
             "collect_images": self._collect_images,
+            "replay_trajectory": self._replay_trajectory,
             "detect_objects": self._detect_objects,
             "report_target": self._report_target,
         }
@@ -206,6 +234,22 @@ class AgentToolRuntime:
                 },
             ),
             ToolSpec(
+                "replay_trajectory",
+                "Replay a recorded AirSim log trajectory and optionally spawn target object from mark.json metadata.",
+                ("log_folder",),
+                {
+                    "log_folder": "Directory containing per-frame JSON logs such as 000001.json.",
+                    "speed_mps": "Replay speed in meters per second.",
+                    "turn_threshold_deg": "Split route at corners larger than this threshold.",
+                    "min_dist_m": "Minimum distance for waypoint deduplication.",
+                    "spawn_target": "Spawn target object from mark.json and map spawn metadata.",
+                    "map_spawn_json": "Optional path to map_spawnarea_info.json.",
+                    "target_object_name": "Spawned target object name in UE.",
+                    "draw_trail": "Draw persistent red trail while replaying.",
+                    "trail_thickness": "Trail line thickness.",
+                },
+            ),
+            ToolSpec(
                 "detect_objects",
                 "Placeholder detector hook. Returns latest frame metadata for now.",
                 ("target", "camera"),
@@ -253,31 +297,35 @@ class AgentToolRuntime:
             return ToolResult(False, normalized_tool, f"{normalized_tool} failed: {exc}", elapsed_ms=int((time.time() - started_at) * 1000))
 
     def _takeoff(self, args: dict[str, Any]) -> ToolResult:
-        altitude_m = float(args.get("altitude_m", 8.0))
+        altitude_m = float(args.get("altitude_m", nav_config.default_altitude_m))
         self.executor.takeoff(altitude_m=altitude_m)
         self._set_progress(status="holding", tool="takeoff", message=f"Takeoff complete; holding at {altitude_m:.1f}m.")
         return ToolResult(True, "takeoff", f"Takeoff command sent to {altitude_m:.1f}m", {"altitude_m": altitude_m})
 
     def _hover(self, args: dict[str, Any]) -> ToolResult:
-        self._mission_stop.set()
+        if self._active_mission:
+            self._active_mission.stop()
         self.executor.hover()
         self._set_progress(status="paused", message="Hover command sent; active tool mission paused.")
         return ToolResult(True, "hover", "Hover command sent")
 
     def _stop(self, args: dict[str, Any]) -> ToolResult:
-        self._mission_stop.set()
+        if self._active_mission:
+            self._active_mission.stop()
         self.executor.stop()
         self._set_progress(status="stopped", message="Stop command sent; active tool mission stopped.")
         return ToolResult(True, "stop", "Stop command sent")
 
     def _land(self, args: dict[str, Any]) -> ToolResult:
-        self._mission_stop.set()
+        if self._active_mission:
+            self._active_mission.stop()
         self.executor.land()
         self._set_progress(status="landing", tool="land", message="Land command sent; active tool mission stopped.")
         return ToolResult(True, "land", "Land command sent")
 
     def _return_home(self, args: dict[str, Any]) -> ToolResult:
-        self._mission_stop.set()
+        if self._active_mission:
+            self._active_mission.stop()
         safe_altitude_m = float(args.get("safe_altitude_m", 8.0))
         self.executor.return_to_launch(altitude_m=safe_altitude_m)
         self._set_progress(status="returning", tool="return_home", message="Return-home command sent.")
@@ -309,11 +357,7 @@ class AgentToolRuntime:
         ]
         if not route:
             return ToolResult(False, "waypoint_route", "航点路线为空")
-        self._mission_stop.set()
-        old_thread = self._mission_thread
-        if old_thread is not None and old_thread.is_alive():
-            old_thread.join(timeout=0.2)
-        self._mission_stop = threading.Event()
+        self._prepare_new_mission()
         self._set_progress(
             status="running",
             tool="waypoint_route",
@@ -324,13 +368,15 @@ class AgentToolRuntime:
             message=f"航点飞行已启动，共 {len(route)} 个航点。",
             started_at=time.time(),
         )
-        self._mission_thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run_waypoint_route,
             args=(route, speed_mps, avoidance, hold_at_end),
             name="aeromind-waypoint-route",
             daemon=True,
         )
-        self._mission_thread.start()
+        self._active_mission.thread = thread
+        self._active_mission.name = "aeromind-waypoint-route"
+        thread.start()
         return ToolResult(
             True,
             "waypoint_route",
@@ -349,14 +395,10 @@ class AgentToolRuntime:
         control_dt_s = max(0.1, float(args.get("control_dt_s", 0.2)))
         lookahead_m = max(1.0, float(args.get("lookahead_m", 3.0)))
         timeout_s = max(5.0, float(args.get("timeout_s", 120.0)))
+        self._prepare_new_mission()
         if not self._ensure_airborne(abs(goal.z)):
             return ToolResult(False, "autonomous_nav", "Unable to take off before autonomous navigation")
         collision_baseline = self.adapter.collision_status().time_stamp
-        self._mission_stop.set()
-        old_thread = self._mission_thread
-        if old_thread is not None and old_thread.is_alive():
-            old_thread.join(timeout=0.2)
-        self._mission_stop = threading.Event()
         self._set_progress(
             status="autonomous",
             tool="autonomous_nav",
@@ -370,13 +412,15 @@ class AgentToolRuntime:
             message=f"Autonomous navigation started to X {goal.x:.1f}, Y {goal.y:.1f}.",
             started_at=time.time(),
         )
-        self._mission_thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run_autonomous_nav,
             args=(goal, speed_mps, replan_interval_s, control_dt_s, lookahead_m, timeout_s, collision_baseline),
             name="aeromind-autonomous-nav",
             daemon=True,
         )
-        self._mission_thread.start()
+        self._active_mission.thread = thread
+        self._active_mission.name = "aeromind-autonomous-nav"
+        thread.start()
         return ToolResult(
             True,
             "autonomous_nav",
@@ -404,11 +448,7 @@ class AgentToolRuntime:
         route = [Waypoint(0.0, 0.0, z), Waypoint(distance_m, 0.0, z)]
         slots = self._formation_slots(count, shape, spacing_m)
         vehicles = list(self.adapter.formation_vehicle_names(count))
-        self._mission_stop.set()
-        old_thread = self._mission_thread
-        if old_thread is not None and old_thread.is_alive():
-            old_thread.join(timeout=0.2)
-        self._mission_stop = threading.Event()
+        self._prepare_new_mission()
         self._set_progress(
             status="running",
             tool="formation_flight",
@@ -421,13 +461,15 @@ class AgentToolRuntime:
             message=f"编队飞行已启动：{count} 架，队形 {shape.upper()}。",
             started_at=time.time(),
         )
-        self._mission_thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run_formation_route,
             args=(route, slots, altitude_m, speed_mps, avoidance),
             name="aeromind-formation-flight",
             daemon=True,
         )
-        self._mission_thread.start()
+        self._active_mission.thread = thread
+        self._active_mission.name = "aeromind-formation-flight"
+        thread.start()
         return ToolResult(
             True,
             "formation_flight",
@@ -436,7 +478,8 @@ class AgentToolRuntime:
         )
 
     def _recover_from_collision(self, args: dict[str, Any]) -> ToolResult:
-        self._mission_stop.set()
+        if self._active_mission:
+            self._active_mission.stop()
         climb_m = float(args.get("climb_m", 8.0))
         backoff_m = float(args.get("backoff_m", 10.0))
         force_relocate = bool(args.get("force_relocate", True))
@@ -474,7 +517,7 @@ class AgentToolRuntime:
         obstacle_distance_m = float(args.get("obstacle_distance_m", 8.0))
         avoidance_offset_m = float(args.get("avoidance_offset_m", 6.0))
         scan_margin_m = float(args.get("scan_margin_m", 4.0))
-        pre_scan = bool(args.get("pre_scan", True))
+        pre_scan = bool(args.get("pre_scan", False))
         pre_scan_stop_on_high_risk = bool(args.get("pre_scan_stop_on_high_risk", True))
         target = str(args.get("target", "object"))
         effective_area = self._inset_area(area, scan_margin_m)
@@ -483,11 +526,7 @@ class AgentToolRuntime:
             return ToolResult(False, "search_area", "No waypoints generated for search area")
         collision_baseline = self.adapter.collision_status().time_stamp
 
-        self._mission_stop.set()
-        old_thread = self._mission_thread
-        if old_thread is not None and old_thread.is_alive():
-            old_thread.join(timeout=0.2)
-        self._mission_stop = threading.Event()
+        self._prepare_new_mission()
         self._set_progress(
             status="running",
             tool="search_area",
@@ -503,7 +542,7 @@ class AgentToolRuntime:
             message=f"Search area started for target '{target}'.",
             started_at=time.time(),
         )
-        self._mission_thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run_search_area,
             args=(
                 target,
@@ -522,7 +561,9 @@ class AgentToolRuntime:
             name="aeromind-search-area",
             daemon=True,
         )
-        self._mission_thread.start()
+        self._active_mission.thread = thread
+        self._active_mission.name = "aeromind-search-area"
+        thread.start()
         return ToolResult(
             True,
             "search_area",
@@ -561,7 +602,7 @@ class AgentToolRuntime:
         scan_margin_m = float(args.get("scan_margin_m", 4.0))
         planned_avoidance = bool(args.get("planned_avoidance", True))
         avoidance = bool(args.get("avoidance", True))
-        pre_scan = bool(args.get("pre_scan", True))
+        pre_scan = bool(args.get("pre_scan", False))
         pre_scan_stop_on_high_risk = bool(args.get("pre_scan_stop_on_high_risk", False))
         obstacle_distance_m = float(args.get("obstacle_distance_m", 8.0))
         avoidance_offset_m = float(args.get("avoidance_offset_m", 6.0))
@@ -577,11 +618,7 @@ class AgentToolRuntime:
             return ToolResult(False, "collect_images", "No waypoints generated for image collection")
         collision_baseline = self.adapter.collision_status().time_stamp
 
-        self._mission_stop.set()
-        old_thread = self._mission_thread
-        if old_thread is not None and old_thread.is_alive():
-            old_thread.join(timeout=0.2)
-        self._mission_stop = threading.Event()
+        self._prepare_new_mission()
         self._set_progress(
             status="collecting",
             tool="collect_images",
@@ -605,7 +642,7 @@ class AgentToolRuntime:
             message=f"Image collection started: {dataset_name}.",
             started_at=time.time(),
         )
-        self._mission_thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run_collect_images,
             args=(
                 route,
@@ -629,7 +666,9 @@ class AgentToolRuntime:
             name="aeromind-collect-images",
             daemon=True,
         )
-        self._mission_thread.start()
+        self._active_mission.thread = thread
+        self._active_mission.name = "aeromind-collect-images"
+        thread.start()
         return ToolResult(
             True,
             "collect_images",
@@ -654,11 +693,234 @@ class AgentToolRuntime:
             },
         )
 
+    def _replay_trajectory(self, args: dict[str, Any]) -> ToolResult:
+        log_folder = Path(str(args.get("log_folder", "")).strip())
+        speed_mps = float(args.get("speed_mps", 3.5))
+        turn_threshold_deg = float(args.get("turn_threshold_deg", 30.0))
+        min_dist_m = float(args.get("min_dist_m", 0.5))
+        spawn_target = bool(args.get("spawn_target", True))
+        map_spawn_json = Path(str(args.get("map_spawn_json", "")).strip()) if args.get("map_spawn_json") else DEFAULT_MAP_SPAWN_JSON
+        target_object_name = str(args.get("target_object_name", "ReplayTarget")).strip() or "ReplayTarget"
+        draw_trail = bool(args.get("draw_trail", True))
+        trail_thickness = float(args.get("trail_thickness", 8.0))
+
+        if not log_folder.exists() or not log_folder.is_dir():
+            return ToolResult(False, "replay_trajectory", f"log_folder does not exist: {log_folder}")
+
+        frames = self._load_replay_frames(log_folder)
+        if len(frames) < 2:
+            return ToolResult(False, "replay_trajectory", "Not enough replay frames in log_folder")
+        waypoints = self._deduplicate_replay_frames(frames, min_dist_m=min_dist_m)
+        if len(waypoints) < 2:
+            return ToolResult(False, "replay_trajectory", "Not enough waypoints after deduplication")
+
+        self._prepare_new_mission()
+        self._set_progress(
+            status="running",
+            tool="replay_trajectory",
+            current_waypoint_index=0,
+            total_waypoints=len(waypoints),
+            planner={
+                "ok": True,
+                "phase": "replay_prepare",
+                "reason": f"Replay prepared with {len(waypoints)} waypoints",
+            },
+            message="Trajectory replay started.",
+            started_at=time.time(),
+        )
+        thread = threading.Thread(
+            target=self._run_replay_trajectory,
+            args=(
+                log_folder,
+                waypoints,
+                speed_mps,
+                turn_threshold_deg,
+                spawn_target,
+                map_spawn_json,
+                target_object_name,
+                draw_trail,
+                trail_thickness,
+            ),
+            name="aeromind-replay-trajectory",
+            daemon=True,
+        )
+        self._active_mission.thread = thread
+        self._active_mission.name = "aeromind-replay-trajectory"
+        thread.start()
+        return ToolResult(
+            True,
+            "replay_trajectory",
+            f"Trajectory replay started with {len(waypoints)} waypoints.",
+            {
+                "log_folder": str(log_folder),
+                "waypoint_count": len(waypoints),
+                "speed_mps": speed_mps,
+                "turn_threshold_deg": turn_threshold_deg,
+                "spawn_target": spawn_target,
+                "map_spawn_json": str(map_spawn_json),
+                "target_object_name": target_object_name,
+                "draw_trail": draw_trail,
+            },
+        )
+
+    def _run_replay_trajectory(
+        self,
+        log_folder: Path,
+        waypoints: list[dict[str, Any]],
+        speed_mps: float,
+        turn_threshold_deg: float,
+        spawn_target: bool,
+        map_spawn_json: Path,
+        target_object_name: str,
+        draw_trail: bool,
+        trail_thickness: float,
+    ) -> None:
+        try:
+            if spawn_target:
+                spawned = self._spawn_target_from_replay_mark(log_folder, map_spawn_json, target_object_name)
+                if spawned:
+                    self._set_progress(message=f"Replay target spawned: {spawned}")
+            self.adapter.flush_persistent_markers()
+            first = waypoints[0]
+            first_pos = first["position"]
+            first_ori = first["orientation"]
+            self.adapter.set_vehicle_pose(
+                first_pos[0],
+                first_pos[1],
+                first_pos[2],
+                first_ori[0],
+                first_ori[1],
+                first_ori[2],
+                first_ori[3],
+                ignore_collision=True,
+            )
+            time.sleep(1.0)
+            self.executor.takeoff(altitude_m=max(2.0, abs(float(first_pos[2]))))
+            break_idx = self._split_replay_by_turns(waypoints, threshold_deg=turn_threshold_deg)
+            trail_points: list[dict[str, float]] = []
+            segment_total = max(1, len(break_idx) - 1)
+            for segment_idx in range(segment_total):
+                if self._active_mission.stop_event.is_set():
+                    self._set_progress(status="stopped", message="Trajectory replay stopped by command.")
+                    return
+                start_i, end_i = break_idx[segment_idx], break_idx[segment_idx + 1]
+                segment = waypoints[start_i + 1 : end_i + 1]
+                if not segment:
+                    continue
+                first_target = segment[0]["position"]
+                yaw_deg = self._yaw_to_target(first_target[0], first_target[1])
+                self.adapter.rotate_to_yaw(yaw_deg, timeout_s=5.0, margin_deg=2.0)
+                path = [
+                    {"x": float(item["position"][0]), "y": float(item["position"][1]), "z": float(item["position"][2])}
+                    for item in segment
+                ]
+                self._set_progress(
+                    status="running",
+                    current_waypoint_index=end_i,
+                    total_waypoints=len(waypoints),
+                    message=f"Replay segment {segment_idx + 1}/{segment_total}",
+                )
+                self.adapter.move_on_path(
+                    path=path,
+                    speed_mps=speed_mps,
+                    lookahead=-1.0,
+                    adaptive_lookahead=1.0,
+                    timeout_s=max(30.0, len(path) * 2.0),
+                    forward_only=True,
+                )
+                if draw_trail:
+                    trail_points.extend(path)
+                    self.adapter.plot_line_strip(
+                        points=trail_points,
+                        color_rgba=[1.0, 0.0, 0.0, 1.0],
+                        thickness=trail_thickness,
+                    )
+            self.executor.land()
+            self._set_progress(status="completed", message="Trajectory replay completed.")
+        except Exception as exc:
+            self._set_progress(status="failed", message=f"Trajectory replay failed: {exc}")
+
+    @staticmethod
+    def _load_replay_frames(log_folder: Path) -> list[dict[str, Any]]:
+        return replay.load_replay_frames(log_folder)
+
+    @staticmethod
+    def _deduplicate_replay_frames(frames: list[dict[str, Any]], min_dist_m: float = 0.5) -> list[dict[str, Any]]:
+        return replay.deduplicate_replay_frames(frames, min_dist_m)
+
+    @staticmethod
+    def _turn_angle_deg(waypoints: list[dict[str, Any]], i: int) -> float:
+        return replay.turn_angle_deg(waypoints, i)
+
+    def _split_replay_by_turns(self, waypoints: list[dict[str, Any]], threshold_deg: float) -> list[int]:
+        return replay.split_replay_by_turns(waypoints, threshold_deg)
+
+    def _spawn_target_from_replay_mark(self, log_folder: Path, map_spawn_json: Path, object_name: str) -> str | None:
+        seq_dir = log_folder.parent
+        mark_path = seq_dir / "mark.json"
+        if not mark_path.exists() or not map_spawn_json.exists():
+            return None
+        try:
+            mark = json.loads(mark_path.read_text(encoding="utf-8"))
+            target = mark.get("target") if isinstance(mark, dict) else None
+            coord = target.get("position") if isinstance(target, dict) else None
+            if not isinstance(coord, list) or len(coord) < 3:
+                return None
+            map_name = seq_dir.parent.name
+            meta = json.loads(map_spawn_json.read_text(encoding="utf-8"))
+            areas = meta.get(map_name, []) if isinstance(meta, dict) else []
+            matched = self._closest_spawn_area(coord, areas)
+            if matched is None or len(matched) < 18:
+                return None
+            position = {"x": float(matched[9]), "y": float(matched[10]), "z": float(matched[11])}
+            orientation = {"x": float(matched[13]), "y": float(matched[14]), "z": float(matched[15]), "w": float(matched[12])}
+            asset_name = str(matched[16])
+            scale = float(matched[17])
+            return self.adapter.spawn_object(
+                object_name=object_name,
+                asset_name=asset_name,
+                position=position,
+                orientation=orientation,
+                scale=scale,
+                destroy_existing=True,
+            )
+        except Exception as spawn_err:
+            logger.warning("Failed to spawn asset %s at map %s: %s", object_name, map_name, spawn_err)
+            return None
+
+    @staticmethod
+    def _closest_spawn_area(coord: list[float], areas: Any) -> list[Any] | None:
+        return replay.closest_spawn_area(coord, areas)
+
+    def _yaw_to_target(self, target_x: float, target_y: float) -> float:
+        telemetry = self.adapter.telemetry()
+        dx = float(target_x) - float(telemetry.x)
+        dy = float(target_y) - float(telemetry.y)
+        if abs(dx) <= 0.05 and abs(dy) <= 0.05:
+            return 0.0
+        return math.degrees(math.atan2(dy, dx))
+
     def _detect_objects(self, args: dict[str, Any]) -> ToolResult:
         frame = self.adapter.camera_frame()
         if frame is None:
             return ToolResult(False, "detect_objects", f"No camera frame available: {self.adapter.last_error}")
-        detection_result = self.detector.detect(frame.data)
+        timeout_s = max(3.0, float(args.get("timeout_s", 10.0)))
+        try:
+            detection_result = self.detector.detect_async(frame.data).result(timeout=timeout_s)
+        except Exception as detect_err:
+            return ToolResult(
+                False,
+                "detect_objects",
+                f"Detection timed out or failed: {detect_err}",
+                {
+                    "target": str(args.get("target", "object")),
+                    "camera": frame.camera_name,
+                    "image_type": frame.image_type,
+                    "bytes": len(frame.data),
+                    "ok": False,
+                    "detections": [],
+                },
+            )
         return ToolResult(
             detection_result.ok,
             "detect_objects",
@@ -775,7 +1037,7 @@ class AgentToolRuntime:
                     self._set_progress(area_assessment=replanned_assessment)
                     if replanned_assessment["stop_recommended"] and pre_scan_stop_on_high_risk:
                         self._hold_current_position_quietly()
-                        self._mission_stop.set()
+                        self._active_mission.stop_event.set()
                         self._set_progress(status="blocked", message="Dataset collection stopped: pre-scan could not create a safe route.")
                         return
                     if len(replanned_route) >= 2:
@@ -791,7 +1053,7 @@ class AgentToolRuntime:
                             },
                         )
             for index, waypoint in enumerate(route, start=1):
-                if self._mission_stop.is_set() or saved >= max_images:
+                if self._active_mission.stop_event.is_set() or saved >= max_images:
                     break
                 self._set_progress(
                     status="collecting",
@@ -881,11 +1143,12 @@ class AgentToolRuntime:
     def _hold_current_position_quietly(self) -> None:
         try:
             self.adapter.hold_current_position(duration_s=1.5)
-        except Exception:
+        except Exception as hold_err:
+            logger.warning("hold_current_position failed, trying hover fallback: %s", hold_err)
             try:
                 self.executor.hover()
-            except Exception:
-                pass
+            except Exception as hover_err:
+                self._set_progress(message=f"hold_current_position failed, hover fallback also failed: {hover_err}")
 
     def _closed_loop_drive_to_goal(
         self,
@@ -911,119 +1174,315 @@ class AgentToolRuntime:
         started_at = time.time()
         last_replan_at = 0.0
         plan_waypoints: list[Waypoint] = []
-        bounds = None
-        if effective_area is not None:
-            bounds_padding_m = 8.0
-            bounds = (
-                float(effective_area.x_min) - bounds_padding_m,
-                float(effective_area.x_max) + bounds_padding_m,
-                float(effective_area.y_min) - bounds_padding_m,
-                float(effective_area.y_max) + bounds_padding_m,
-            )
+        engine = self.adapter._engine
 
-        while not self._mission_stop.is_set():
-            elapsed = time.time() - started_at
-            if elapsed > timeout_s:
-                self._hold_current_position_quietly()
-                self._set_progress(status="timeout", message=f"{mission_label} timeout; holding position.")
-                return False
+        # Disable position-hold for the entire nav loop; we manage velocity
+        # via engine nav-control mode.  Restored on exit.
+        self.adapter._stop_position_hold()
 
-            telemetry = self.adapter.telemetry()
-            current = Waypoint(float(telemetry.x), float(telemetry.y), float(goal.z))
-            goal_distance = math.hypot(goal.x - current.x, goal.y - current.y)
-            altitude_error = float(goal.z) - float(telemetry.z)
-            self._set_progress(distance_to_waypoint_m=round(goal_distance, 2))
-            if on_tick is not None and not on_tick(current, goal_distance, elapsed):
-                self._hold_current_position_quietly()
-                self._set_progress(status=active_status, message=f"{mission_label} capture limit reached; holding position.")
-                return True
-            if goal_distance <= 1.5 and abs(altitude_error) <= 1.2:
-                self._hold_current_position_quietly()
+        # -- seed tick: read telemetry (no velocity yet) --------------------
+        nav = self.adapter.nav_telemetry()
+        tel: Any = nav["telemetry"]
+        self._ensure_temporal_grid(float(tel.x), float(tel.y), float(tel.z))
+
+        # -- start engine nav-control loop (zero queue overhead) -------------
+        engine.start_nav_control()
+
+        current = Waypoint(float(tel.x), float(tel.y), float(goal.z))
+        target = goal
+        raw_vx, raw_vy, raw_vz = 0.0, 0.0, 0.0
+        vx_smooth, vy_smooth, vz_smooth = 0.0, 0.0, 0.0
+        ema_alpha = 0.65  # smoothing factor: higher = more responsive
+
+        try:
+            while not self._active_mission.stop_event.is_set():
+                # -- read telemetry from shared cache (no RPC!) ---------------
+                cache = self.adapter.get_nav_cache()
+                cache_age = time.time() - cache.get("updated_at", 0.0)
+
+                # Health check: if engine nav mode died or cache is stale,
+                # restart nav control and fall back to direct RPC for this tick.
+                if cache_age > 1.0 or not engine._nav_active:
+                    if not engine._nav_active:
+                        logger.warning("Engine nav control stopped; restarting")
+                        engine.start_nav_control()
+                    # Fallback: direct RPC to refresh the cache
+                    nav = self.adapter.nav_telemetry()
+                    tel = nav["telemetry"]
+                else:
+                    tel = cache["telemetry"]
+
+                current = Waypoint(float(tel.x), float(tel.y), float(goal.z))
+
+                # -- safety checks with pre-fetched collision & distances -----
+                result = self._check_flight_safety(
+                    telemetry=tel, goal=goal, current=current,
+                    started_at=started_at, timeout_s=timeout_s,
+                    collision_baseline=collision_baseline,
+                    use_distance_safety=use_distance_safety,
+                    mission_label=mission_label, active_status=active_status,
+                    reached_message=reached_message,
+                    current_waypoint_index=current_waypoint_index,
+                    total_waypoints=total_waypoints,
+                    on_tick=on_tick,
+                    _prefetched_collision=cache["collision"],
+                    _prefetched_distances=cache["distances"],
+                )
+                if result is not None:
+                    return result  # True=reached, False=blocked/timeout/collision
+
+                # -- replan (batched lidar read every replan_interval_s) ------
+                now = time.time()
+                if now - last_replan_at >= replan_interval_s or not plan_waypoints:
+                    plan_waypoints = self._replan_to_goal(
+                        current=current, goal=goal,
+                        planner_phase=planner_phase,
+                        blocked_message=blocked_message,
+                    )
+                    if plan_waypoints is None:
+                        return False
+                    last_replan_at = now
+
+                # -- compute velocity, apply EMA smoothing --------------------
+                target = self._lookahead_target(current, plan_waypoints, lookahead_m) or goal
+                raw_vx, raw_vy, raw_vz = self._compute_velocity(
+                    telemetry=tel, target=target, goal_z=float(goal.z),
+                    speed_mps=speed_mps, control_dt_s=control_dt_s,
+                )
+                vx_smooth = ema_alpha * raw_vx + (1 - ema_alpha) * vx_smooth
+                vy_smooth = ema_alpha * raw_vy + (1 - ema_alpha) * vy_smooth
+                vz_smooth = ema_alpha * raw_vz + (1 - ema_alpha) * vz_smooth
+
+                # -- set velocity for engine tick (shared memory, no RPC) -----
+                engine.set_nav_velocity(vx_smooth, vy_smooth, vz_smooth, max(control_dt_s, 0.6))
+
                 self._set_progress(
                     status=active_status,
                     current_waypoint_index=current_waypoint_index,
                     total_waypoints=total_waypoints,
-                    distance_to_waypoint_m=0.0,
-                    message=reached_message,
+                    message=f"{mission_label} v={math.hypot(vx_smooth, vy_smooth):.2f} m/s to "
+                            f"({target.x:.1f}, {target.y:.1f})",
                 )
-                return True
 
-            collision = self.adapter.collision_status()
-            if collision.has_collided and collision.time_stamp > collision_baseline:
-                recovery = self._try_recovery()
-                self._mission_stop.set()
-                self._set_progress(
-                    status="recovered" if recovery is not None else "collision",
-                    collision=collision.to_api(),
-                    recovery=recovery,
-                    message=f"{mission_label} stopped after collision; recovery attempted.",
-                )
-                return False
+                time.sleep(max(0.02, control_dt_s * 0.35))
+            return False
+        finally:
+            engine.stop_nav_control()
+            self._hold_current_position_quietly()
 
-            if use_distance_safety:
-                distances = self.adapter.distance_sensors_status(
-                    emergency_threshold_m=2.6,
-                    side_emergency_threshold_m=1.6,
-                )
-                self._set_progress(distance_sensors=distances.to_api())
-                if distances.available and distances.emergency:
-                    stopped_at = self._try_hard_stop()
-                    self._mission_stop.set()
-                    self._set_progress(
-                        status="blocked",
-                        recovery={"mode": "hard_stop", "stopped_at": stopped_at},
-                        message=f"{mission_label} stopped by distance safety bubble.",
-                    )
-                    return False
+    @staticmethod
+    def _compute_velocity(
+        telemetry: Any,
+        target: Waypoint,
+        goal_z: float,
+        speed_mps: float,
+        control_dt_s: float,
+    ) -> tuple[float, float, float]:
+        """Compute (vx, vy, vz) for the given telemetry and target.  Does NOT
+        send anything — caller pipes the result into ``nav_tick`` on the next
+        iteration."""
+        dx = float(target.x) - float(telemetry.x)
+        dy = float(target.y) - float(telemetry.y)
+        dz = goal_z - float(telemetry.z)
+        horizontal_distance = max(0.001, math.hypot(dx, dy))
+        speed = min(float(speed_mps), max(0.4, horizontal_distance / max(control_dt_s, 0.1)))
+        vx = dx / horizontal_distance * speed
+        vy = dy / horizontal_distance * speed
+        vz = max(-1.0, min(1.0, dz / max(control_dt_s * 4.0, 0.4)))
+        return vx, vy, vz
 
-            now = time.time()
-            if now - last_replan_at >= replan_interval_s or not plan_waypoints:
-                points = self.adapter.lidar_obstacle_points_world(
-                    range_m=35.0,
-                    vertical_window_m=2.5,
-                    vertical_down_m=1.4,
-                    denoise_cell_m=1.5,
-                    min_points_per_cell=2,
-                )
-                plan = plan_local_path(
-                    start=current,
-                    goal=goal,
-                    obstacle_points=points,
-                    grid_size_m=55.0,
-                    resolution_m=1.0,
-                    inflation_m=3.0,
-                    max_waypoints=24,
-                    bounds=bounds,
-                )
-                self._set_progress(
-                    planner=plan.to_api() | {"points": len(points), "phase": planner_phase},
-                    message=plan.reason,
-                )
-                if not plan.ok:
-                    self._hold_current_position_quietly()
-                    self._set_progress(status="blocked", message=f"{blocked_message}: {plan.reason}")
-                    return False
-                plan_waypoints = plan.waypoints or [goal]
-                last_replan_at = now
+    def _check_flight_safety(
+        self,
+        telemetry: Any,
+        goal: Waypoint,
+        current: Waypoint,
+        started_at: float,
+        timeout_s: float,
+        collision_baseline: int,
+        use_distance_safety: bool,
+        mission_label: str,
+        active_status: str,
+        reached_message: str,
+        current_waypoint_index: int,
+        total_waypoints: int,
+        on_tick: Callable | None = None,
+        _prefetched_collision: Any = None,
+        _prefetched_distances: Any = None,
+    ) -> bool | None:
+        """Return True (reached), False (blocked), or None (continue).
 
-            target = self._lookahead_target(current, plan_waypoints, lookahead_m) or goal
-            dx = float(target.x) - float(telemetry.x)
-            dy = float(target.y) - float(telemetry.y)
-            dz = float(goal.z) - float(telemetry.z)
-            horizontal_distance = max(0.001, math.hypot(dx, dy))
-            speed = min(max(0.4, speed_mps), max(0.4, horizontal_distance / max(control_dt_s, 0.1)))
-            vx = dx / horizontal_distance * speed
-            vy = dy / horizontal_distance * speed
-            vz = max(-1.0, min(1.0, dz / max(control_dt_s * 4.0, 0.4)))
-            self.executor.move_velocity(vx=vx, vy=vy, vz=vz, duration_s=control_dt_s)
+        Set *_prefetched_collision* / *_prefetched_distances* to avoid extra
+        RPC round-trips inside the closed-loop drive hot path.
+        """
+        elapsed = time.time() - started_at
+        if elapsed > timeout_s:
+            self._hold_current_position_quietly()
+            self._set_progress(status="timeout", message=f"{mission_label} timeout; holding position.")
+            return False
+
+        goal_distance = math.hypot(goal.x - current.x, goal.y - current.y)
+        altitude_error = float(goal.z) - float(telemetry.z)
+        self._set_progress(distance_to_waypoint_m=round(goal_distance, 2))
+
+        if on_tick is not None and not on_tick(current, goal_distance, elapsed):
+            self._hold_current_position_quietly()
+            self._set_progress(status=active_status, message=f"{mission_label} capture limit reached; holding position.")
+            return True
+
+        if goal_distance <= nav_config.arrival_distance_m and abs(altitude_error) <= nav_config.arrival_altitude_error_m:
+            self._hold_current_position_quietly()
             self._set_progress(
                 status=active_status,
                 current_waypoint_index=current_waypoint_index,
                 total_waypoints=total_waypoints,
-                message=f"{mission_label} velocity cmd vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}.",
+                distance_to_waypoint_m=0.0,
+                message=reached_message,
             )
-            time.sleep(max(0.02, control_dt_s * 0.65))
-        return False
+            return True
+
+        collision = _prefetched_collision if _prefetched_collision is not None else self.adapter.collision_status()
+        if collision.has_collided and collision.time_stamp > collision_baseline:
+            recovery = self._try_recovery()
+            self._active_mission.stop_event.set()
+            self._set_progress(
+                status="recovered" if recovery is not None else "collision",
+                collision=collision.to_api(),
+                recovery=recovery,
+                message=f"{mission_label} stopped after collision; recovery attempted.",
+            )
+            return False
+
+        if use_distance_safety:
+            distances = (
+                _prefetched_distances
+                if _prefetched_distances is not None
+                else self.adapter.distance_sensors_status(
+                    emergency_threshold_m=nav_config.distance_emergency_threshold_m,
+                    side_emergency_threshold_m=nav_config.side_emergency_threshold_m,
+                )
+            )
+            self._set_progress(distance_sensors=distances.to_api())
+            if distances.available and distances.emergency:
+                stopped_at = self._try_hard_stop()
+                self._active_mission.stop_event.set()
+                self._set_progress(
+                    status="blocked",
+                    recovery={"mode": "hard_stop", "stopped_at": stopped_at},
+                    message=f"{mission_label} stopped by distance safety bubble.",
+                )
+                return False
+
+        return None
+
+    def _replan_to_goal(
+        self,
+        current: Waypoint,
+        goal: Waypoint,
+        planner_phase: str,
+        blocked_message: str,
+    ) -> list[Waypoint] | None:
+        """Replan path from current position to goal. Returns waypoints or None if blocked."""
+        self._update_temporal_grid()
+        grid_slice = self._get_2d_slice_for_planning(z_center=float(goal.z), half_height=nav_config.grid_half_height)
+        if grid_slice is not None:
+            plan = plan_local_path_on_slice(
+                start=current, goal=goal, grid_slice=grid_slice, max_waypoints=nav_config.max_waypoints,
+            )
+            grid_info = grid_slice.to_api()
+        else:
+            plan = AvoidancePlan(False, [], "temporal grid not available", {})
+            grid_info = {}
+        self._set_progress(
+            planner=plan.to_api() | {"phase": planner_phase, "grid": grid_info},
+            message=plan.reason,
+        )
+        if not plan.ok:
+            alt_goal, alt_reason = self._try_alt_replan(current, goal)
+            if alt_goal is not None:
+                self._set_progress(
+                    planner=plan.to_api() | {"phase": planner_phase, "replanned": True,
+                                             "reason": f"altitude adjusted: {alt_reason}"},
+                    message=f"Replanned at alternative altitude: {alt_reason}",
+                )
+                return [alt_goal]
+            alt_info = self._check_alt_slices(current, goal)
+            self._hold_current_position_quietly()
+            self._set_progress(status="blocked", message=f"{blocked_message}: {plan.reason}{alt_info}")
+            return None
+        if grid_slice is not None and hasattr(grid_slice, 'blocked') and grid_slice.width > 0:
+            total_cells = grid_slice.width * grid_slice.height
+            self._obstacle_density = len(getattr(grid_slice, 'blocked', set())) / max(1, total_cells)
+        else:
+            self._obstacle_density = 0.0
+        return plan.waypoints or [goal]
+
+    def _try_alt_replan(self, current: Waypoint, goal: Waypoint) -> tuple[Waypoint | None, str]:
+        """If the current altitude slice is blocked but an upper/lower slice is
+        free, return an adjusted goal at the viable altitude.  Prefers climbing
+        (upper slice) over descending for safety."""
+        if self._temporal_grid is None:
+            return None, ""
+        for offset, label in [(-nav_config.alt_offset_m, "climb"), (nav_config.alt_offset_m, "descend")]:
+            alt_slice = self._temporal_grid.extract_2d_slice(
+                z_center=float(goal.z) + offset, half_height=nav_config.alt_slice_half_height,
+                treat_unknown_as="free",
+            )
+            alt_plan = plan_local_path_on_slice(current, goal, alt_slice, max_waypoints=nav_config.max_alt_waypoints)
+            if alt_plan.ok:
+                alt_z = float(goal.z) + offset
+                return Waypoint(float(goal.x), float(goal.y), alt_z), f"{label} {abs(offset):.0f}m to z={alt_z:.1f}"
+        return None, ""
+
+    def _check_alt_slices(self, current: Waypoint, goal: Waypoint) -> str:
+        """Check upper/lower altitude slices for alternative paths. Returns info string."""
+        if self._temporal_grid is None:
+            return ""
+        upper_slice = self._temporal_grid.extract_2d_slice(
+            z_center=float(goal.z) - nav_config.alt_offset_m, half_height=nav_config.alt_slice_half_height, treat_unknown_as="free",
+        )
+        lower_slice = self._temporal_grid.extract_2d_slice(
+            z_center=float(goal.z) + nav_config.alt_offset_m, half_height=nav_config.alt_slice_half_height, treat_unknown_as="free",
+        )
+        upper_free = (plan_local_path_on_slice(current, goal, upper_slice, max_waypoints=nav_config.max_alt_waypoints)).ok
+        lower_free = (plan_local_path_on_slice(current, goal, lower_slice, max_waypoints=nav_config.max_alt_waypoints)).ok
+        if upper_free and lower_free:
+            return " (upper +4m and lower -4m slices are free — consider altitude change)"
+        elif upper_free:
+            return " (upper +4m slice is free — consider climbing)"
+        elif lower_free:
+            return " (lower -4m slice is free — consider descending)"
+        return ""
+
+    def _apply_velocity_command(
+        self,
+        telemetry: Any,
+        target: Waypoint,
+        goal_z: float,
+        speed_mps: float,
+        control_dt_s: float,
+        active_status: str,
+        current_waypoint_index: int,
+        total_waypoints: int,
+        mission_label: str,
+    ) -> None:
+        """Compute and send velocity command with density-adjusted speed."""
+        dx = float(target.x) - float(telemetry.x)
+        dy = float(target.y) - float(telemetry.y)
+        dz = goal_z - float(telemetry.z)
+        horizontal_distance = max(0.001, math.hypot(dx, dy))
+        density_factor = max(nav_config.density_factor_min, 1.0 - getattr(self, '_obstacle_density', 0.0) * nav_config.density_factor_multiplier)
+        effective_speed = max(nav_config.speed_min_mps, float(speed_mps) * density_factor)
+        speed = min(effective_speed, max(0.4, horizontal_distance / max(control_dt_s, 0.1)))
+        vx = dx / horizontal_distance * speed
+        vy = dy / horizontal_distance * speed
+        vz = max(-1.0, min(1.0, dz / max(control_dt_s * 4.0, 0.4)))
+        self.executor.move_velocity(vx=vx, vy=vy, vz=vz, duration_s=max(control_dt_s, 0.5))
+        self._set_progress(
+            status=active_status,
+            current_waypoint_index=current_waypoint_index,
+            total_waypoints=total_waypoints,
+            message=f"{mission_label} velocity cmd vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}.",
+        )
 
     def _run_autonomous_nav(
         self,
@@ -1056,6 +1515,7 @@ class AgentToolRuntime:
             if reached:
                 self._set_progress(status="completed", current_waypoint_index=1, distance_to_waypoint_m=0.0)
         except Exception as exc:
+            logger.exception("Autonomous navigation worker failed")
             self._set_progress(status="failed", message=f"Autonomous navigation worker failed: {exc}")
 
     @staticmethod
@@ -1086,140 +1546,170 @@ class AgentToolRuntime:
             if not self._ensure_airborne(altitude_m):
                 return
             if pre_scan:
-                self._set_progress(
-                    status="pre_scanning",
-                    planner={
-                        "ok": None,
-                        "phase": "pre_scan",
-                        "reason": "升空后正在确认任务区域障碍物信息",
-                    },
-                    message="Pre-scan: airborne, confirming obstacle map before A* planning.",
-                )
-                assessment = self._preflight_area_assessment(effective_area, route)
-                self._set_progress(area_assessment=assessment)
-                if assessment.get("stop_recommended"):
-                    replanned_route = self._replan_route_around_zones(route, assessment.get("blocked_zones", []))
-                    replanned_assessment = {
-                        **assessment,
-                        "route_hits_before_replan": assessment.get("route_hits", 0),
-                        "route_hits": self._count_route_hits(replanned_route, assessment.get("blocked_zones", [])),
-                        "replanned": True,
-                        "replanned_waypoints": len(replanned_route),
-                    }
-                    replanned_assessment["stop_recommended"] = len(replanned_route) < 2 or replanned_assessment["route_hits"] > 0
-                    self._set_progress(area_assessment=replanned_assessment)
-                    if replanned_assessment["stop_recommended"] and pre_scan_stop_on_high_risk:
-                        self._mission_stop.set()
-                        self._set_progress(
-                            status="blocked",
-                            message=f"Pre-scan could not create a safe scan route: {assessment.get('recommendation', 'unsafe scan area')}",
-                        )
-                        return
-                    if replanned_assessment["stop_recommended"]:
-                        if len(replanned_route) >= 2:
-                            route = replanned_route
-                            self._set_progress(
-                                total_waypoints=len(route),
-                                replanned_route=[point.to_api() for point in route],
-                                planner={
-                                    "ok": True,
-                                    "phase": "pre_scan_replan",
-                                    "reason": f"预扫描已调整航线，但仍有 {replanned_assessment['route_hits']} 处风险交叉",
-                                    "waypoints": [point.to_api() for point in route],
-                                },
-                            )
-                        self._set_progress(
-                            message="Pre-scan replan still has risks; continuing because pre_scan_stop_on_high_risk=false.",
-                        )
-                    elif len(replanned_route) >= 2:
-                        route = replanned_route
-                        self._set_progress(
-                            total_waypoints=len(route),
-                            replanned_route=[point.to_api() for point in route],
-                            planner={
-                                "ok": True,
-                                "phase": "pre_scan_replan",
-                                "reason": f"预扫描已绕开障碍物，航线调整为 {len(route)} 个航点",
-                                "waypoints": [point.to_api() for point in route],
-                            },
-                            message=f"Pre-scan replanned scan route around obstacles: {len(route)} waypoints.",
-                        )
-                else:
-                    self._set_progress(
-                        planner={
-                            "ok": True,
-                            "phase": "pre_scan_clear",
-                            "reason": f"预扫描完成，发现 {assessment.get('obstacle_points', 0)} 个障碍点，原航线可执行",
-                            "waypoints": [point.to_api() for point in route],
-                        },
-                        message="Pre-scan complete; route cleared for A* segment planning.",
-                    )
-            for index, waypoint in enumerate(route, start=1):
-                if self._mission_stop.is_set():
-                    self._set_progress(status="stopped", message="Search area stopped by command.")
+                route = self._execute_pre_scan(route, effective_area, pre_scan_stop_on_high_risk)
+                if route is None:
                     return
+            self._fly_search_route(
+                target=target, route=route, speed_mps=speed_mps,
+                collision_baseline=collision_baseline,
+                avoidance=avoidance, planned_avoidance=planned_avoidance,
+                obstacle_distance_m=obstacle_distance_m,
+                avoidance_offset_m=avoidance_offset_m,
+                effective_area=effective_area,
+            )
+        except Exception as exc:
+            logger.exception("Search area worker failed")
+            self._set_progress(status="failed", message=f"Search area worker failed: {exc}")
+
+    def _execute_pre_scan(
+        self,
+        route: list[Any],
+        effective_area: MissionArea,
+        pre_scan_stop_on_high_risk: bool,
+    ) -> list[Any] | None:
+        """Pre-scan the mission area and replan route if needed. Returns adjusted route or None to abort."""
+        self._set_progress(
+            status="pre_scanning",
+            planner={
+                "ok": None,
+                "phase": "pre_scan",
+                "reason": "升空后正在确认任务区域障碍物信息",
+            },
+            message="Pre-scan: airborne, confirming obstacle map before A* planning.",
+        )
+        assessment = self._preflight_area_assessment(effective_area, route)
+        self._set_progress(area_assessment=assessment)
+        if not assessment.get("stop_recommended"):
+            self._set_progress(
+                planner={
+                    "ok": True,
+                    "phase": "pre_scan_clear",
+                    "reason": f"预扫描完成，发现 {assessment.get('obstacle_points', 0)} 个障碍点，原航线可执行",
+                    "waypoints": [point.to_api() for point in route],
+                },
+                message="Pre-scan complete; route cleared for A* segment planning.",
+            )
+            return route
+
+        replanned_route = self._replan_route_around_zones(route, assessment.get("blocked_zones", []))
+        replanned_assessment = {
+            **assessment,
+            "route_hits_before_replan": assessment.get("route_hits", 0),
+            "route_hits": self._count_route_hits(replanned_route, assessment.get("blocked_zones", [])),
+            "replanned": True,
+            "replanned_waypoints": len(replanned_route),
+        }
+        replanned_assessment["stop_recommended"] = len(replanned_route) < 2 or replanned_assessment["route_hits"] > 0
+        self._set_progress(area_assessment=replanned_assessment)
+
+        if replanned_assessment["stop_recommended"] and pre_scan_stop_on_high_risk:
+            self._active_mission.stop_event.set()
+            self._set_progress(
+                status="blocked",
+                message=f"Pre-scan could not create a safe scan route: {assessment.get('recommendation', 'unsafe scan area')}",
+            )
+            return None
+
+        if replanned_assessment["stop_recommended"]:
+            if len(replanned_route) >= 2:
+                route = replanned_route
                 self._set_progress(
-                    status="running",
-                    tool="search_area",
-                    target=target,
-                    current_waypoint_index=index,
                     total_waypoints=len(route),
-                    message=f"Flying to waypoint {index}/{len(route)}.",
+                    replanned_route=[point.to_api() for point in route],
+                    planner={
+                        "ok": True,
+                        "phase": "pre_scan_replan",
+                        "reason": f"预扫描已调整航线，但仍有 {replanned_assessment['route_hits']} 处风险交叉",
+                        "waypoints": [point.to_api() for point in route],
+                    },
                 )
-                sub_waypoints = self._planned_sub_waypoints(waypoint, planned_avoidance, effective_area)
-                if not sub_waypoints:
+            self._set_progress(
+                message="Pre-scan replan still has risks; continuing because pre_scan_stop_on_high_risk=false.",
+            )
+        elif len(replanned_route) >= 2:
+            route = replanned_route
+            self._set_progress(
+                total_waypoints=len(route),
+                replanned_route=[point.to_api() for point in route],
+                planner={
+                    "ok": True,
+                    "phase": "pre_scan_replan",
+                    "reason": f"预扫描已绕开障碍物，航线调整为 {len(route)} 个航点",
+                    "waypoints": [point.to_api() for point in route],
+                },
+                message=f"Pre-scan replanned scan route around obstacles: {len(route)} waypoints.",
+            )
+        return route
+
+    def _fly_search_route(
+        self,
+        target: str,
+        route: list[Any],
+        speed_mps: float,
+        collision_baseline: int,
+        avoidance: bool,
+        planned_avoidance: bool,
+        obstacle_distance_m: float,
+        avoidance_offset_m: float,
+        effective_area: MissionArea,
+    ) -> None:
+        """Execute the search route waypoint by waypoint with A* sub-planning."""
+        for index, waypoint in enumerate(route, start=1):
+            if self._active_mission.stop_event.is_set():
+                self._set_progress(status="stopped", message="Search area stopped by command.")
+                return
+            self._set_progress(
+                status="running",
+                tool="search_area",
+                target=target,
+                current_waypoint_index=index,
+                total_waypoints=len(route),
+                message=f"Flying to waypoint {index}/{len(route)}.",
+            )
+            sub_waypoints = self._planned_sub_waypoints(waypoint, planned_avoidance, effective_area)
+            if not sub_waypoints:
+                return
+            for sub_index, sub_waypoint in enumerate(sub_waypoints, start=1):
+                if self._active_mission.stop_event.is_set():
                     return
-                for sub_index, sub_waypoint in enumerate(sub_waypoints, start=1):
-                    if self._mission_stop.is_set():
-                        return
-                    self._set_progress(
-                        message=f"Flying to waypoint {index}/{len(route)} segment {sub_index}/{len(sub_waypoints)}.",
+                self._set_progress(
+                    message=f"Flying to waypoint {index}/{len(route)} segment {sub_index}/{len(sub_waypoints)}.",
+                )
+                commanded_speed = float(speed_mps)
+                with self._mission_lock:
+                    planner_state = self._mission_progress.get("planner")
+                if isinstance(planner_state, dict) and str(planner_state.get("fallback", "")).startswith("direct_"):
+                    commanded_speed = min(commanded_speed, 1.2)
+                try:
+                    self.executor.goto_local(
+                        sub_waypoint.x, sub_waypoint.y, sub_waypoint.z,
+                        speed_mps=commanded_speed,
+                        face_target=not planned_avoidance,
                     )
-                    commanded_speed = float(speed_mps)
-                    with self._mission_lock:
-                        planner_state = self._mission_progress.get("planner")
-                    if isinstance(planner_state, dict) and str(planner_state.get("fallback", "")).startswith("direct_"):
-                        commanded_speed = min(commanded_speed, 1.2)
-                    try:
-                        self.executor.goto_local(
-                            sub_waypoint.x,
-                            sub_waypoint.y,
-                            sub_waypoint.z,
-                            speed_mps=commanded_speed,
-                            face_target=not planned_avoidance,
-                        )
-                    except Exception as exc:
-                        self._set_progress(status="failed", message=f"Waypoint {index} command failed: {exc}")
-                        return
-                    if not self._wait_for_waypoint(
-                        sub_waypoint,
-                        speed_mps,
-                        collision_baseline,
-                        avoidance=avoidance,
-                        reactive_avoidance=not planned_avoidance,
-                        obstacle_distance_m=obstacle_distance_m,
-                        avoidance_offset_m=avoidance_offset_m,
-                    ):
-                        return
+                except Exception as exc:
+                    self._set_progress(status="failed", message=f"Waypoint {index} command failed: {exc}")
+                    return
                 if not self._wait_for_waypoint(
-                    waypoint,
-                    speed_mps,
-                    collision_baseline,
-                    avoidance=avoidance,
-                    reactive_avoidance=not planned_avoidance,
+                    sub_waypoint, speed_mps, collision_baseline,
+                    avoidance=avoidance, reactive_avoidance=not planned_avoidance,
                     obstacle_distance_m=obstacle_distance_m,
                     avoidance_offset_m=avoidance_offset_m,
                 ):
                     return
-            self._set_progress(
-                status="completed",
-                current_waypoint_index=len(route),
-                total_waypoints=len(route),
-                distance_to_waypoint_m=0.0,
-                message=f"Search area completed for target '{target}'.",
-            )
-        except Exception as exc:
-            self._set_progress(status="failed", message=f"Search area worker failed: {exc}")
+            if not self._wait_for_waypoint(
+                waypoint, speed_mps, collision_baseline,
+                avoidance=avoidance, reactive_avoidance=not planned_avoidance,
+                obstacle_distance_m=obstacle_distance_m,
+                avoidance_offset_m=avoidance_offset_m,
+            ):
+                return
+        self._set_progress(
+            status="completed",
+            current_waypoint_index=len(route),
+            total_waypoints=len(route),
+            distance_to_waypoint_m=0.0,
+            message=f"Search area completed for target '{target}'.",
+        )
 
     def _run_waypoint_route(
         self,
@@ -1233,7 +1723,7 @@ class AgentToolRuntime:
                 return
             collision_baseline = self.adapter.collision_status().time_stamp
             for index, waypoint in enumerate(route, start=1):
-                if self._mission_stop.is_set():
+                if self._active_mission.stop_event.is_set():
                     self._set_progress(status="stopped", message="航点飞行已停止。")
                     return
                 collision = self.adapter.collision_status()
@@ -1248,7 +1738,7 @@ class AgentToolRuntime:
                         self._set_progress(status="blocked", obstacle=obstacle.to_api(), message="前方障碍风险过高，航点飞行已暂停。")
                         return
                 self.executor.goto_local(waypoint.x, waypoint.y, waypoint.z, speed_mps=speed_mps)
-                while not self._mission_stop.is_set():
+                while not self._active_mission.stop_event.is_set():
                     distance = self._distance_to_waypoint(waypoint)
                     self._set_progress(current_waypoint_index=index, total_waypoints=len(route), distance_to_waypoint_m=round(distance, 2), message=f"正在飞向航点 {index}/{len(route)}。")
                     if distance <= 2.0:
@@ -1258,6 +1748,7 @@ class AgentToolRuntime:
                 self.executor.hover()
             self._set_progress(status="completed", message="航点飞行完成。")
         except Exception as exc:
+            logger.exception("Waypoint route worker failed")
             self._set_progress(status="failed", message=f"航点飞行失败：{exc}")
 
     def _run_formation_route(
@@ -1371,7 +1862,7 @@ class AgentToolRuntime:
             return False
         started_at = time.time()
         while time.time() - started_at <= max(18.0, target_altitude * 2.0):
-            if self._mission_stop.is_set():
+            if self._active_mission.stop_event.is_set():
                 self._set_progress(status="stopped", message="Search area stopped during takeoff.")
                 return False
             telemetry = self.adapter.telemetry()
@@ -1401,13 +1892,13 @@ class AgentToolRuntime:
         last_distance: float | None = None
         stagnant_since: float | None = None
         while time.time() - started_at <= timeout_s:
-            if self._mission_stop.is_set():
+            if self._active_mission.stop_event.is_set():
                 self._set_progress(status="stopped", message="Search area stopped by command.")
                 return False
             collision = self.adapter.collision_status()
             if collision.has_collided and collision.time_stamp > collision_baseline:
                 recovery = self._try_recovery()
-                self._mission_stop.set()
+                self._active_mission.stop_event.set()
                 self._set_progress(
                     status="recovered" if recovery is not None else "collision",
                     collision=collision.to_api(),
@@ -1423,7 +1914,7 @@ class AgentToolRuntime:
                 self._set_progress(distance_sensors=distances.to_api())
                 if distances.available and distances.emergency:
                     stopped_at = self._try_hard_stop()
-                    self._mission_stop.set()
+                    self._active_mission.stop_event.set()
                     self._set_progress(
                         status="blocked",
                         recovery={"mode": "hard_stop", "stopped_at": stopped_at},
@@ -1441,7 +1932,7 @@ class AgentToolRuntime:
                 if obstacle.available and obstacle.blocked:
                     if getattr(obstacle, "risk_level", "") == "critical":
                         recovery = self._try_recovery()
-                        self._mission_stop.set()
+                        self._active_mission.stop_event.set()
                         self._set_progress(
                             status="recovered" if recovery is not None else "blocked",
                             recovery=recovery,
@@ -1473,7 +1964,7 @@ class AgentToolRuntime:
                 stagnant_since = stagnant_since or time.time()
                 if time.time() - stagnant_since >= 4.0:
                     recovery = self._try_recovery()
-                    self._mission_stop.set()
+                    self._active_mission.stop_event.set()
                     self._set_progress(
                         status="stuck_recovered" if recovery is not None else "stuck",
                         recovery=recovery,
@@ -1496,20 +1987,53 @@ class AgentToolRuntime:
             + (float(telemetry.z) - float(waypoint.z)) ** 2
         )
 
+    def _replan_blocked_waypoint(
+        self, start: Waypoint, target: Waypoint, grid_slice: Any,
+    ) -> list[Waypoint] | None:
+        """Try to find an alternative waypoint when the original is blocked."""
+        goal_cell = grid_slice.world_to_cell(target.x, target.y)
+        if goal_cell is not None:
+            free_goal = grid_slice.nearest_free(goal_cell, max_radius=16)
+            if free_goal is not None and free_goal != goal_cell:
+                wx, wy = grid_slice.cell_to_world(free_goal)
+                alt_target = Waypoint(wx, wy, target.z)
+                plan = plan_local_path_on_slice(start, alt_target, grid_slice, max_waypoints=14)
+                if plan.ok:
+                    self._set_progress(
+                        planner=plan.to_api() | {"replanned": True, "reason": f"waypoint shifted to nearest free cell"},
+                        message=f"Replanned: waypoint ({target.x:.1f},{target.y:.1f}) shifted to free cell ({wx:.1f},{wy:.1f}).",
+                    )
+                    return plan.waypoints
+
+        if self._temporal_grid is not None:
+            for alt_offset in (-4.0, 4.0):
+                alt_z = float(target.z) + alt_offset
+                alt_slice = self._temporal_grid.extract_2d_slice(
+                    z_center=alt_z, half_height=2.0, treat_unknown_as="free",
+                )
+                alt_plan = plan_local_path_on_slice(start, target, alt_slice, max_waypoints=12)
+                if alt_plan.ok:
+                    alt_target = Waypoint(target.x, target.y, alt_z)
+                    alt_plan_full = plan_local_path_on_slice(start, alt_target, alt_slice, max_waypoints=14)
+                    if alt_plan_full.ok:
+                        self._set_progress(
+                            planner=alt_plan_full.to_api() | {"replanned": True, "reason": f"altitude adjusted by {alt_offset:+.0f}m"},
+                            message=f"Replanned: waypoint altitude shifted {alt_offset:+.0f}m to z={alt_z:.1f} for obstacle clearance.",
+                        )
+                        return alt_plan_full.waypoints
+
+        return None
+
     def _planned_sub_waypoints(self, goal: Any, enabled: bool, effective_area: MissionArea | None = None) -> list[Waypoint]:
         if not enabled:
             return [goal]
         telemetry = self.adapter.telemetry()
         start = Waypoint(float(telemetry.x), float(telemetry.y), float(goal.z))
         target = Waypoint(float(goal.x), float(goal.y), float(goal.z))
-        points = self.adapter.lidar_obstacle_points_world(
-            range_m=35.0,
-            vertical_window_m=2.5,
-            vertical_down_m=1.4,
-            denoise_cell_m=2.0,
-            min_points_per_cell=3,
-        )
-        if len(points) < 3:
+        self._update_temporal_grid()
+        grid_slice = self._get_2d_slice_for_planning(z_center=float(goal.z), half_height=8.0)
+
+        if grid_slice is None:
             distances = self.adapter.distance_sensors_status(
                 emergency_threshold_m=2.8,
                 side_emergency_threshold_m=1.8,
@@ -1518,12 +2042,11 @@ class AgentToolRuntime:
                 self._set_progress(
                     planner={
                         "ok": True,
-                        "reason": "not enough LiDAR obstacle points; direct segment allowed by distance safety bubble",
-                        "points": len(points),
+                        "reason": "temporal grid not available; direct segment allowed by distance safety bubble",
                         "fallback": "direct_safe_segment",
                     },
                     distance_sensors=distances.to_api(),
-                    message="Planner fallback: no nearby LiDAR obstacles; flying direct segment with distance safety bubble.",
+                    message="Planner fallback: temporal grid unavailable; flying direct segment with distance safety bubble.",
                 )
                 return [target]
             obstacle = self.adapter.obstacle_status(lookahead_m=10.0)
@@ -1531,61 +2054,51 @@ class AgentToolRuntime:
                 self._set_progress(
                     planner={
                         "ok": True,
-                        "reason": "LiDAR sparse and distance bubble unavailable; cautious direct segment fallback enabled",
-                        "points": len(points),
+                        "reason": "temporal grid unavailable; cautious direct segment fallback enabled",
                         "fallback": "direct_cautious_segment",
                     },
                     obstacle=obstacle.to_api(),
                     distance_sensors=distances.to_api(),
-                    message="Planner fallback: sparse sensing, no high-risk obstacle detected; continuing with cautious direct segment.",
+                    message="Planner fallback: temporal grid unavailable; continuing with cautious direct segment.",
                 )
                 return [target]
             self._set_progress(
                 status="blocked",
-                planner={
-                    "ok": False,
-                    "reason": "not enough LiDAR points and distance safety bubble is unavailable or unsafe",
-                    "points": len(points),
-                },
+                planner={"ok": False, "reason": "temporal grid unavailable and distance safety bubble is unsafe"},
                 distance_sensors=distances.to_api(),
-                message="Planned avoidance needs LiDAR or safe distance readings; search stopped to avoid blind flight.",
+                message="Planned avoidance needs temporal grid or safe distance readings; search stopped to avoid blind flight.",
             )
-            self._mission_stop.set()
+            self._active_mission.stop_event.set()
             return []
-        plan = plan_local_path(
+
+        plan = plan_local_path_on_slice(
             start=start,
             goal=target,
-            obstacle_points=points,
-            grid_size_m=70.0,
-            resolution_m=1.5,
-            inflation_m=4.0,
+            grid_slice=grid_slice,
             max_waypoints=14,
-            bounds=(
-                effective_area.x_min,
-                effective_area.x_max,
-                effective_area.y_min,
-                effective_area.y_max,
-            ) if effective_area is not None else None,
         )
-        self._set_progress(planner=plan.to_api() | {"points": len(points)})
+        self._set_progress(planner=plan.to_api())
         if not plan.ok:
+            replanned = self._replan_blocked_waypoint(start, target, grid_slice)
+            if replanned is not None:
+                return replanned
             obstacle = self.adapter.obstacle_status(lookahead_m=12.0)
             if obstacle.blocked and obstacle.risk_level in {"high", "critical"}:
                 recovery = self._try_recovery()
-                self._mission_stop.set()
+                self._active_mission.stop_event.set()
                 self._set_progress(
                     status="recovered" if recovery is not None else "blocked",
                     obstacle=obstacle.to_api(),
                     recovery=recovery,
-                    message="Planner found no safe path near obstacle; recovery attempted.",
+                    message="Planner found no safe path and no alternative waypoint near obstacle; recovery attempted.",
                 )
                 return []
             self._set_progress(
-                planner=plan.to_api() | {"points": len(points), "fallback": "direct_after_plan_fail"},
+                planner=plan.to_api() | {"fallback": "skip_blocked_waypoint"},
                 obstacle=obstacle.to_api(),
-                message="A* planner failed but risk is not high; falling back to direct cautious segment.",
+                message=f"A* planner failed to reach waypoint ({target.x:.1f}, {target.y:.1f}); skipping blocked waypoint.",
             )
-            return [target]
+            return []
         return plan.waypoints
 
     def _preflight_area_assessment(self, area: MissionArea, route: list[Any]) -> dict[str, Any]:
@@ -1602,15 +2115,14 @@ class AgentToolRuntime:
         ]
         sampled_points: set[tuple[float, float]] = set()
         for index, (x, y) in enumerate(sample_targets, start=1):
-            if self._mission_stop.is_set():
+            if self._active_mission.stop_event.is_set():
                 break
             self._set_progress(message=f"Pre-scan: sampling {index}/{len(sample_targets)} at X {x:.1f}, Y {y:.1f}.")
             try:
-                self.adapter.hold_current_position(duration_s=0.6)
                 self.executor.face_local(x, y)
-                time.sleep(0.25)
-            except Exception:
-                pass
+                time.sleep(0.15)
+            except Exception as face_err:
+                self._set_progress(message=f"Pre-scan face_local failed at ({x:.1f}, {y:.1f}): {face_err}")
             points = self.adapter.lidar_obstacle_points_world(
                 range_m=55.0,
                 vertical_window_m=2.5,
@@ -1645,48 +2157,11 @@ class AgentToolRuntime:
 
     @staticmethod
     def _blocked_zones_from_points(area: MissionArea, points: set[tuple[float, float]]) -> list[dict[str, Any]]:
-        if not points:
-            return []
-        cell_size = 2.0
-        cells: dict[tuple[int, int], int] = {}
-        for x, y in points:
-            if not (area.x_min <= x <= area.x_max and area.y_min <= y <= area.y_max):
-                continue
-            col = int((x - area.x_min) / cell_size)
-            row = int((y - area.y_min) / cell_size)
-            cells[(col, row)] = cells.get((col, row), 0) + 1
-        zones: list[dict[str, Any]] = []
-        for (col, row), count in cells.items():
-            if count < 4:
-                continue
-            x_min = area.x_min + col * cell_size
-            y_min = area.y_min + row * cell_size
-            zones.append(
-                {
-                    "x_min": round(x_min, 2),
-                    "x_max": round(min(area.x_max, x_min + cell_size), 2),
-                    "y_min": round(y_min, 2),
-                    "y_max": round(min(area.y_max, y_min + cell_size), 2),
-                    "points": count,
-                    "type": "obstacle",
-                }
-            )
-        zones.sort(key=lambda zone: int(zone["points"]), reverse=True)
-        return zones
+        return preflight.blocked_zones_from_points(area, points)
 
     @staticmethod
     def _count_route_hits(route: list[Any], zones: list[dict[str, Any]]) -> int:
-        hits = 0
-        for start, end in zip(route, route[1:]):
-            sx = float(getattr(start, "x", 0.0))
-            sy = float(getattr(start, "y", 0.0))
-            ex = float(getattr(end, "x", 0.0))
-            ey = float(getattr(end, "y", 0.0))
-            for zone in zones:
-                if AgentToolRuntime._segment_intersects_zone(sx, sy, ex, ey, zone, padding_m=1.5):
-                    hits += 1
-                    break
-        return hits
+        return preflight.count_route_hits(route, zones)
 
     @staticmethod
     def _segment_intersects_zone(
@@ -1697,126 +2172,31 @@ class AgentToolRuntime:
         zone: dict[str, Any],
         padding_m: float,
     ) -> bool:
-        try:
-            x_min = float(zone["x_min"]) - padding_m
-            x_max = float(zone["x_max"]) + padding_m
-            y_min = float(zone["y_min"]) - padding_m
-            y_max = float(zone["y_max"]) + padding_m
-        except Exception:
-            return False
-        if max(sx, ex) < x_min or min(sx, ex) > x_max or max(sy, ey) < y_min or min(sy, ey) > y_max:
-            return False
-        if abs(sy - ey) <= 0.2:
-            return y_min <= sy <= y_max
-        if abs(sx - ex) <= 0.2:
-            return x_min <= sx <= x_max
-        return True
+        return preflight.segment_intersects_zone(sx, sy, ex, ey, zone, padding_m)
 
     @staticmethod
     def _replan_route_around_zones(route: list[Any], zones: Any, padding_m: float = 2.0) -> list[Waypoint]:
-        if not isinstance(zones, list) or not zones:
-            return [Waypoint(float(point.x), float(point.y), float(point.z)) for point in route]
-        safe_route: list[Waypoint] = []
-        min_segment_m = 3.0
-        for start, end in zip(route, route[1:]):
-            sx = float(getattr(start, "x", 0.0))
-            sy = float(getattr(start, "y", 0.0))
-            sz = float(getattr(start, "z", -10.0))
-            ex = float(getattr(end, "x", 0.0))
-            ey = float(getattr(end, "y", 0.0))
-            ez = float(getattr(end, "z", sz))
-            if abs(sy - ey) > 0.2:
-                continue
-            lane_y = sy
-            x_low = min(sx, ex)
-            x_high = max(sx, ex)
-            blocked_intervals: list[tuple[float, float]] = []
-            for zone in zones:
-                try:
-                    zone_y_min = float(zone["y_min"]) - padding_m
-                    zone_y_max = float(zone["y_max"]) + padding_m
-                    if zone_y_min <= lane_y <= zone_y_max:
-                        blocked_intervals.append(
-                            (
-                                max(x_low, float(zone["x_min"]) - padding_m),
-                                min(x_high, float(zone["x_max"]) + padding_m),
-                            )
-                        )
-                except Exception:
-                    continue
-            intervals = AgentToolRuntime._subtract_intervals(x_low, x_high, blocked_intervals)
-            if sx > ex:
-                intervals = list(reversed(intervals))
-            for seg_start, seg_end in intervals:
-                if abs(seg_end - seg_start) < min_segment_m:
-                    continue
-                a, b = (seg_start, seg_end) if sx <= ex else (seg_end, seg_start)
-                if not safe_route or math.hypot(safe_route[-1].x - a, safe_route[-1].y - lane_y) > 0.5:
-                    safe_route.append(Waypoint(a, lane_y, sz))
-                safe_route.append(Waypoint(b, lane_y, ez))
-        return safe_route
+        return preflight.replan_route_around_zones(route, zones, padding_m)
 
     @staticmethod
     def _subtract_intervals(x_low: float, x_high: float, blocked: list[tuple[float, float]]) -> list[tuple[float, float]]:
-        intervals = [(float(x_low), float(x_high))]
-        for block_start, block_end in sorted(blocked):
-            next_intervals: list[tuple[float, float]] = []
-            for start, end in intervals:
-                if block_end <= start or block_start >= end:
-                    next_intervals.append((start, end))
-                    continue
-                if block_start > start:
-                    next_intervals.append((start, min(block_start, end)))
-                if block_end < end:
-                    next_intervals.append((max(block_end, start), end))
-            intervals = next_intervals
-        return intervals
+        return preflight.subtract_intervals(x_low, x_high, blocked)
 
     @staticmethod
     def _area_coverage(area: MissionArea, zones: list[dict[str, Any]]) -> float:
-        area_size = max(1.0, (float(area.x_max) - float(area.x_min)) * (float(area.y_max) - float(area.y_min)))
-        blocked = 0.0
-        for zone in zones:
-            blocked += max(0.0, float(zone["x_max"]) - float(zone["x_min"])) * max(0.0, float(zone["y_max"]) - float(zone["y_min"]))
-        return min(1.0, blocked / area_size)
+        return preflight.area_coverage(area, zones)
 
     @staticmethod
     def _assessment_risk(coverage: float, route_hits: int) -> str:
-        if route_hits >= 3 or coverage >= 0.28:
-            return "critical"
-        if route_hits >= 1 or coverage >= 0.12:
-            return "high"
-        if coverage >= 0.04:
-            return "medium"
-        return "low"
+        return preflight.assessment_risk(coverage, route_hits)
 
     @staticmethod
     def _assessment_recommendation(risk: str, route_hits: int, coverage: float) -> str:
-        if risk == "critical":
-            return "Area contains dense obstacles or the planned scan route intersects blocked cells; split or shrink the mission area."
-        if risk == "high" and route_hits > 0:
-            return "Planned scan route crosses suspected obstacles; increase scan_margin_m or split the area."
-        if risk == "high":
-            return "Area has significant obstacle coverage; proceed only with planned avoidance enabled."
-        if risk == "medium":
-            return "Area has scattered obstacles; planned avoidance is recommended."
-        return "Area appears flyable from pre-scan samples."
+        return preflight.assessment_recommendation(risk, route_hits, coverage)
 
     @staticmethod
     def _inset_area(area: MissionArea, margin_m: float) -> MissionArea:
-        margin = max(0.0, float(margin_m))
-        width = float(area.x_max) - float(area.x_min)
-        height = float(area.y_max) - float(area.y_min)
-        max_margin = max(0.0, min(width, height) / 2.0 - 1.0)
-        margin = min(margin, max_margin)
-        if margin <= 0.0:
-            return area
-        return MissionArea(
-            x_min=float(area.x_min) + margin,
-            x_max=float(area.x_max) - margin,
-            y_min=float(area.y_min) + margin,
-            y_max=float(area.y_max) - margin,
-        )
+        return preflight.inset_area(area, margin_m)
 
     def _avoid_obstacle(
         self,
@@ -1850,7 +2230,7 @@ class AgentToolRuntime:
         started_at = time.time()
         timeout_s = max(8.0, self._distance_to_xyz(bypass_x, bypass_y, bypass_z) / max(0.5, speed_mps) + 5.0)
         while time.time() - started_at <= timeout_s:
-            if self._mission_stop.is_set():
+            if self._active_mission.stop_event.is_set():
                 self._set_progress(status="stopped", message="Search area stopped during avoidance.")
                 return False
             collision = self.adapter.collision_status()
@@ -1883,34 +2263,146 @@ class AgentToolRuntime:
 
     def _try_recovery(self) -> dict[str, Any] | None:
         try:
-            return self.executor.recover_from_collision(climb_m=8.0, backoff_m=10.0, force_relocate=True)
+            safe_heading_deg = None
+            if self._temporal_grid is not None:
+                telemetry = self.adapter.telemetry()
+                drone_x, drone_y, drone_z = float(telemetry.x), float(telemetry.y), float(telemetry.z)
+                check_distance = 6.0
+                best_dir = 0.0
+                best_blocked = 999999
+                for angle_deg in range(0, 360, 45):
+                    rad = math.radians(angle_deg)
+                    check_x = drone_x + math.cos(rad) * check_distance
+                    check_y = drone_y + math.sin(rad) * check_distance
+                    if self._temporal_grid.is_path_blocked(check_x, check_y, drone_z, half_height=6.0):
+                        continue
+                    idx = self._temporal_grid._world_to_voxel(check_x, check_y, drone_z)
+                    if idx is not None:
+                        col, row, _layer = idx
+                        blocked_in_dir = 0
+                        for dc in range(-2, 3):
+                            for dr in range(-2, 3):
+                                if self._temporal_grid.is_confirmed_occupied(col + dc, row + dr, 0):
+                                    blocked_in_dir += 1
+                        if blocked_in_dir < best_blocked:
+                            best_blocked = blocked_in_dir
+                            best_dir = float(angle_deg)
+                if best_blocked < 999999:
+                    safe_heading_deg = best_dir
+
+            if safe_heading_deg is not None:
+                rad = math.radians(safe_heading_deg)
+                retreat_x = float(telemetry.x) + math.cos(rad) * nav_config.recovery_backoff_m
+                retreat_y = float(telemetry.y) + math.sin(rad) * nav_config.recovery_backoff_m
+                self.adapter.recover_from_collision_with_direction(
+                    climb_m=nav_config.recovery_climb_m, retreat_x=retreat_x, retreat_y=retreat_y,
+                )
+                return {"mode": "smart_recovery", "heading_deg": safe_heading_deg,
+                        "retreat_x": retreat_x, "retreat_y": retreat_y}
+            return self.executor.recover_from_collision(
+                climb_m=nav_config.recovery_climb_m, backoff_m=nav_config.recovery_backoff_m, force_relocate=True,
+            )
         except Exception:
+            logger.exception("Collision recovery failed")
             try:
                 return {"mode": "hard_stop", "stopped_at": self.executor.hard_stop()}
             except Exception:
-                pass
+                logger.exception("Recovery hard_stop fallback also failed")
             return None
 
     def _try_hard_stop(self) -> dict[str, float] | None:
         try:
             return self.executor.hard_stop()
-        except Exception:
+        except Exception as hs_err:
+            self._set_progress(message=f"hard_stop failed: {hs_err}")
             try:
                 self.executor.hover()
-            except Exception:
-                pass
+            except Exception as hover_err:
+                self._set_progress(message=f"hard_stop hover fallback also failed: {hover_err}")
             return None
+
+    def _ensure_temporal_grid(self, x: float, y: float, z: float) -> TemporalVoxelGrid:
+        self._temporal_grid = TemporalVoxelGrid(
+            center_x=x, center_y=y, center_z=z,
+            size_xy_m=100.0, size_z_m=24.0, resolution_m=1.0,
+            hit_confirm=3, miss_confirm=5, inflation_m=1.5,
+        )
+        self._depth_camera = DepthCamera(
+            camera_name=self.adapter.active_camera_name or "front_center",
+            max_range_m=40.0, sample_step=8, max_points_per_frame=2000,
+        )
+        return self._temporal_grid
+
+    def _update_temporal_grid(self) -> None:
+        if self._temporal_grid is None:
+            return
+
+        raw_lidar, (px, py, pz) = self.adapter.lidar_obstacle_points_world(
+            range_m=35.0, vertical_window_m=3.0, vertical_down_m=2.0,
+            denoise_cell_m=1.0, min_points_per_cell=1,
+            return_3d=True, return_position=True,
+        )
+
+        if raw_lidar:
+            self._temporal_grid.add_points_3d(raw_lidar)
+            # Write 2D projection to shared nav-cache so the WebSocket map
+            # can show obstacle points without any RPC contention.
+            lidar_2d: list[tuple[float, float]] = [(x, y) for (x, y, _z) in raw_lidar]
+            self.adapter.update_nav_cache({"lidar_points": lidar_2d})
+
+        if self._temporal_grid.should_recenter(px, py, pz):
+            self._temporal_grid.recenter(px, py, pz)
+
+        if self._depth_camera is not None:
+            cloud = self._depth_camera.capture(self.adapter)
+            if cloud.ok and cloud.sampled_point_count > 0:
+                self._temporal_grid.add_ray_casts(
+                    origin=cloud.camera_position,
+                    endpoints=cloud.points_world,
+                )
+
+    def _get_2d_slice_for_planning(self, z_center: float, half_height: float = 8.0):
+        if self._temporal_grid is None:
+            return None
+        return self._temporal_grid.extract_2d_slice(
+            z_center=z_center, half_height=half_height, treat_unknown_as="free",
+        )
+
+    def _prepare_new_mission(self, timeout: float | None = None) -> threading.Event:
+        if timeout is None:
+            timeout = nav_config.mission_prepare_timeout_s
+        if self._active_mission is not None:
+            self._active_mission.stop()
+            old_thread = self._active_mission.thread
+            if old_thread is not None and old_thread.is_alive():
+                old_thread.join(timeout=timeout)
+                if old_thread.is_alive():
+                    logger.warning(
+                        "Previous mission thread '%s' did not stop within %.1fs",
+                        self._active_mission.name, timeout,
+                    )
+        stop_event = threading.Event()
+        self._active_mission = ActiveMission(stop_event=stop_event, name="pending")
+        return stop_event
 
     def _set_progress(self, **updates: Any) -> None:
         if "telemetry" not in updates:
             try:
                 updates["telemetry"] = self.adapter.telemetry().to_api()
-            except Exception:
-                pass
+            except Exception as telem_err:
+                logger.warning("Telemetry fetch in _set_progress failed: %s", telem_err)
         status_value = str(updates.get("status", "") or "")
         with self._mission_lock:
             self._mission_progress.update(updates)
             self._mission_progress["updated_at"] = time.time()
+        # Emit structured log for terminal/significant state transitions
+        if status_value in {"completed", "failed", "blocked", "collision", "recovered", "timeout", "stopped", "running"}:
+            log_mission_event(
+                "status_change",
+                progress=self._mission_progress,
+                new_status=status_value,
+                message=str(updates.get("message", "") or ""),
+            )
         self._apply_post_mission_behavior(status_value)
 
     def _apply_post_mission_behavior(self, status: str) -> None:
@@ -1926,5 +2418,5 @@ class AgentToolRuntime:
             self._terminal_hold_applied_at = now
         try:
             self._hold_current_position_quietly()
-        except Exception:
-            pass
+        except Exception as hold_err:
+            logger.warning("Post-mission hold_current_position failed: %s", hold_err)

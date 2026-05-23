@@ -54,6 +54,13 @@ class AirSimError(AeroMindError):
     message = "AirSim connection error"
 
 
+class AirSimFatalError(AirSimError):
+    """Unrecoverable AirSim error requiring a full disconnect/reconnect cycle."""
+
+    error_code = "AM_AIRSIM_FATAL"
+    message = "AirSim fatal error — reconnect required"
+
+
 class TaskError(AeroMindError):
     error_code = "AM_TASK_ERROR"
     http_status = HTTPStatus.INTERNAL_SERVER_ERROR

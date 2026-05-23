@@ -3,9 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import heapq
 import math
+from typing import TYPE_CHECKING
 
 from core.occupancy_grid import OccupancyGrid
 from core.path_planner import Waypoint
+
+if TYPE_CHECKING:
+    from core.temporal_grid import Grid2DSlice
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,39 @@ class AvoidancePlan:
             "reason": self.reason,
             "grid": self.grid,
         }
+
+
+def plan_local_path_on_slice(
+    start: Waypoint,
+    goal: Waypoint,
+    grid_slice: "Grid2DSlice",
+    max_waypoints: int = 18,
+) -> AvoidancePlan:
+    """Run A* on a 2D slice extracted from the 3D temporal voxel grid."""
+    start_cell = grid_slice.world_to_cell(start.x, start.y)
+    goal_cell = grid_slice.world_to_cell(goal.x, goal.y)
+    if start_cell is None or goal_cell is None:
+        return AvoidancePlan(False, [], "start or goal outside grid slice", grid_slice.to_api())
+
+    start_cell = grid_slice.nearest_free(start_cell) or start_cell
+    goal_cell = grid_slice.nearest_free(goal_cell) or goal_cell
+    if grid_slice.is_blocked(start_cell) or grid_slice.is_blocked(goal_cell):
+        return AvoidancePlan(False, [], "no free start or goal cell in slice", grid_slice.to_api())
+
+    cells = _astar(grid_slice, start_cell, goal_cell)
+    if not cells:
+        return AvoidancePlan(False, [], "A* could not find a free path on temporal slice", grid_slice.to_api())
+
+    sampled = _sample_cells(cells, max_waypoints=max_waypoints)
+    waypoints = []
+    for cell in sampled:
+        wx, wy = grid_slice.cell_to_world(cell)
+        waypoints.append(Waypoint(wx, wy, goal.z))
+
+    if not waypoints or _distance_2d(waypoints[-1], goal) > grid_slice.resolution_m * 2.0:
+        waypoints.append(goal)
+
+    return AvoidancePlan(True, waypoints, f"A* on temporal slice: {len(waypoints)} waypoints", grid_slice.to_api())
 
 
 def plan_local_path(

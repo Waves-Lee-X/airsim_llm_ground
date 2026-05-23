@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from core.llm_client import LLMClient, LLMConfig; print\\('llm_client OK'\\)\")",
+      "Bash(python -c \"from core.task_planner import TaskPlanner; print\\('task_planner OK'\\)\")",
+      "Bash(python -c \"import server; print\\('server imports OK'\\)\")",
+      "Bash(python -c \"from core.agent_tools import AgentToolRuntime; print\\('agent_tools OK'\\)\")",
+      "Bash(python -c \"from core.replay import load_replay_frames, deduplicate_replay_frames, turn_angle_deg, split_replay_by_turns, closest_spawn_area; print\\('replay OK'\\)\")",
+      "Bash(python -c \"from core.preflight import blocked_zones_from_points, replan_route_around_zones, inset_area; print\\('preflight OK'\\)\")",
+      "Bash(python -c \"import server; print\\('server OK'\\)\")",
+      "Bash(python -m pip install python-dotenv)",
+      "Bash(python -m pytest tests/ -v --ignore=tests/test_agent_loop.py)",
+      "Bash(python -m pytest tests/ -v --ignore=tests/test_task_preview_api.py)",
+      "Bash(python -m pytest tests/test_obstacle_avoidance.py::TestPlanLocalPath::test_completely_blocked_returns_not_ok -v)",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -c \"import airsim; c = airsim.MultirotorClient; print\\([m for m in dir\\(c\\) if 'move' in m.lower\\(\\) or 'takeoff' in m.lower\\(\\) or 'hover' in m.lower\\(\\)]\\)\")"
+    ]
+  }
+}

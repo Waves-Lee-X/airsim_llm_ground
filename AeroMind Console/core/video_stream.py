@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
 from core.airsim_adapter import AirSimAdapter, CameraFrame
+
+logger = logging.getLogger(__name__)
 
 
 class VideoStream:
@@ -86,5 +89,6 @@ class VideoStream:
             try:
                 self.adapter.select_camera(camera_name)
                 break
-            except Exception:
+            except Exception as cam_err:
+                logger.warning("Failed to switch to camera %s: %s", camera_name, cam_err)
                 continue

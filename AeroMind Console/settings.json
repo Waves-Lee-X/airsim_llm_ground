@@ -71,6 +71,13 @@
               "Height": 360,
               "FOV_Degrees": 95,
               "MotionBlurAmount": 0
+            },
+            {
+              "ImageType": 5,
+              "Width": 640,
+              "Height": 360,
+              "FOV_Degrees": 95,
+              "MotionBlurAmount": 0
             }
           ]
         },

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -43,8 +44,8 @@ class EventManager:
         try:
             with self._log_file.open("a", encoding="utf-8") as handle:
                 handle.write(f"{now.isoformat(timespec='seconds')} {level.upper():<7} {message}\n")
-        except Exception:
-            pass
+        except Exception as log_err:
+            print(f"[aeromind] log file write failed: {log_err}", file=sys.stderr)
 
     def get_events(self) -> list[dict[str, str]]:
         return [{"time": e.time, "level": e.level, "message": e.message} for e in self._events]
@@ -54,8 +55,8 @@ class EventManager:
         if self._log_file:
             try:
                 self._log_file.write_text("", encoding="utf-8")
-            except Exception:
-                pass
+            except Exception as clear_err:
+                print(f"[aeromind] log file clear failed: {clear_err}", file=sys.stderr)
         self.log("Logs cleared.", "INFO")
 
     def get_log_file_lines(self) -> list[str]:

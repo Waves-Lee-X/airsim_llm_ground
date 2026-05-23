@@ -92,7 +92,7 @@ class SearchAreaParams(BaseModel):
     obstacle_distance_m: PositiveFloat = Field(8.0, ge=3.0, le=20.0)
     avoidance_offset_m: PositiveFloat = Field(6.0, ge=2.0, le=15.0)
     scan_margin_m: float = Field(4.0, ge=0.0, le=12.0)
-    pre_scan: bool = True
+    pre_scan: bool = False
     pre_scan_stop_on_high_risk: bool = True
     strategy: str = Field('lawnmower', pattern=r'^(lawnmower|spiral|strip)$')
 
@@ -111,7 +111,7 @@ class CollectImagesParams(BaseModel):
     obstacle_distance_m: PositiveFloat = Field(8.0, ge=3.0, le=20.0)
     avoidance_offset_m: PositiveFloat = Field(6.0, ge=2.0, le=15.0)
     scan_margin_m: float = Field(4.0, ge=0.0, le=12.0)
-    pre_scan: bool = True
+    pre_scan: bool = False
     pre_scan_stop_on_high_risk: bool = True
 
 
@@ -123,6 +123,18 @@ class DetectObjectsParams(BaseModel):
 class ReturnHomeParams(BaseModel):
     safe_altitude_m: PositiveFloat = Field(8.0, ge=1.0, le=30.0)
     confirmed: bool = False
+
+
+class ReplayTrajectoryParams(BaseModel):
+    log_folder: str = Field(..., min_length=1, max_length=400)
+    speed_mps: PositiveFloat = Field(3.5, ge=0.5, le=4.0)
+    turn_threshold_deg: float = Field(30.0, ge=5.0, le=170.0)
+    min_dist_m: float = Field(0.5, ge=0.05, le=5.0)
+    spawn_target: bool = True
+    map_spawn_json: Optional[str] = Field(default=None, max_length=400)
+    target_object_name: str = Field("ReplayTarget", min_length=1, max_length=80)
+    draw_trail: bool = True
+    trail_thickness: float = Field(8.0, ge=1.0, le=30.0)
 
 
 class ValidationResult(BaseModel):
@@ -151,6 +163,7 @@ class ToolValidator:
         'collect_images': CollectImagesParams,
         'detect_objects': DetectObjectsParams,
         'return_home': ReturnHomeParams,
+        'replay_trajectory': ReplayTrajectoryParams,
     }
 
     @classmethod

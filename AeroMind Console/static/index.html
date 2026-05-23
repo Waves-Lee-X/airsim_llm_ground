@@ -60,6 +60,9 @@
             <div class="mapHead">
               <span>MISSION MAP</span>
               <div class="mapTools">
+                <button id="pointFlyBtn" class="miniBtn active" type="button">指点:开</button>
+                <button id="mapZoomInBtn" class="miniBtn" type="button">+</button>
+                <button id="mapZoomOutBtn" class="miniBtn" type="button">−</button>
                 <button id="mapFollowBtn" class="miniBtn active" type="button">FOLLOW</button>
                 <button id="mapFitBtn" class="miniBtn" type="button">FIT</button>
                 <em id="mapCursor">X 0.0 / Y 0.0 / 4.0 px/m</em>
@@ -123,7 +126,7 @@
               </label>
             </div>
             <div class="toggleRow">
-              <label><input id="preScanInput" type="checkbox" checked /> <span>&#39044;&#25195;&#25551;</span></label>
+              <label><input id="preScanInput" type="checkbox" /> <span>&#39044;&#25195;&#25551;</span></label>
               <label><input id="avoidanceInput" type="checkbox" checked /> <span>A* &#36991;&#38556;</span></label>
             </div>
           </div>
@@ -159,8 +162,8 @@
 
         <section class="logPanel">
           <div class="sectionHead">
-            <h2>&#20219;&#21153;&#26085;&#21697;</h2>
-            <button id="clearLogBtn" class="secondaryBtn">&#26631;&#20140;&#26085;&#21697;</button>
+            <h2>&#20219;&#21153;&#26085;&#24535;</h2>
+            <button id="clearLogBtn" class="secondaryBtn">清空</button>
           </div>
           <div id="missionLog" class="missionLog"></div>
         </section>
@@ -214,6 +217,6 @@
   </div>
 
   <div id="toastHost" class="toastHost"></div>
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

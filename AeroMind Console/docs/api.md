@@ -132,6 +132,25 @@ Emergency recovery when stuck in a mesh or tree:
 }
 ```
 
+Replay a recorded trajectory log and optionally spawn a target from `mark.json`:
+
+```json
+{
+  "tool": "replay_trajectory",
+  "args": {
+    "log_folder": "D:/workspace/airsim_llm_ground/VLA/data/NewYorkCity/a42b0e07-34d0-40e0-87d5-506a67066f9a/log",
+    "speed_mps": 3.5,
+    "turn_threshold_deg": 30,
+    "min_dist_m": 0.5,
+    "spawn_target": true,
+    "map_spawn_json": "D:/workspace/airsim_llm_ground/VLA/data/meta/map_spawnarea_info.json",
+    "target_object_name": "ReplayTarget",
+    "draw_trail": true,
+    "trail_thickness": 8
+  }
+}
+```
+
 Start a rectangular search mission:
 
 ```json

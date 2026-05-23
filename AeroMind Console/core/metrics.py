@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -163,9 +164,8 @@ class StructuredLogger:
             line = json.dumps(entry.to_dict(), ensure_ascii=False) + "\n"
             with self._log_file.open("a", encoding="utf-8") as f:
                 f.write(line)
-        except Exception:
-            pass
-
+        except Exception as log_err:
+            print(f"[aeromind] metrics log write failed: {log_err}", file=sys.stderr)
     def get_entries(self, level: str | None = None) -> List[Dict[str, Any]]:
         filtered = self._entries
         if level:
@@ -180,8 +180,8 @@ class StructuredLogger:
         if self._log_file:
             try:
                 self._log_file.write_text("", encoding="utf-8")
-            except Exception:
-                pass
+            except Exception as clear_err:
+                print(f"[aeromind] metrics log clear failed: {clear_err}", file=sys.stderr)
 
 
 class TelemetryMonitor:

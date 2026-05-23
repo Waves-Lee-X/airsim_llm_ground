@@ -1,14 +1,39 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 from typing import Any
 
 from core.task_schema import MissionArea, MissionPlan, PlanStep
 
+logger = logging.getLogger(__name__)
+
+_AGENTIC_MODE = os.environ.get("AEROMIND_AGENTIC_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+
 
 class TaskPlanner:
-    """Rule-based Chinese/English planner used before the real LLM planner is connected."""
+    """LLM-first planner with rule-based Chinese/English fallback."""
+
+    AGENTIC_INTENT = "agentic"
+
+    def __init__(self, llm_client: Any = None) -> None:
+        self._llm = llm_client
+
+    def plan_agentic(self, text: str) -> MissionPlan:
+        """Create a MissionPlan that signals the ReAct agent loop should be used."""
+        return MissionPlan(
+            task=text.strip(),
+            intent=self.AGENTIC_INTENT,
+            target="unknown",
+            altitude_m=8.0,
+            strategy="agentic_react",
+            plan=[
+                PlanStep("Agent mission", text.strip(), "agentic"),
+            ],
+            raw={"agentic": True},
+        )
 
     INTENT_KEYWORDS = {
         "autonomous_navigation": (
@@ -131,6 +156,13 @@ class TaskPlanner:
         raw = text.strip()
         if not raw:
             raw = "No mission input"
+
+        if self._llm is not None and _AGENTIC_MODE:
+            return self.plan_agentic(raw)
+
+        return self._plan_rules(raw)
+
+    def _plan_rules(self, raw: str) -> MissionPlan:
         parsed_json = self._try_parse_json(raw)
         if parsed_json:
             return self._from_json(raw, parsed_json)

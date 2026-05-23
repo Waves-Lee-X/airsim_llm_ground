@@ -1,9 +1,18 @@
 import argparse
 import json
 import mimetypes
+import os
 import sys
 import time
 import traceback
+import logging
+
+try:
+    from dotenv import load_dotenv  # type: ignore
+except ImportError:
+    pass
+
+logger = logging.getLogger("aeromind")
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +23,11 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
+
+try:
+    load_dotenv(ROOT / ".env")
+except NameError:
+    pass
 LOG_DIR = ROOT / "logs"
 LOG_FILE = LOG_DIR / "aeromind.log"
 sys.path.insert(0, str(ROOT))
@@ -25,10 +39,13 @@ from core.video_stream import VideoStream  # noqa: E402
 from core.path_planner import Waypoint, lawnmower_path  # noqa: E402
 from core.task_executor import TaskExecutor  # noqa: E402
 from core.agent_tools import AgentToolRuntime  # noqa: E402
+from core.agent_loop import AgentLoop  # noqa: E402
 from core.safety_gate import SafetyGate, SafetyState  # noqa: E402
 from core.vision_detector import VisionDetector  # noqa: E402
 from core.auth import AuthManager, AuthConfig  # noqa: E402
+from core.llm_client import LLMClient, LLMConfig  # noqa: E402
 from core.exceptions import ErrorHandler  # noqa: E402
+from core.websocket import ws_handshake, ws_send_text  # noqa: E402
 
 
 class ConsoleState:
@@ -42,14 +59,29 @@ class ConsoleState:
         self.route: list[dict[str, float]] = []
         self.search_area: dict[str, float] | None = None
         self.targets: list[dict[str, float | str]] = []
-        self.planner = TaskPlanner()
+        llm_api_key = os.environ.get("AEROMIND_LLM_API_KEY", "")
+        self.planner = TaskPlanner(llm_client=LLMClient(LLMConfig(
+            api_key=llm_api_key,
+            base_url=os.environ.get("AEROMIND_LLM_BASE_URL", "https://api.openai.com/v1"),
+            model=os.environ.get("AEROMIND_LLM_MODEL", "gpt-4o-mini"),
+        )) if llm_api_key else None)
         self.airsim = AirSimAdapter()
         self.executor = TaskExecutor(self.airsim)
         self.safety_gate = SafetyGate()
         self.safety_gate.set_state_checker(self._safety_state_checker)
         self.detector = VisionDetector()
         self.agent_tools = AgentToolRuntime(self.airsim, self.executor, self.detector)
-        self.auth = AuthManager(AuthConfig(enabled=False))
+        self.agent_loop = AgentLoop(
+            llm_client=self.planner._llm if self.planner else None,
+            safety_gate=self.safety_gate,
+            tools=self.agent_tools,
+        )
+        self.auth = AuthManager(AuthConfig(
+            enabled=True,
+            rate_limit_requests=60,
+            rate_limit_window_s=60,
+            allowed_ips=("127.0.0.1", "::1", "localhost"),
+        ))
         self.video_stream = VideoStream(self.airsim)
         self.latest_detection: dict[str, Any] = {
             "ok": False,
@@ -78,28 +110,37 @@ class ConsoleState:
         try:
             with LOG_FILE.open("a", encoding="utf-8") as handle:
                 handle.write(f"{now.isoformat(timespec='seconds')} {level.upper():<7} {message}\n")
-        except Exception:
-            pass
+        except Exception as log_err:
+            print(f"[aeromind] log write failed: {log_err}", file=sys.stderr)
 
     def snapshot(self) -> dict[str, Any]:
-        telemetry = self.airsim.telemetry()
+        cache = self.airsim.get_nav_cache()
+        telemetry = cache["telemetry"]
         connected = self.airsim.is_connected()
         if connected:
             self.video_stream.start()
         if connected:
-            collision = self.airsim.collision_status()
-            obstacle = self.airsim.obstacle_status()
-            distances = self.airsim.distance_sensors_status()
-            obstacle_points = self._sample_obstacle_points(
-                self.airsim.lidar_obstacle_points_world(
-                    range_m=35.0,
-                    vertical_window_m=2.5,
-                    vertical_down_m=1.4,
-                    denoise_cell_m=2.0,
-                    min_points_per_cell=3,
+            collision = cache["collision"]
+            obstacle = cache["obstacle"]
+            distances = cache["distances"]
+            # Only hit the engine for fresh LiDAR when the cache is stale
+            # (no active nav loop refreshing it).  During flight the temporal
+            # grid already provides the obstacle picture.
+            cache_age = time.time() - cache.get("updated_at", 0.0)
+            if cache_age > 1.5:
+                obstacle_points = self._sample_obstacle_points(
+                    self.airsim.lidar_obstacle_points_world(
+                        range_m=35.0,
+                        vertical_window_m=2.5,
+                        vertical_down_m=1.4,
+                        denoise_cell_m=2.0,
+                        min_points_per_cell=3,
+                    )
                 )
-            )
-            uavs = self._get_all_uav_telemetry()
+                uavs = self._get_all_uav_telemetry()
+            else:
+                obstacle_points = cache.get("lidar_points", []) or []
+                uavs = [telemetry.to_api()]
         else:
             collision = CollisionStatus()
             obstacle = ObstacleStatus(error=self.airsim.last_error)
@@ -172,19 +213,20 @@ class ConsoleState:
             }
 
     def telemetry_snapshot(self) -> dict[str, Any]:
-        telemetry = self.airsim.telemetry()
+        cache = self.airsim.get_nav_cache()
+        telemetry = cache["telemetry"]
         connected = self.airsim.is_connected()
-        uavs = self._get_all_uav_telemetry() if connected else []
         if connected:
             self._update_trail(float(telemetry.x), float(telemetry.y), float(telemetry.z))
+        uav_api = telemetry.to_api()
         return {
             "connected": connected,
             "vehicle": self.airsim.vehicle_options(),
-            "uav": telemetry.to_api(),
-            "uavs": uavs,
+            "uav": uav_api,
+            "uavs": [uav_api],
             "map": {
                 "uav": {"x": telemetry.x, "y": telemetry.y, "z": telemetry.z, "name": telemetry.name},
-                "uavs": uavs,
+                "uavs": [uav_api],
                 "trail": self.trail[-240:],
             },
             "airsim_error": self.airsim.last_error,
@@ -362,8 +404,8 @@ class ConsoleState:
         self.events.clear()
         try:
             LOG_FILE.write_text("", encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as clear_err:
+            print(f"[aeromind] log clear failed: {clear_err}", file=sys.stderr)
         self.log("Logs cleared.", "INFO")
         return self.logs()
 
@@ -439,6 +481,10 @@ class ConsoleState:
         else:
             self._set_mission_map(mission)
         self.task_status = "planning"
+
+        if mission.intent == getattr(self.planner, "AGENTIC_INTENT", "agentic"):
+            return self._run_agentic_mission(text, mission, draft)
+
         self.log(f"Mission received: {self.current_task}", "TASK")
         self.log(f"Intent resolved: {mission.intent}", "PLAN")
         try:
@@ -446,8 +492,8 @@ class ConsoleState:
             scores = nlp.get("intent_scores")
             if isinstance(scores, dict):
                 self.log(f"Intent score: {scores}", "PLAN")
-        except Exception:
-            pass
+        except Exception as nlp_err:
+            self.log(f"Intent score extraction skipped: {nlp_err}", "WARN")
         executable = draft.get("executable")
         if isinstance(executable, dict) and executable.get("accepted"):
             tool_call = executable.get("tool_call")
@@ -468,10 +514,56 @@ class ConsoleState:
         return self.snapshot()
 
     def pause_task(self) -> dict[str, Any]:
+        self.agent_loop.stop()
         return self.flight_hover(message="Mission paused.")
 
     def stop_task(self) -> dict[str, Any]:
+        self.agent_loop.stop()
         return self.flight_stop(message="Mission stopped.")
+
+    def _run_agentic_mission(self, text: str, mission: Any, draft: dict[str, Any]) -> dict[str, Any]:
+        self.task_status = "agentic_running"
+        self.log(f"Agentic mission started: {text}", "AGENT")
+        self.log(f"Agentic mode: LLM will decide each tool call dynamically", "AGENT")
+
+        def _run() -> None:
+            try:
+                for event in self.agent_loop.execute(
+                    user_text=text,
+                    state_provider=lambda: self.snapshot(),
+                ):
+                    etype = event.get("type", "")
+                    if etype == "tool_call":
+                        tool = event.get("tool", "")
+                        args = event.get("args", {})
+                        self.log(f"Agent decided: {tool}({json.dumps(args, ensure_ascii=False)})", "AGENT")
+                        self.current_task = f"[Agent] {tool}"
+                        self._reflect_tool_on_state(tool, args, True, event.get("result_data", {}))
+                    elif etype == "tool_result":
+                        result = event.get("result", {})
+                        ok = result.get("ok", False)
+                        msg = str(result.get("message", ""))
+                        self.log(f"Agent result: {msg}", "AGENT" if ok else "ERROR")
+                        if not ok:
+                            self.task_status = "agentic_running"
+                    elif etype == "tool_rejected":
+                        safety = event.get("safety", {})
+                        self.log(f"Agent tool rejected by safety: {safety.get('reason', '')}", "SAFE")
+                    elif etype == "finish":
+                        self.log(f"Agent finished: {event.get('message', '')}", "AGENT")
+                        self.task_status = "completed"
+                    elif etype == "error":
+                        self.log(f"Agent error: {event.get('message', '')}", "ERROR")
+                    elif etype == "done":
+                        self.log("Agent loop ended.", "AGENT")
+            except Exception as exc:
+                self.log(f"Agent loop crashed: {exc}", "ERROR")
+                self.task_status = "stopped"
+
+        import threading
+        thread = threading.Thread(target=_run, name="aeromind-agent-loop", daemon=True)
+        thread.start()
+        return self.snapshot()
 
     def rtl(self) -> dict[str, Any]:
         mission = self.planner.return_to_launch_plan()
@@ -531,6 +623,39 @@ class ConsoleState:
     def _mission_draft(self, text: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         mission = self.planner.plan(text)
         params = params if isinstance(params, dict) else {}
+
+        if mission.intent == getattr(self.planner, "AGENTIC_INTENT", "agentic"):
+            tool_specs = self.agent_tools.specs()
+            tool_names = [s.name for s in tool_specs]
+            return {
+                **mission.to_api(),
+                "intent": mission.intent,
+                "mode": "agentic",
+                "target": "unknown",
+                "altitude_m": 8.0,
+                "area": None,
+                "executable": {
+                    "accepted": True,
+                    "tool_call": {"tool": "agentic", "args": {"goal": text.strip()}},
+                    "safety": {"accepted": True, "reason": "Agent loop will validate each tool call at execution time."},
+                },
+                "route": [],
+                "map": {"search_area": None, "route": [], "home": {"x": 0.0, "y": 0.0}},
+                "preflight": {
+                    "overall": "ready" if self.airsim.is_connected() else "caution",
+                    "checks": [
+                        {"key": "airsim_connection", "label": "AirSim 连接", "status": "ok" if self.airsim.is_connected() else "warn", "detail": "AirSim 已连接" if self.airsim.is_connected() else "AirSim 离线，Agent 启动后将自动等待重连。"},
+                        {"key": "agentic_mode", "label": "Agent 模式", "status": "ok", "detail": f"LLM 将动态决策工具调用。可用工具: {', '.join(tool_names)}"},
+                    ],
+                },
+                "preview": {
+                    "waypoint_count": 0,
+                    "estimated_distance_m": 0.0,
+                    "connected": self.airsim.is_connected(),
+                    "message": f"⚙️ Agentic 模式：LLM 将作为任务指挥官，动态观察状态并决策每一步工具调用。可用工具 ({len(tool_specs)}): {', '.join(tool_names)}",
+                },
+            }
+
         tool_call = self._mission_tool_call(mission, params)
         route = self._preview_route(mission, tool_call)
         map_payload = self._preview_map(mission, tool_call, route)
@@ -961,8 +1086,8 @@ class ConsoleState:
             try:
                 telemetry = self.airsim.telemetry(vehicle_name=name)
                 uavs.append(telemetry.to_api())
-            except Exception:
-                pass
+            except Exception as uav_err:
+                self.log(f"Telemetry for {name} failed: {uav_err}", "WARN")
         return uavs
 
     def _update_trail(self, x: float, y: float, z: float) -> None:
@@ -1008,14 +1133,18 @@ class ConsoleState:
         )
 
 
-STATE = ConsoleState()
-
 
 class MissionConsoleServer(ThreadingHTTPServer):
-    pass
+    def __init__(self, server_address: tuple[str, int], handler_class: type[BaseHTTPRequestHandler]) -> None:
+        super().__init__(server_address, handler_class)
+        self.console = ConsoleState()
 
 
 class Handler(BaseHTTPRequestHandler):
+    @property
+    def console(self) -> ConsoleState:
+        return self.server.console  # type: ignore[attr-defined]
+
     def _client_ip(self) -> str:
         return self.client_address[0] if self.client_address else "unknown"
 
@@ -1028,25 +1157,29 @@ class Handler(BaseHTTPRequestHandler):
         if any(path.startswith(p) for p in public_paths):
             self._handle_public_get(path)
             return
-        
+
+        if path == "/ws":
+            self._handle_ws()
+            return
+
         protected_paths = {
-            "/api/state": STATE.snapshot,
-            "/api/telemetry": STATE.telemetry_snapshot,
-            "/api/camera/probe": STATE.probe_cameras,
-            "/api/camera/options": STATE.camera_options,
-            "/api/vehicle/options": STATE.vehicle_options,
-            "/api/logs": STATE.logs,
-            "/api/tools": STATE.list_tools,
-            "/api/detect/latest": lambda: {"vision": STATE.latest_detection, "detector": STATE.detector.status()},
+            "/api/state": self.console.snapshot,
+            "/api/telemetry": self.console.telemetry_snapshot,
+            "/api/camera/probe": self.console.probe_cameras,
+            "/api/camera/options": self.console.camera_options,
+            "/api/vehicle/options": self.console.vehicle_options,
+            "/api/logs": self.console.logs,
+            "/api/tools": self.console.list_tools,
+            "/api/detect/latest": lambda: {"vision": self.console.latest_detection, "detector": self.console.detector.status()},
         }
-        
+
         handler = protected_paths.get(path)
         if handler is None:
             self.send_json({"detail": "Not found"}, HTTPStatus.NOT_FOUND)
             return
-        
+
         try:
-            status, data, extra_headers = STATE.auth.authenticate(handler, self._client_ip(), self._auth_headers())
+            status, data, extra_headers = self.console.auth.authenticate(handler, self._client_ip(), self._auth_headers())
             self.send_json(data, status, extra_headers)
         except Exception as exc:
             status, data = ErrorHandler.handle_exception(exc)
@@ -1063,28 +1196,60 @@ class Handler(BaseHTTPRequestHandler):
             path = "/index.html"
         self.send_static(path)
 
+    def _handle_ws(self) -> None:
+        accept = ws_handshake({k: v for k, v in self.headers.items()})
+        if accept is None:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Not a WebSocket request")
+            return
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.wfile.flush()
+
+        tick = 0
+        try:
+            while True:
+                try:
+                    if tick % 5 == 0:
+                        payload = json.dumps({"type": "state", "data": self.console.snapshot()}, ensure_ascii=False)
+                    else:
+                        payload = json.dumps({"type": "telemetry", "data": self.console.telemetry_snapshot()}, ensure_ascii=False)
+                    ws_send_text(self.wfile, payload)
+                except Exception:
+                    logger.warning("WebSocket push failed, closing", exc_info=True)
+                    try:
+                        ws_send_text(self.wfile, json.dumps({"type": "error", "data": "internal error"}))
+                    except OSError:
+                        pass
+                tick += 1
+                time.sleep(0.2)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass
+
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         payload = self.read_json()
         
         routes: dict[str, Callable[[], dict[str, Any]]] = {
-            "/api/airsim/reconnect": STATE.reconnect_airsim,
-            "/api/camera/probe": STATE.probe_cameras,
-            "/api/camera/select": lambda: STATE.select_camera(payload),
-            "/api/vehicle/select": lambda: STATE.select_vehicle(payload),
-            "/api/logs": STATE.logs,
-            "/api/tools/call": lambda: STATE.call_tool(payload),
-            "/api/detect/latest": lambda: STATE.detect_latest(payload),
-            "/api/flight/takeoff": lambda: STATE.flight_takeoff(float(payload.get("altitude_m", 8.0))),
-            "/api/flight/hover": STATE.flight_hover,
-            "/api/flight/land": STATE.flight_land,
-            "/api/flight/stop": STATE.flight_stop,
-            "/api/flight/rtl": STATE.rtl,
-            "/api/task/preview": lambda: STATE.preview_task(str(payload.get("text", "")), payload.get("params", {})),
-            "/api/task/run": lambda: STATE.run_task(str(payload.get("text", "")), payload.get("params", {})),
-            "/api/task/pause": STATE.pause_task,
-            "/api/task/stop": STATE.stop_task,
-            "/api/task/rtl": STATE.rtl,
+            "/api/airsim/reconnect": self.console.reconnect_airsim,
+            "/api/camera/probe": self.console.probe_cameras,
+            "/api/camera/select": lambda: self.console.select_camera(payload),
+            "/api/vehicle/select": lambda: self.console.select_vehicle(payload),
+            "/api/logs": self.console.logs,
+            "/api/tools/call": lambda: self.console.call_tool(payload),
+            "/api/detect/latest": lambda: self.console.detect_latest(payload),
+            "/api/flight/takeoff": lambda: self.console.flight_takeoff(float(payload.get("altitude_m", 8.0))),
+            "/api/flight/hover": self.console.flight_hover,
+            "/api/flight/land": self.console.flight_land,
+            "/api/flight/stop": self.console.flight_stop,
+            "/api/flight/rtl": self.console.rtl,
+            "/api/task/preview": lambda: self.console.preview_task(str(payload.get("text", "")), payload.get("params", {})),
+            "/api/task/run": lambda: self.console.run_task(str(payload.get("text", "")), payload.get("params", {})),
+            "/api/task/pause": self.console.pause_task,
+            "/api/task/stop": self.console.stop_task,
+            "/api/task/rtl": self.console.rtl,
         }
         handler = routes.get(path)
         if handler is None:
@@ -1092,7 +1257,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         
         try:
-            status, data, extra_headers = STATE.auth.authenticate(handler, self._client_ip(), self._auth_headers())
+            status, data, extra_headers = self.console.auth.authenticate(handler, self._client_ip(), self._auth_headers())
             self.send_json(data, status, extra_headers)
         except Exception as exc:
             status, data = ErrorHandler.handle_exception(exc)
@@ -1102,7 +1267,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/logs":
             try:
-                status, data, extra_headers = STATE.auth.authenticate(STATE.clear_logs, self._client_ip(), self._auth_headers())
+                status, data, extra_headers = self.console.auth.authenticate(self.console.clear_logs, self._client_ip(), self._auth_headers())
                 self.send_json(data, status, extra_headers)
             except Exception as exc:
                 status, data = ErrorHandler.handle_exception(exc)
@@ -1110,10 +1275,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json({"detail": "Not found"}, HTTPStatus.NOT_FOUND)
 
+    MAX_CONTENT_LENGTH = 1 * 1024 * 1024  # 1 MB
+
     def read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or "0")
         if length <= 0:
             return {}
+        if length > self.MAX_CONTENT_LENGTH:
+            raise ValueError(f"Request body exceeds {self.MAX_CONTENT_LENGTH // 1024} KB limit")
         parsed = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
         return parsed if isinstance(parsed, dict) else {}
 
@@ -1132,22 +1301,22 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def send_mjpeg(self) -> None:
-        if not STATE.airsim.connect():
+        if not self.console.airsim.connect():
             self.send_json(
-                {"detail": f"AirSim camera stream is not connected yet: {STATE.airsim.last_error}"},
+                {"detail": f"AirSim camera stream is not connected yet: {self.console.airsim.last_error}"},
                 HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={STATE.video_stream.boundary}")
+        self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={self.console.video_stream.boundary}")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache")
         self.send_header("Connection", "close")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
         try:
-            for frame in STATE.video_stream.frames():
-                self.wfile.write(f"--{STATE.video_stream.boundary}\r\n".encode("ascii"))
+            for frame in self.console.video_stream.frames():
+                self.wfile.write(f"--{self.console.video_stream.boundary}\r\n".encode("ascii"))
                 self.wfile.write(f"Content-Type: {frame.content_type}\r\n".encode("ascii"))
                 self.wfile.write(f"Content-Length: {len(frame.data)}\r\n\r\n".encode("ascii"))
                 self.wfile.write(frame.data)
@@ -1156,10 +1325,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def send_latest_camera_frame(self) -> None:
-        frame = STATE.video_stream.latest_frame() or STATE.airsim.camera_frame()
+        frame = self.console.video_stream.latest_frame() or self.console.airsim.camera_frame()
         if frame is None:
             self.send_json(
-                {"detail": f"AirSim camera frame is not available: {STATE.airsim.last_error}"},
+                {"detail": f"AirSim camera frame is not available: {self.console.airsim.last_error}"},
                 HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
@@ -1178,7 +1347,12 @@ class Handler(BaseHTTPRequestHandler):
         if relative.startswith("static/"):
             relative = relative[len("static/") :]
         target = (STATIC_DIR / relative).resolve()
-        if not str(target).startswith(str(STATIC_DIR.resolve())) or not target.is_file():
+        try:
+            target.relative_to(STATIC_DIR.resolve())
+        except ValueError:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if not target.is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         data = target.read_bytes()
@@ -1211,8 +1385,9 @@ def run() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        STATE.video_stream.stop()
-        STATE.airsim.stop_reconnect_worker()
+        server.console.video_stream.stop()
+        server.console.airsim.stop_reconnect_worker()
+        server.console.detector.shutdown(wait=False)
         server.server_close()
 
 

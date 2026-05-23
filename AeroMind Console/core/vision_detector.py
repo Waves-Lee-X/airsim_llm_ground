@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 import tempfile
 import time
@@ -8,6 +10,8 @@ from typing import Any, Optional
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class YOLOv5Wrapper:
@@ -67,8 +71,8 @@ class YOLOv5BoxesWrapper:
                         'conf': [row['confidence']],
                         'cls': [int(row['class'])]
                     })
-        except Exception:
-            pass
+        except Exception as parse_err:
+            logger.warning("Failed to parse YOLOv5 detection rows: %s", parse_err)
         return detections
     
     def __iter__(self):
@@ -135,6 +139,7 @@ class VisionDetector:
         self._supported_labels: set[str] = set()
         self._last_detection_time = 0.0
         self._detection_interval_ms = 100
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="yolo-detect")
 
     def status(self) -> dict[str, object]:
         return {
@@ -195,6 +200,12 @@ class VisionDetector:
             results.append(result)
         return results
 
+    def detect_async(self, image: bytes, target_filter: str | None = None) -> Future[DetectionResult]:
+        return self._pool.submit(self.detect, image, target_filter)
+
+    def shutdown(self, wait: bool = True) -> None:
+        self._pool.shutdown(wait=wait)
+
     def detect_with_visualization(self, image: bytes, target_filter: str | None = None) -> tuple[DetectionResult, bytes]:
         result = self.detect(image, target_filter)
         if not result.ok or not result.detections:
@@ -216,7 +227,8 @@ class VisionDetector:
                 if image is not None:
                     image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
             return image
-        except Exception:
+        except Exception as decode_err:
+            logger.warning("Failed to decode camera image: %s", decode_err)
             return None
 
     def _encode_image(self, image_array: np.ndarray) -> bytes:

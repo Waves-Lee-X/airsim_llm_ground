@@ -9,11 +9,11 @@ from http import HTTPStatus
 
 @dataclass(frozen=True)
 class AuthConfig:
-    enabled: bool = False
+    enabled: bool = True
     api_key: str = ""
-    rate_limit_requests: int = 30
+    rate_limit_requests: int = 60
     rate_limit_window_s: int = 60
-    allowed_ips: tuple[str, ...] = ("127.0.0.1", "::1")
+    allowed_ips: tuple[str, ...] = ("127.0.0.1", "::1", "localhost")
 
 
 @dataclass

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any, Callable, Optional
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -311,7 +314,8 @@ class SwarmCoordinator:
                     "altitude": float(telemetry.altitude_m),
                     "speed": float(telemetry.speed_mps),
                 })
-            except Exception:
+            except Exception as telem_err:
+                logger.warning("Telemetry for %s failed: %s", slot.vehicle_name, telem_err)
                 status["vehicles"].append({
                     "name": slot.vehicle_name,
                     "role": slot.role,

@@ -226,7 +226,7 @@ class SafetyGate:
             obstacle_distance = self._float_arg(normalized_args, "obstacle_distance_m", 8.0)
             avoidance_offset = self._float_arg(normalized_args, "avoidance_offset_m", 6.0)
             scan_margin = self._float_arg(normalized_args, "scan_margin_m", 4.0)
-            pre_scan = bool(normalized_args.get("pre_scan", True))
+            pre_scan = bool(normalized_args.get("pre_scan", False))
             pre_scan_stop_on_high_risk = bool(normalized_args.get("pre_scan_stop_on_high_risk", True))
             x_min = self._float_arg(area, "x_min", 0.0)
             x_max = self._float_arg(area, "x_max", 60.0)
@@ -306,7 +306,7 @@ class SafetyGate:
                     "obstacle_distance_m": obstacle_distance,
                     "avoidance_offset_m": avoidance_offset,
                     "scan_margin_m": scan_margin,
-                    "pre_scan": bool(normalized_args.get("pre_scan", True)),
+                    "pre_scan": bool(normalized_args.get("pre_scan", False)),
                     "pre_scan_stop_on_high_risk": bool(normalized_args.get("pre_scan_stop_on_high_risk", True)),
                 }
             )
@@ -317,6 +317,20 @@ class SafetyGate:
                 return self._reject(normalized_tool, f"Camera '{camera}' is not allowed")
             normalized_args["camera"] = camera
             normalized_args["target"] = str(normalized_args.get("target", "object")).strip() or "object"
+        elif normalized_tool == "replay_trajectory":
+            log_folder = str(normalized_args.get("log_folder", "")).strip()
+            if not log_folder:
+                return self._reject(normalized_tool, "log_folder is required")
+            normalized_args["log_folder"] = log_folder
+            normalized_args["speed_mps"] = self._float_arg(normalized_args, "speed_mps", 3.5)
+            normalized_args["turn_threshold_deg"] = self._float_arg(normalized_args, "turn_threshold_deg", 30.0)
+            normalized_args["min_dist_m"] = self._float_arg(normalized_args, "min_dist_m", 0.5)
+            normalized_args["spawn_target"] = bool(normalized_args.get("spawn_target", True))
+            map_spawn_json = normalized_args.get("map_spawn_json")
+            normalized_args["map_spawn_json"] = str(map_spawn_json).strip() if isinstance(map_spawn_json, str) else None
+            normalized_args["target_object_name"] = str(normalized_args.get("target_object_name", "ReplayTarget")).strip() or "ReplayTarget"
+            normalized_args["draw_trail"] = bool(normalized_args.get("draw_trail", True))
+            normalized_args["trail_thickness"] = self._float_arg(normalized_args, "trail_thickness", 8.0)
 
         return SafetyDecision(True, normalized_tool, normalized_args, warnings, preflight_checks=preflight_checks)
 
@@ -368,6 +382,7 @@ class SafetyGate:
             "collect_images",
             "detect_objects",
             "report_target",
+            "replay_trajectory",
         )
 
     def _validate_altitude(self, altitude_m: float) -> str:
