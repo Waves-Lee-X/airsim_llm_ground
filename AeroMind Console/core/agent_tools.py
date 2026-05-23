@@ -2337,11 +2337,20 @@ class AgentToolRuntime:
         if self._temporal_grid is None:
             return
 
-        raw_lidar, (px, py, pz) = self.adapter.lidar_obstacle_points_world(
-            range_m=35.0, vertical_window_m=3.0, vertical_down_m=2.0,
-            denoise_cell_m=1.0, min_points_per_cell=1,
-            return_3d=True, return_position=True,
-        )
+        engine = self.adapter._engine
+        if engine._nav_active:
+            # Nav mode: read LiDAR from the shared cache that the engine
+            # refreshes during _nav_tick_impl.  No _exec_rpc → no queue
+            # round-trip → nav loop stays unblocked.
+            raw_lidar, (px, py, pz) = self.adapter.get_shared_lidar()
+            if not raw_lidar:
+                return
+        else:
+            raw_lidar, (px, py, pz) = self.adapter.lidar_obstacle_points_world(
+                range_m=35.0, vertical_window_m=3.0, vertical_down_m=2.0,
+                denoise_cell_m=1.0, min_points_per_cell=1,
+                return_3d=True, return_position=True,
+            )
 
         if raw_lidar:
             self._temporal_grid.add_points_3d(raw_lidar)
@@ -2353,7 +2362,7 @@ class AgentToolRuntime:
         if self._temporal_grid.should_recenter(px, py, pz):
             self._temporal_grid.recenter(px, py, pz)
 
-        if self._depth_camera is not None:
+        if self._depth_camera is not None and not engine._nav_active:
             cloud = self._depth_camera.capture(self.adapter)
             if cloud.ok and cloud.sampled_point_count > 0:
                 self._temporal_grid.add_ray_casts(

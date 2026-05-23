@@ -1212,3 +1212,6 @@ RuntimeError: AirSim is not connected: Request timed out
 2026-05-23T20:58:03 MISSION Mission progress: autonomous | Autonomous navigation started to X 0.0, Y -2.9. | waypoint 0/1 | alt=7.9m speed=0.1m/s d2wp=2.9m risk=- obs=- front=- planner=wait
 2026-05-23T20:58:17 FLIGHT  Mission stopped.
 2026-05-23T20:58:17 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.2m speed=0.2m/s d2wp=0.0m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-23T21:09:07 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T21:09:32 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T21:19:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。

@@ -241,10 +241,28 @@ class AirSimRpcEngine:
         self._nav_lock = threading.Lock()
         self._nav_cache_cb: Any = None  # set by adapter
 
+        # Shared LiDAR cache — engine captures during nav tick so the
+        # agent thread never needs to _exec_rpc for LiDAR (which would
+        # block the nav loop for multi-second RPC durations).
+        self._shared_lidar_points: list[tuple[float, float, float]] = []
+        self._shared_lidar_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self._shared_lidar_lock = threading.Lock()
+        self._last_lidar_capture_at = 0.0
+        self._lidar_capture_interval_s = 0.8
+
         self._thread = threading.Thread(
             target=self._run, name="aeromind-rpc-engine", daemon=True,
         )
         self._thread.start()
+
+        # Lightweight telemetry poller — own AirSim client, own thread.
+        # Decoupled from the engine's nav/command loop so map updates
+        # never stall on slow LiDAR or command-queue backpressure.
+        self._telemetry_poller_stop = threading.Event()
+        self._telemetry_thread = threading.Thread(
+            target=self._run_telemetry_poller, name="aeromind-telemetry", daemon=True,
+        )
+        self._telemetry_thread.start()
 
     # -- read-only accessors (safe from any thread) ------------------------
 
@@ -334,6 +352,67 @@ class AirSimRpcEngine:
             self._nav_vy = 0.0
             self._nav_vz = 0.0
 
+    @staticmethod
+    def _rotate_vector_by_quaternion(vx: float, vy: float, vz: float, quaternion: Any) -> tuple[float, float, float]:
+        try:
+            qx = float(quaternion.x_val)
+            qy = float(quaternion.y_val)
+            qz = float(quaternion.z_val)
+            qw = float(quaternion.w_val)
+        except Exception:
+            return vx, vy, vz
+        tx = 2.0 * (qy * vz - qz * vy)
+        ty = 2.0 * (qz * vx - qx * vz)
+        tz = 2.0 * (qx * vy - qy * vx)
+        return (
+            vx + qw * tx + (qy * tz - qz * ty),
+            vy + qw * ty + (qz * tx - qx * tz),
+            vz + qw * tz + (qx * ty - qy * tx),
+        )
+
+    def capture_lidar_to_shared_cache(
+        self, client: Any, vehicle: str, px: float, py: float, pz: float,
+        orientation: Any,
+    ) -> bool:
+        """Capture LiDAR on the engine thread and write to shared cache.
+
+        Uses the telemetry already available in _nav_tick_impl so only a
+        single getLidarData RPC is needed — no redundant round-trip.
+
+        Returns True if new points were captured, False on failure.
+        """
+        try:
+            lidar = client.getLidarData(lidar_name="LidarSensor1", vehicle_name=vehicle)
+            raw_points = list(getattr(lidar, "point_cloud", []) or [])
+            points_3d: list[tuple[float, float, float]] = []
+            max_range = 35.0
+            for idx in range(0, len(raw_points) - 2, 3):
+                lx = float(raw_points[idx])
+                ly = float(raw_points[idx + 1])
+                lz = float(raw_points[idx + 2])
+                if lx <= 0.6 or math.hypot(lx, ly) < 1.0 or math.hypot(lx, ly) > max_range:
+                    continue
+                if lz < -3.0 or lz > 2.0:
+                    continue
+                rx, ry, rz = self._rotate_vector_by_quaternion(lx, ly, lz, orientation)
+                points_3d.append((px + rx, py + ry, pz + rz))
+            with self._shared_lidar_lock:
+                self._shared_lidar_points = points_3d
+                self._shared_lidar_pos = (px, py, pz)
+            self._last_lidar_capture_at = time.time()
+            return True
+        except Exception:
+            logger.warning("capture_lidar_to_shared_cache failed", exc_info=True)
+            return False
+
+    def get_shared_lidar(self) -> tuple[list[tuple[float, float, float]], tuple[float, float, float]]:
+        """Return a copy of the engine-captured LiDAR points + position.
+
+        Safe to call from any thread.  Returns ([], (0,0,0)) if no data yet.
+        """
+        with self._shared_lidar_lock:
+            return list(self._shared_lidar_points), self._shared_lidar_pos
+
     # -- fast nav tick (called from _run when _nav_active) ------------------
 
     def _drain_queue(self, client: Any, airsim_module: Any) -> None:
@@ -409,17 +488,21 @@ class AirSimRpcEngine:
         # -- telemetry (always attempt, even if velocity failed) -------------
         px = py = pz = 0.0
         speed = 0.0
+        telemetry_ok = False
+        orientation: Any = None
         try:
             state = client.getMultirotorState(vehicle_name=vehicle)
             kinematics = state.kinematics_estimated
             position = kinematics.position
             velocity = kinematics.linear_velocity
+            orientation = kinematics.orientation
             px = float(position.x_val)
             py = float(position.y_val)
             pz = float(position.z_val)
             speed = math.sqrt(
                 float(velocity.x_val) ** 2 + float(velocity.y_val) ** 2 + float(velocity.z_val) ** 2
             )
+            telemetry_ok = True
         except Exception:
             logger.warning("_nav_tick_direct telemetry read failed", exc_info=True)
             if self._nav_cache_cb is None:
@@ -486,11 +569,78 @@ class AirSimRpcEngine:
                 "cmd_vx": vx, "cmd_vy": vy, "cmd_vz": vz,
             })
 
+            # -- periodic LiDAR capture (no queue, no agent-thread RPC) -----
+            now = time.time()
+            if telemetry_ok and now - self._last_lidar_capture_at >= self._lidar_capture_interval_s:
+                self.capture_lidar_to_shared_cache(
+                    client, vehicle, px, py, pz, orientation,
+                )
+
     def stop(self) -> None:
         self._stop_event.set()
+        self._telemetry_poller_stop.set()
         self.stop_position_hold()
         self._cmd_queue.put(None)
         self._thread.join(timeout=5.0)
+        self._telemetry_thread.join(timeout=3.0)
+
+    # -- telemetry poller (own thread, own AirSim client) -------------------
+
+    def _run_telemetry_poller(self) -> None:
+        """Dedicated telemetry thread.
+
+        Own AirSim client, completely independent of the engine's RPC queue.
+        Polls getMultirotorState every 100 ms and pushes telemetry into the
+        shared nav-cache so the WebSocket map updates at a fixed rate
+        regardless of what the engine command loop is doing.
+        """
+        client: Any = None
+        vehicle = self._vehicle_name
+        host, port = self._host, self._port
+
+        while not self._telemetry_poller_stop.is_set():
+            # -- connect / reconnect -----------------------------------------
+            if client is None:
+                try:
+                    import airsim
+                    client = airsim.MultirotorClient(ip=host, port=port, timeout_value=1.5)
+                    client.confirmConnection()
+                except Exception:
+                    client = None
+                    self._telemetry_poller_stop.wait(2.0)
+                    continue
+
+            # -- read telemetry ----------------------------------------------
+            cb = self._nav_cache_cb
+            try:
+                state = client.getMultirotorState(vehicle_name=vehicle)
+                kinematics = state.kinematics_estimated
+                pos = kinematics.position
+                vel = kinematics.linear_velocity
+                px, py, pz = float(pos.x_val), float(pos.y_val), float(pos.z_val)
+                speed = math.sqrt(float(vel.x_val)**2 + float(vel.y_val)**2 + float(vel.z_val)**2)
+                if cb is not None:
+                    tel = UavTelemetry(
+                        name=vehicle, mode="AIRSIM-LIVE",
+                        altitude_m=max(0.0, -pz), speed_mps=speed,
+                        x=px, y=py, z=pz,
+                    )
+                    cb({"telemetry": tel})
+            except Exception:
+                logger.warning("telemetry poller read failed", exc_info=True)
+                cb = self._nav_cache_cb  # re-read in case it was set mid-flight
+                client = None  # force reconnect next iteration
+                self._telemetry_poller_stop.wait(0.5)
+                continue
+
+            self._telemetry_poller_stop.wait(0.1)
+
+        # cleanup
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     # -- internal: main loop ----------------------------------------------
 
@@ -768,6 +918,15 @@ class AirSimAdapter:
     def get_nav_cache(self) -> dict[str, Any]:
         with self._nav_cache_lock:
             return dict(self._nav_cache)
+
+    def get_shared_lidar(self) -> tuple[list[tuple[float, float, float]], tuple[float, float, float]]:
+        """Return engine-captured LiDAR points + drone position.
+
+        During nav mode the engine captures LiDAR periodically and writes
+        to a shared cache.  The agent thread reads this without any RPC
+        or queue round-trip, keeping the nav loop unblocked.
+        """
+        return self._engine.get_shared_lidar()
 
     # -- delegation properties --------------------------------------------
 
