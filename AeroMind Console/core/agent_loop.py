@@ -280,8 +280,7 @@ class AgentLoop:
     def stop(self) -> None:
         self._stop_event.set()
         try:
-            if self.tools._active_mission:
-                self.tools._active_mission.stop()
+            self.tools._stop_active_mission()
         except Exception:
             pass
 

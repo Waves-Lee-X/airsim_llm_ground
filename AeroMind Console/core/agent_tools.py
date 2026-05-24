@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import json
 import logging
 import math
+import numpy as np
 from pathlib import Path
 import threading
 import time
@@ -12,7 +13,7 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 from config import nav_config
-from core.airsim_adapter import AirSimAdapter
+from core.airsim_adapter import AirSimAdapter, DistanceSensorsStatus
 from core.obstacle_avoidance import plan_local_path, plan_local_path_on_slice, AvoidancePlan
 from core.path_planner import lawnmower_path
 from core.path_planner import Waypoint
@@ -89,9 +90,13 @@ class AgentToolRuntime:
         self.detector = detector or VisionDetector()
         self._temporal_grid: TemporalVoxelGrid | None = None
         self._depth_camera: DepthCamera | None = None
+        self._grid_needs_reset = False
+        self._obstacle_density = 0.0
         self._mission_lock = threading.RLock()
         self._active_mission: ActiveMission | None = None
         self._post_mission_behavior = "keep_state"
+        self._target_reports: list[dict[str, Any]] = []
+
         self._terminal_hold_guard = threading.Lock()
         self._terminal_hold_applied_at = 0.0
         self._mission_progress: dict[str, Any] = {
@@ -131,12 +136,20 @@ class AgentToolRuntime:
             "report_target": self._report_target,
         }
 
+    def _stop_active_mission(self) -> None:
+        if self._active_mission:
+            self._active_mission.stop()
+            self._active_mission = None
+
     def list_tools(self) -> list[dict[str, Any]]:
         return [spec.to_api() for spec in self.specs()]
 
     def mission_progress(self) -> dict[str, Any]:
         with self._mission_lock:
             return dict(self._mission_progress)
+
+    def target_reports(self) -> list[dict[str, Any]]:
+        return list(self._target_reports)
 
     def specs(self) -> list[ToolSpec]:
         return [
@@ -251,7 +264,7 @@ class AgentToolRuntime:
             ),
             ToolSpec(
                 "detect_objects",
-                "Placeholder detector hook. Returns latest frame metadata for now.",
+                "Run YOLO object detection on the current camera frame. Returns detected objects with labels, confidence, and bounding boxes.",
                 ("target", "camera"),
                 {"target": "Object label to detect.", "camera": "AirSim camera name."},
             ),
@@ -272,9 +285,14 @@ class AgentToolRuntime:
             ),
             ToolSpec(
                 "report_target",
-                "Create a structured target report placeholder.",
-                ("target_id",),
-                {"target_id": "Target identifier from detection history."},
+                "Create a structured target report with UAV position context. Stores the report and returns it for downstream use.",
+                ("target_id", "label", "confidence", "bbox"),
+                {
+                    "target_id": "Target identifier from detection history.",
+                    "label": "Object class label from detection (e.g. vehicle, person).",
+                    "confidence": "Detection confidence score (0-1).",
+                    "bbox": "Bounding box [x1, y1, x2, y2] in image coordinates.",
+                },
             ),
         ]
 
@@ -303,29 +321,25 @@ class AgentToolRuntime:
         return ToolResult(True, "takeoff", f"Takeoff command sent to {altitude_m:.1f}m", {"altitude_m": altitude_m})
 
     def _hover(self, args: dict[str, Any]) -> ToolResult:
-        if self._active_mission:
-            self._active_mission.stop()
+        self._stop_active_mission()
         self.executor.hover()
         self._set_progress(status="paused", message="Hover command sent; active tool mission paused.")
         return ToolResult(True, "hover", "Hover command sent")
 
     def _stop(self, args: dict[str, Any]) -> ToolResult:
-        if self._active_mission:
-            self._active_mission.stop()
+        self._stop_active_mission()
         self.executor.stop()
         self._set_progress(status="stopped", message="Stop command sent; active tool mission stopped.")
         return ToolResult(True, "stop", "Stop command sent")
 
     def _land(self, args: dict[str, Any]) -> ToolResult:
-        if self._active_mission:
-            self._active_mission.stop()
+        self._stop_active_mission()
         self.executor.land()
         self._set_progress(status="landing", tool="land", message="Land command sent; active tool mission stopped.")
         return ToolResult(True, "land", "Land command sent")
 
     def _return_home(self, args: dict[str, Any]) -> ToolResult:
-        if self._active_mission:
-            self._active_mission.stop()
+        self._stop_active_mission()
         safe_altitude_m = float(args.get("safe_altitude_m", 8.0))
         self.executor.return_to_launch(altitude_m=safe_altitude_m)
         self._set_progress(status="returning", tool="return_home", message="Return-home command sent.")
@@ -478,8 +492,7 @@ class AgentToolRuntime:
         )
 
     def _recover_from_collision(self, args: dict[str, Any]) -> ToolResult:
-        if self._active_mission:
-            self._active_mission.stop()
+        self._stop_active_mission()
         climb_m = float(args.get("climb_m", 8.0))
         backoff_m = float(args.get("backoff_m", 10.0))
         force_relocate = bool(args.get("force_relocate", True))
@@ -906,7 +919,8 @@ class AgentToolRuntime:
             return ToolResult(False, "detect_objects", f"No camera frame available: {self.adapter.last_error}")
         timeout_s = max(3.0, float(args.get("timeout_s", 10.0)))
         try:
-            detection_result = self.detector.detect_async(frame.data).result(timeout=timeout_s)
+            target_filter = str(args.get("target", "")) or None
+            detection_result = self.detector.detect_async(frame.data, target_filter=target_filter).result(timeout=timeout_s)
         except Exception as detect_err:
             return ToolResult(
                 False,
@@ -936,12 +950,21 @@ class AgentToolRuntime:
 
     def _report_target(self, args: dict[str, Any]) -> ToolResult:
         target_id = str(args.get("target_id", "target-unknown"))
-        return ToolResult(
-            True,
-            "report_target",
-            "Target report placeholder generated",
-            {"target_id": target_id, "status": "pending_detection_module"},
-        )
+        label = str(args.get("label", "unknown"))
+        confidence = float(args.get("confidence", 0.0))
+        bbox = args.get("bbox")
+        telemetry = self.adapter.telemetry()
+        report = {
+            "target_id": target_id,
+            "label": label,
+            "confidence": round(confidence, 4),
+            "bbox": [int(v) for v in bbox] if isinstance(bbox, (list, tuple)) and len(bbox) == 4 else None,
+            "uav_position": {"x": round(float(telemetry.x), 2), "y": round(float(telemetry.y), 2), "z": round(float(telemetry.z), 2)},
+            "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "status": "reported",
+        }
+        self._target_reports.append(report)
+        return ToolResult(True, "report_target", f"Target '{label}' reported at UAV position ({report['uav_position']['x']}, {report['uav_position']['y']})", report)
 
     @staticmethod
     def _safe_dataset_name(value: str) -> str:
@@ -1184,9 +1207,31 @@ class AgentToolRuntime:
         nav = self.adapter.nav_telemetry()
         tel: Any = nav["telemetry"]
         self._ensure_temporal_grid(float(tel.x), float(tel.y), float(tel.z))
+        # Force-recenter grid at drone position so this waypoint's A*
+        # always starts with the grid centered on the drone (goal may be
+        # up to 50 m away, which fits within the 100 m grid).
+        if self._temporal_grid is not None:
+            self._temporal_grid.recenter(float(tel.x), float(tel.y), float(goal.z))
 
         # -- start engine nav-control loop (zero queue overhead) -------------
         engine.start_nav_control()
+
+        # -- LiDAR warmup: collect 2-3 scans before first A* replan ---------
+        # A single LiDAR scan can produce sparse noise that clusters into
+        # false obstacles after inflation (hit_confirm=3 + inflation_m=1.5).
+        # Waiting for multiple scans gives the temporal grid enough evidence
+        # to distinguish real obstacles from single-scan artifacts.
+        warmup_scans = 0
+        warmup_deadline = time.time() + 3.0
+        last_lidar_pos = None
+        while warmup_scans < 3 and time.time() < warmup_deadline:
+            time.sleep(0.85)  # engine captures LiDAR every ~0.8 s
+            prev_pos = last_lidar_pos
+            raw_lidar, lidar_pos = self.adapter.get_shared_lidar()
+            last_lidar_pos = lidar_pos
+            if raw_lidar and lidar_pos != prev_pos:
+                self._update_temporal_grid()
+                warmup_scans += 1
 
         current = Waypoint(float(tel.x), float(tel.y), float(goal.z))
         target = goal
@@ -1215,6 +1260,12 @@ class AgentToolRuntime:
                 current = Waypoint(float(tel.x), float(tel.y), float(goal.z))
 
                 # -- safety checks with pre-fetched collision & distances -----
+                # When A* has valid waypoints, relax the distance safety
+                # bubble — A* is already routing around known obstacles.
+                # The sensors become a last-resort failsafe (1.0 m / 0.6 m)
+                # instead of a primary navigation gate.
+                _et = 1.0 if plan_waypoints else None
+                _st = 0.6 if plan_waypoints else None
                 result = self._check_flight_safety(
                     telemetry=tel, goal=goal, current=current,
                     started_at=started_at, timeout_s=timeout_s,
@@ -1227,6 +1278,8 @@ class AgentToolRuntime:
                     on_tick=on_tick,
                     _prefetched_collision=cache["collision"],
                     _prefetched_distances=cache["distances"],
+                    _emergency_threshold_m=_et,
+                    _side_emergency_threshold_m=_st,
                 )
                 if result is not None:
                     return result  # True=reached, False=blocked/timeout/collision
@@ -1308,11 +1361,16 @@ class AgentToolRuntime:
         on_tick: Callable | None = None,
         _prefetched_collision: Any = None,
         _prefetched_distances: Any = None,
+        _emergency_threshold_m: float | None = None,
+        _side_emergency_threshold_m: float | None = None,
     ) -> bool | None:
         """Return True (reached), False (blocked), or None (continue).
 
         Set *_prefetched_collision* / *_prefetched_distances* to avoid extra
         RPC round-trips inside the closed-loop drive hot path.
+        Set *_emergency_threshold_m* / *_side_emergency_threshold_m* to
+        override the default distance safety bubble thresholds — used when
+        A* waypoints are available to trust the planner over raw proximity.
         """
         elapsed = time.time() - started_at
         if elapsed > timeout_s:
@@ -1357,10 +1415,43 @@ class AgentToolRuntime:
                 _prefetched_distances
                 if _prefetched_distances is not None
                 else self.adapter.distance_sensors_status(
-                    emergency_threshold_m=nav_config.distance_emergency_threshold_m,
-                    side_emergency_threshold_m=nav_config.side_emergency_threshold_m,
+                    emergency_threshold_m=_emergency_threshold_m
+                    if _emergency_threshold_m is not None
+                    else nav_config.distance_emergency_threshold_m,
+                    side_emergency_threshold_m=_side_emergency_threshold_m
+                    if _side_emergency_threshold_m is not None
+                    else nav_config.side_emergency_threshold_m,
                 )
             )
+            # When relaxed thresholds are provided, re-evaluate the emergency
+            # flag from raw sensor values — the engine's pre-computed flag
+            # uses hardcoded 2.6 m / 1.6 m thresholds in _nav_tick_impl.
+            if (_prefetched_distances is not None
+                    and (_emergency_threshold_m is not None or _side_emergency_threshold_m is not None)):
+                et = (_emergency_threshold_m if _emergency_threshold_m is not None
+                      else nav_config.distance_emergency_threshold_m)
+                st = (_side_emergency_threshold_m if _side_emergency_threshold_m is not None
+                      else nav_config.side_emergency_threshold_m)
+                fv = distances.front_m
+                lv = distances.left_m
+                rv = distances.right_m
+                emergency = False
+                ed = "none"
+                if fv is not None and fv <= et:
+                    emergency = True
+                    ed = "front"
+                elif lv is not None and lv <= st:
+                    emergency = True
+                    ed = "left"
+                elif rv is not None and rv <= st:
+                    emergency = True
+                    ed = "right"
+                distances = DistanceSensorsStatus(
+                    available=distances.available,
+                    front_m=fv, left_m=lv, right_m=rv,
+                    min_m=distances.min_m, nearest_direction=distances.nearest_direction,
+                    emergency_direction=ed, emergency=emergency,
+                )
             self._set_progress(distance_sensors=distances.to_api())
             if distances.available and distances.emergency:
                 stopped_at = self._try_hard_stop()
@@ -1392,6 +1483,20 @@ class AgentToolRuntime:
         else:
             plan = AvoidancePlan(False, [], "temporal grid not available", {})
             grid_info = {}
+
+        # If the plan failed because start/goal is outside the grid slice,
+        # force-recenter the grid at the midpoint so both fit within bounds.
+        if not plan.ok and "outside grid slice" in plan.reason and self._temporal_grid is not None:
+            mid_x = (float(current.x) + float(goal.x)) / 2.0
+            mid_y = (float(current.y) + float(goal.y)) / 2.0
+            self._temporal_grid.recenter(mid_x, mid_y, float(goal.z))
+            grid_slice = self._get_2d_slice_for_planning(z_center=float(goal.z), half_height=nav_config.grid_half_height)
+            if grid_slice is not None:
+                plan = plan_local_path_on_slice(
+                    start=current, goal=goal, grid_slice=grid_slice, max_waypoints=nav_config.max_waypoints,
+                )
+                grid_info = grid_slice.to_api()
+
         self._set_progress(
             planner=plan.to_api() | {"phase": planner_phase, "grid": grid_info},
             message=plan.reason,
@@ -1452,37 +1557,6 @@ class AgentToolRuntime:
         elif lower_free:
             return " (lower -4m slice is free — consider descending)"
         return ""
-
-    def _apply_velocity_command(
-        self,
-        telemetry: Any,
-        target: Waypoint,
-        goal_z: float,
-        speed_mps: float,
-        control_dt_s: float,
-        active_status: str,
-        current_waypoint_index: int,
-        total_waypoints: int,
-        mission_label: str,
-    ) -> None:
-        """Compute and send velocity command with density-adjusted speed."""
-        dx = float(target.x) - float(telemetry.x)
-        dy = float(target.y) - float(telemetry.y)
-        dz = goal_z - float(telemetry.z)
-        horizontal_distance = max(0.001, math.hypot(dx, dy))
-        density_factor = max(nav_config.density_factor_min, 1.0 - getattr(self, '_obstacle_density', 0.0) * nav_config.density_factor_multiplier)
-        effective_speed = max(nav_config.speed_min_mps, float(speed_mps) * density_factor)
-        speed = min(effective_speed, max(0.4, horizontal_distance / max(control_dt_s, 0.1)))
-        vx = dx / horizontal_distance * speed
-        vy = dy / horizontal_distance * speed
-        vz = max(-1.0, min(1.0, dz / max(control_dt_s * 4.0, 0.4)))
-        self.executor.move_velocity(vx=vx, vy=vy, vz=vz, duration_s=max(control_dt_s, 0.5))
-        self._set_progress(
-            status=active_status,
-            current_waypoint_index=current_waypoint_index,
-            total_waypoints=total_waypoints,
-            message=f"{mission_label} velocity cmd vx={vx:.2f}, vy={vy:.2f}, vz={vz:.2f}.",
-        )
 
     def _run_autonomous_nav(
         self,
@@ -1653,60 +1727,48 @@ class AgentToolRuntime:
         avoidance_offset_m: float,
         effective_area: MissionArea,
     ) -> None:
-        """Execute the search route waypoint by waypoint with A* sub-planning."""
+        """Execute the search route waypoint by waypoint with closed-loop LiDAR A*.
+
+        Each waypoint is flown via _closed_loop_drive_to_goal which provides:
+        - Continuous LiDAR → temporal grid → A* replanning (dynamic avoidance)
+        - EMA-smoothed velocity control via engine nav mode (no blocking RPC)
+        - Cached collision / distance safety checks (no extra RPC round-trips)
+        """
+        total = len(route)
         for index, waypoint in enumerate(route, start=1):
             if self._active_mission.stop_event.is_set():
                 self._set_progress(status="stopped", message="Search area stopped by command.")
                 return
-            self._set_progress(
-                status="running",
-                tool="search_area",
-                target=target,
+
+            goal = Waypoint(float(waypoint.x), float(waypoint.y), -abs(float(waypoint.z)))
+            waypoint_dist = self._distance_to_waypoint(goal)
+            waypoint_timeout = max(20.0, waypoint_dist / max(speed_mps, 0.5) * 4.0)
+
+            reached = self._closed_loop_drive_to_goal(
+                goal=goal,
+                speed_mps=speed_mps,
+                replan_interval_s=1.2 if planned_avoidance else 1.8,
+                control_dt_s=0.25,
+                lookahead_m=max(2.5, avoidance_offset_m),
+                timeout_s=waypoint_timeout,
+                collision_baseline=collision_baseline,
+                mission_label=f"Search [{target}]",
+                active_status="running",
+                blocked_message="Search area A* planner blocked",
+                reached_message=f"Reached search waypoint {index}/{total}.",
                 current_waypoint_index=index,
-                total_waypoints=len(route),
-                message=f"Flying to waypoint {index}/{len(route)}.",
+                total_waypoints=total,
+                use_distance_safety=avoidance,
+                effective_area=effective_area,
+                planner_phase="search_closed_loop_replan",
             )
-            sub_waypoints = self._planned_sub_waypoints(waypoint, planned_avoidance, effective_area)
-            if not sub_waypoints:
+            if not reached:
                 return
-            for sub_index, sub_waypoint in enumerate(sub_waypoints, start=1):
-                if self._active_mission.stop_event.is_set():
-                    return
-                self._set_progress(
-                    message=f"Flying to waypoint {index}/{len(route)} segment {sub_index}/{len(sub_waypoints)}.",
-                )
-                commanded_speed = float(speed_mps)
-                with self._mission_lock:
-                    planner_state = self._mission_progress.get("planner")
-                if isinstance(planner_state, dict) and str(planner_state.get("fallback", "")).startswith("direct_"):
-                    commanded_speed = min(commanded_speed, 1.2)
-                try:
-                    self.executor.goto_local(
-                        sub_waypoint.x, sub_waypoint.y, sub_waypoint.z,
-                        speed_mps=commanded_speed,
-                        face_target=not planned_avoidance,
-                    )
-                except Exception as exc:
-                    self._set_progress(status="failed", message=f"Waypoint {index} command failed: {exc}")
-                    return
-                if not self._wait_for_waypoint(
-                    sub_waypoint, speed_mps, collision_baseline,
-                    avoidance=avoidance, reactive_avoidance=not planned_avoidance,
-                    obstacle_distance_m=obstacle_distance_m,
-                    avoidance_offset_m=avoidance_offset_m,
-                ):
-                    return
-            if not self._wait_for_waypoint(
-                waypoint, speed_mps, collision_baseline,
-                avoidance=avoidance, reactive_avoidance=not planned_avoidance,
-                obstacle_distance_m=obstacle_distance_m,
-                avoidance_offset_m=avoidance_offset_m,
-            ):
-                return
+
         self._set_progress(
             status="completed",
-            current_waypoint_index=len(route),
-            total_waypoints=len(route),
+            current_waypoint_index=total,
+            total_waypoints=total,
             distance_to_waypoint_m=0.0,
             message=f"Search area completed for target '{target}'.",
         )
@@ -2125,8 +2187,8 @@ class AgentToolRuntime:
                 self._set_progress(message=f"Pre-scan face_local failed at ({x:.1f}, {y:.1f}): {face_err}")
             points = self.adapter.lidar_obstacle_points_world(
                 range_m=55.0,
-                vertical_window_m=2.5,
-                vertical_down_m=1.4,
+                vertical_window_m=3.0,
+                vertical_down_m=1.5,
                 denoise_cell_m=2.0,
                 min_points_per_cell=3,
             )
@@ -2321,16 +2383,33 @@ class AgentToolRuntime:
                 self._set_progress(message=f"hard_stop hover fallback also failed: {hover_err}")
             return None
 
-    def _ensure_temporal_grid(self, x: float, y: float, z: float) -> TemporalVoxelGrid:
+    def _reset_temporal_grid(self, x: float, y: float, z: float) -> None:
+        """Discard old grid and create a fresh one at (x, y, z).
+
+        Called at mission start so stale obstacle data from previous flights
+        never pollutes the current mission's map or A* planning.
+        """
         self._temporal_grid = TemporalVoxelGrid(
             center_x=x, center_y=y, center_z=z,
-            size_xy_m=100.0, size_z_m=24.0, resolution_m=1.0,
-            hit_confirm=3, miss_confirm=5, inflation_m=1.5,
+            size_xy_m=100.0, size_z_m=24.0, resolution_m=0.5,
+            hit_confirm=4, miss_confirm=5, inflation_m=1.0,
         )
         self._depth_camera = DepthCamera(
             camera_name=self.adapter.active_camera_name or "front_center",
             max_range_m=40.0, sample_step=8, max_points_per_frame=2000,
         )
+        self._obstacle_density = 0.0
+
+    def _ensure_temporal_grid(self, x: float, y: float, z: float) -> TemporalVoxelGrid:
+        if self._grid_needs_reset:
+            self._reset_temporal_grid(x, y, z)
+            self._grid_needs_reset = False
+            return self._temporal_grid
+        if self._temporal_grid is not None:
+            if self._temporal_grid.should_recenter(x, y, z):
+                self._temporal_grid.recenter(x, y, z)
+            return self._temporal_grid
+        self._reset_temporal_grid(x, y, z)
         return self._temporal_grid
 
     def _update_temporal_grid(self) -> None:
@@ -2347,20 +2426,32 @@ class AgentToolRuntime:
                 return
         else:
             raw_lidar, (px, py, pz) = self.adapter.lidar_obstacle_points_world(
-                range_m=35.0, vertical_window_m=3.0, vertical_down_m=2.0,
+                range_m=35.0, vertical_window_m=3.0, vertical_down_m=1.5,
                 denoise_cell_m=1.0, min_points_per_cell=1,
                 return_3d=True, return_position=True,
             )
 
         if raw_lidar:
             self._temporal_grid.add_points_3d(raw_lidar)
-            # Write 2D projection to shared nav-cache so the WebSocket map
-            # can show obstacle points without any RPC contention.
+            # Write 2D projection + sampled 3D raw points to shared nav-cache
             lidar_2d: list[tuple[float, float]] = [(x, y) for (x, y, _z) in raw_lidar]
-            self.adapter.update_nav_cache({"lidar_points": lidar_2d})
+            # Sample ~500 3D points for frontend FPV depth view
+            sample_n = min(500, len(raw_lidar))
+            if len(raw_lidar) > sample_n:
+                step = len(raw_lidar) // sample_n
+                lidar_3d_sample = [{"x": round(raw_lidar[i][0], 2), "y": round(raw_lidar[i][1], 2), "z": round(raw_lidar[i][2], 2)} for i in range(0, len(raw_lidar), step)[:sample_n]]
+            else:
+                lidar_3d_sample = [{"x": round(p[0], 2), "y": round(p[1], 2), "z": round(p[2], 2)} for p in raw_lidar]
+            self.adapter.update_nav_cache({"lidar_points": lidar_2d, "raw_lidar_3d": lidar_3d_sample, "drone_pos": (px, py, pz)})
 
         if self._temporal_grid.should_recenter(px, py, pz):
             self._temporal_grid.recenter(px, py, pz)
+
+        # Extract confirmed occupied cells at flight altitude for frontend 2D/3D viz
+        if self._temporal_grid is not None and px != 0 and py != 0:
+            occ_cells = self._extract_occupancy_cells(pz)
+            voxels_3d = self._extract_3d_voxels(pz)
+            self.adapter.update_nav_cache({"occupancy_grid": occ_cells, "voxel_grid_3d": voxels_3d})
 
         if self._depth_camera is not None and not engine._nav_active:
             cloud = self._depth_camera.capture(self.adapter)
@@ -2377,6 +2468,53 @@ class AgentToolRuntime:
             z_center=z_center, half_height=half_height, treat_unknown_as="free",
         )
 
+    def _extract_3d_voxels(self, z_center: float, max_voxels: int = 1500) -> list[dict[str, float]]:
+        """Extract confirmed-occupied 3D voxels for frontend 3D rendering.
+
+        Uses numpy to find occupied cells efficiently (avoids Python-looping
+        240k+ voxels on every LiDAR update tick).
+        """
+        if self._temporal_grid is None:
+            return []
+        tg = self._temporal_grid
+        occ_mask = tg.hit_counts >= tg.hit_confirm
+        occ_indices = np.argwhere(occ_mask)
+        if occ_indices.size == 0:
+            return []
+        if occ_indices.shape[0] > max_voxels * 2:
+            rng = np.random.default_rng(seed=int(time.time() * 100) % (2**31))
+            occ_indices = occ_indices[rng.choice(occ_indices.shape[0], size=max_voxels * 2, replace=False)]
+        half_z = tg.size_z_m / 2.0
+        voxels: list[dict[str, float]] = []
+        for col, row, layer in occ_indices:
+            col, row, layer = int(col), int(row), int(layer)
+            wx = tg.origin_x + (col + 0.5) * tg.resolution_m
+            wy = tg.origin_y + (row + 0.5) * tg.resolution_m
+            wz = tg.origin_z + (layer + 0.5) * tg.resolution_m
+            if abs(wz - z_center) > half_z:
+                continue
+            voxels.append({"x": round(wx, 2), "y": round(wy, 2), "z": round(wz, 2)})
+            if len(voxels) >= max_voxels:
+                break
+        return voxels
+
+    def _extract_occupancy_cells(self, z_center: float, max_cells: int = 800) -> list[dict[str, float]]:
+        """Extract confirmed-occupied 2D cells near *z_center* for frontend rendering."""
+        if self._temporal_grid is None:
+            return []
+        half = 4.0  # obstacles within ±4m of flight altitude
+        slice_2d = self._temporal_grid.extract_2d_slice(
+            z_center=z_center, half_height=half, treat_unknown_as="free",
+        )
+        cells: list[dict[str, float]] = []
+        half_m = slice_2d.resolution_m / 2.0
+        for col, row in slice_2d.blocked:
+            wx, wy = slice_2d.cell_to_world((col, row))
+            cells.append({"x": round(wx, 2), "y": round(wy, 2), "r": round(half_m, 2)})
+            if len(cells) >= max_cells:
+                break
+        return cells
+
     def _prepare_new_mission(self, timeout: float | None = None) -> threading.Event:
         if timeout is None:
             timeout = nav_config.mission_prepare_timeout_s
@@ -2392,6 +2530,7 @@ class AgentToolRuntime:
                     )
         stop_event = threading.Event()
         self._active_mission = ActiveMission(stop_event=stop_event, name="pending")
+        self._grid_needs_reset = True
         return stop_event
 
     def _set_progress(self, **updates: Any) -> None:

@@ -14,7 +14,8 @@
       "Bash(python -m pytest tests/test_obstacle_avoidance.py::TestPlanLocalPath::test_completely_blocked_returns_not_ok -v)",
       "Bash(python -m pytest tests/ -v --tb=short)",
       "Bash(python -m pytest tests/ -v)",
-      "Bash(python -c \"import airsim; c = airsim.MultirotorClient; print\\([m for m in dir\\(c\\) if 'move' in m.lower\\(\\) or 'takeoff' in m.lower\\(\\) or 'hover' in m.lower\\(\\)]\\)\")"
+      "Bash(python -c \"import airsim; c = airsim.MultirotorClient; print\\([m for m in dir\\(c\\) if 'move' in m.lower\\(\\) or 'takeoff' in m.lower\\(\\) or 'hover' in m.lower\\(\\)]\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('core/airsim_adapter.py', doraise=True\\); print\\('OK'\\)\")"
     ]
   }
 }

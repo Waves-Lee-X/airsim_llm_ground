@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LLM UAV Mission Console</title>
   <link rel="stylesheet" href="/styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
   <div class="shell">
@@ -18,6 +26,7 @@
         <span id="connectionPill" class="pill offline">&#20223;&#30495;&#26410;&#36830;&#25509;</span>
         <span id="visionPill" class="pill neutral">&#35270;&#35273;&#24453;&#25509;&#20837;</span>
         <span id="taskPill" class="pill neutral">&#31354;&#38386;</span>
+        <select id="vehicleSelect" class="vehicleSelect" style="display:none;"></select>
       </div>
     </header>
 
@@ -65,6 +74,7 @@
                 <button id="mapZoomOutBtn" class="miniBtn" type="button">−</button>
                 <button id="mapFollowBtn" class="miniBtn active" type="button">FOLLOW</button>
                 <button id="mapFitBtn" class="miniBtn" type="button">FIT</button>
+                <em id="mapZoomLevel" class="mapZoomBadge" title="zoom level">L5</em>
                 <em id="mapCursor">X 0.0 / Y 0.0 / 4.0 px/m</em>
               </div>
             </div>
@@ -76,6 +86,18 @@
               <i class="legendObstacle"></i><span>LiDAR</span>
             </div>
             <canvas id="missionMap"></canvas>
+            <div class="map3dToggle">
+              <button id="toggle3dBtn" class="miniBtn" type="button">3D OFF</button>
+              <button id="toggle3dViewBtn" class="miniBtn" type="button" style="margin-left:4px;">FPV</button>
+            </div>
+            <div id="map3dContainer" class="map3dContainer" style="display:none;">
+              <canvas id="map3dCanvas"></canvas>
+              <div class="map3dLegend">
+                <span class="m3dNear">近</span>
+                <span class="m3dBar"></span>
+                <span class="m3dFar">远</span>
+              </div>
+            </div>
           </section>
         </section>
       </div>
@@ -124,6 +146,36 @@
                 <span>&#38388;&#36317;</span>
                 <input id="spacingInput" type="number" min="2" max="30" step="1" value="10" />
               </label>
+              <label class="formationOnly">
+                <span>&#32534;&#38431;&#25968;&#37327;</span>
+                <input id="formationCountInput" type="number" min="2" max="10" step="1" value="3" />
+              </label>
+              <label class="formationOnly">
+                <span>&#38431;&#24418;</span>
+                <select id="formationShapeSelect">
+                  <option value="v">V &#23383;</option>
+                  <option value="line">&#27178;&#32447;</option>
+                  <option value="delta">&#19977;&#35282;</option>
+                  <option value="diamond">&#33777;&#24418;</option>
+                  <option value="column">&#32437;&#38431;</option>
+                </select>
+              </label>
+              <label class="advancedParam">
+                <span>&#36991;&#38556;&#36317;&#31163;</span>
+                <input id="obstacleDistanceInput" type="number" min="2" max="20" step="1" value="8" />
+              </label>
+              <label class="advancedParam">
+                <span>&#36991;&#38556;&#20559;&#31227;</span>
+                <input id="avoidanceOffsetInput" type="number" min="1" max="15" step="1" value="6" />
+              </label>
+              <label class="advancedParam">
+                <span>&#25195;&#25551;&#36793;&#36317;</span>
+                <input id="scanMarginInput" type="number" min="1" max="10" step="1" value="4" />
+              </label>
+              <label class="advancedParam toggleLabel">
+                <input id="stopOnRiskInput" type="checkbox" />
+                <span>&#39640;&#39118;&#38505;&#20572;&#27490;</span>
+              </label>
             </div>
             <div class="toggleRow">
               <label><input id="preScanInput" type="checkbox" /> <span>&#39044;&#25195;&#25551;</span></label>
@@ -132,6 +184,7 @@
           </div>
           <div class="promptActions">
             <button id="voiceBtn" class="iconBtn secondaryBtn">&#35821;&#38899;</button>
+            <button id="detectBtn" class="secondaryBtn">&#26816;&#27979;</button>
             <button id="previewBtn" class="secondaryBtn">&#39044;&#35272;&#35745;&#21010;</button>
             <button id="runBtn">&#25191;&#34892;&#20219;&#21153;</button>
           </div>
@@ -208,6 +261,15 @@
           <b id="issueTitle">No Immediate Issue</b>
           <span id="issueDetail">任务运行状态将在这里集中显示。</span>
         </div>
+      </div>
+      <div class="infoCard perceptionCard">
+        <span>&#24863;&#30693;&#38754;&#26495;</span>
+        <div class="perceptionGrid">
+          <div class="perceptionItem"><b>&#39118;&#38505;</b><span id="riskText">-</span></div>
+          <div class="perceptionItem"><b>&#35268;&#21010;</b><span id="plannerText">-</span></div>
+          <div class="perceptionItem"><b>&#26816;&#27979;</b><span id="detectionText">-</span></div>
+        </div>
+        <div id="sensorList" class="sensorList"></div>
       </div>
       <div class="infoCard eventsCard">
         <span>&#20107;&#20214;&#27969;</span>

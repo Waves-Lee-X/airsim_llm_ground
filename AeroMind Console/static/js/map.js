@@ -86,9 +86,10 @@ export function renderMapStatus() {
   const uav = data.uav || { x: 0, y: 0, z: 0 };
   const uavs = data.uavs || [];
   const lidarCount = (data.obstacles || []).length;
+  const occCount = (data.occupancy_grid || []).length;
   const label = state.selectedVehicle || uav.name || "无人机";
   const fleet = uavs.length > 1 ? ` / ${uavs.length}架` : "";
-  el("mapStatus").textContent = `${label}${fleet}: X ${fmt(uav.x)} / Y ${fmt(uav.y)} / Z ${fmt(uav.z)} | 轨迹 ${(data.trail || []).length} | 雷达点 ${lidarCount}`;
+  el("mapStatus").textContent = `${label}${fleet}: X ${fmt(uav.x)} / Y ${fmt(uav.y)} / Z ${fmt(uav.z)} | 轨迹 ${(data.trail || []).length} | 雷达 ${lidarCount} | 建图 ${occCount}`;
 }
 
 export function drawMissionMap() {
@@ -104,6 +105,7 @@ export function drawMissionMap() {
   const data = state.map || {};
   if (data.search_area) drawSearchArea(ctx, data.search_area);
   drawBlockedZones(ctx, data.blocked_zones || []);
+  drawOccupancyGrid(ctx, data.occupancy_grid || []);
   drawObstaclePoints(ctx, data.obstacles || []);
   drawPolyline(ctx, data.route || [], "#d9a441", 2, [6, 5]);
   drawPlannerPath(ctx);
@@ -227,6 +229,27 @@ export function drawObstaclePoints(ctx, points) {
   for (const point of points) {
     const [x, y] = mapToCanvas(point.x, point.y);
     ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+  }
+  ctx.restore();
+}
+
+export function drawOccupancyGrid(ctx, cells) {
+  if (!cells || !cells.length) return;
+  const ppm = state.mapPxPerMeter || 4;
+  ctx.save();
+  for (const cell of cells) {
+    const [cx, cy] = mapToCanvas(cell.x, cell.y);
+    const half = Math.max(2.5, cell.r * ppm);
+    // outer glow
+    ctx.fillStyle = "rgba(255,80,60,0.28)";
+    ctx.fillRect(cx - half - 1, cy - half - 1, (half + 1) * 2, (half + 1) * 2);
+    // core cell
+    ctx.fillStyle = "rgba(255,110,80,0.55)";
+    ctx.fillRect(cx - half, cy - half, half * 2, half * 2);
+    // border
+    ctx.strokeStyle = "rgba(255,140,110,0.70)";
+    ctx.lineWidth = 0.6;
+    ctx.strokeRect(cx - half, cy - half, half * 2, half * 2);
   }
   ctx.restore();
 }

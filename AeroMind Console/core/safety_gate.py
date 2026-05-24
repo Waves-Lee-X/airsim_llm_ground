@@ -343,10 +343,19 @@ class SafetyGate:
             checks.append({"key": key, "label": label, "status": status, "detail": detail})
 
         if state.has_collision:
-            status = "error" if tool != "recover_from_collision" else "warn"
-            detail = f"Current collision detected with '{state.collision_object}'" if state.collision_object else "Current collision detected"
-            add_check("collision", "Collision Status", status, detail)
-            if tool != "recover_from_collision" and tool != "stop":
+            # Ground contact after landing looks like a collision in AirSim.
+            # If the drone is already airborne, the collision state is likely stale
+            # (residual from the previous landing). Allow flight tools through with
+            # a warning — real in-air collisions are caught by per-mission checks.
+            airborne = state.current_altitude_m > 2.0
+            if tool in ("recover_from_collision", "stop", "takeoff") or airborne:
+                add_check("collision", "Collision Status", "warn",
+                          f"Collision detected with '{state.collision_object}' — {tool} is allowed"
+                          f"{' (drone airborne)' if airborne and tool not in ('recover_from_collision', 'stop', 'takeoff') else ''}")
+            else:
+                add_check("collision", "Collision Status", "error",
+                          f"Cannot execute '{tool}' while in collision state "
+                          f"(object='{state.collision_object}'). Try takeoff or recover_from_collision first.")
                 blocked = True
                 reason = "Cannot execute flight command while in collision state"
 

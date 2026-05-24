@@ -1,6 +1,7 @@
 import { state, MAP_ZOOM_STEP, templates, el, on, fmt, toast, withBusy } from "./js/common.js";
 import { canvasToMap, resizeMissionMap, drawMissionMap, zoomMissionMap, setMapFollow, fitMissionMap } from "./js/map.js";
 import { api, render, renderTelemetry, updateClock, previewTask, runTask, command, flightCommand, detectLatest, applyTemplateParams, buildTaskTextFromParams, renderMissionLog } from "./js/ui.js";
+import { resize3dMap, set3dEnabled, toggleViewMode } from "./js/three_map.js";
 
 document.querySelectorAll(".templateChip").forEach((button) => {
   button.addEventListener("click", () => {
@@ -47,11 +48,59 @@ on("rtlBtn", "click", () => {
     command("/api/task/rtl", "已触发返航").catch((err) => toast("操作失败", err.message));
   }
 });
+let _recognition = null;
+
+function stopVoice() {
+  state.isListening = false;
+  el("voiceBtn").textContent = "语音";
+  el("inputState").textContent = "文本 / 语音";
+  if (_recognition) {
+    try { _recognition.stop(); } catch (e) { /* ignore */ }
+    _recognition = null;
+  }
+}
+
 on("voiceBtn", "click", () => {
-  state.isListening = !state.isListening;
-  el("voiceBtn").textContent = state.isListening ? "停止录音" : "语音";
-  el("inputState").textContent = state.isListening ? "正在听取语音..." : "文本 / 语音";
-  toast(state.isListening ? "语音入口已打开" : "语音入口已关闭", "下一步可接 Web Speech API 或后端 ASR");
+  if (state.isListening) {
+    stopVoice();
+    return;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    toast("语音不可用", "浏览器不支持 Web Speech API，请使用 Chrome 或手动输入文本。");
+    return;
+  }
+  const rec = new SpeechRecognition();
+  rec.lang = "zh-CN";
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  _recognition = rec;
+
+  rec.onstart = () => {
+    state.isListening = true;
+    el("voiceBtn").textContent = "停止录音";
+    el("inputState").textContent = "正在听取语音...";
+  };
+
+  rec.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    if (transcript) {
+      el("taskInput").value = transcript;
+      el("inputState").textContent = "语音识别完成";
+      previewTask().catch(() => {});
+    }
+  };
+
+  rec.onerror = (event) => {
+    toast("语音识别失败", event.error || "未知错误");
+    stopVoice();
+  };
+
+  rec.onend = () => {
+    stopVoice();
+  };
+
+  rec.start();
 });
 
 el("missionMap").addEventListener("mousemove", (event) => {
@@ -114,8 +163,6 @@ el("missionMap").addEventListener("dblclick", (event) => {
     return;
   }
 
-  setMapFollow(false);
-
   const payload = {
     tool: "autonomous_nav",
     args: {
@@ -159,6 +206,7 @@ el("missionMap").addEventListener("dblclick", (event) => {
 window.addEventListener("mouseup", () => {
   state.mapDragging = false;
   el("missionMap").classList.remove("dragging");
+  setMapFollow(true);
 });
 
 el("missionMap").addEventListener("wheel", (event) => {
@@ -168,7 +216,6 @@ el("missionMap").addEventListener("wheel", (event) => {
   const cy = event.clientY - rect.top;
   const factor = event.deltaY < 0 ? MAP_ZOOM_STEP : 1 / MAP_ZOOM_STEP;
   zoomMissionMap(factor, { x: cx, y: cy });
-  setMapFollow(false);
 }, { passive: false });
 
 on("mapFollowBtn", "click", () => {
@@ -181,17 +228,14 @@ on("mapFollowBtn", "click", () => {
 });
 
 on("mapFitBtn", "click", () => {
-  setMapFollow(false);
   fitMissionMap();
 });
 
 on("mapZoomInBtn", "click", () => {
-  setMapFollow(false);
   zoomMissionMap(MAP_ZOOM_STEP);
 });
 
 on("mapZoomOutBtn", "click", () => {
-  setMapFollow(false);
   zoomMissionMap(1 / MAP_ZOOM_STEP);
 });
 
@@ -208,6 +252,16 @@ on("pointFlyBtn", "click", () => {
   drawMissionMap();
   const label = state.pointFlyEnabled ? "双击地图任意位置发起避障飞行" : "指点飞行已关闭";
   toast("指点飞行", label);
+});
+
+on("toggle3dBtn", "click", () => {
+  const container = el("map3dContainer");
+  const on = !(container && container.style.display !== "none");
+  set3dEnabled(on);
+});
+
+on("toggle3dViewBtn", "click", () => {
+  toggleViewMode();
 });
 
 on("connectionPill", "click", () => {
@@ -273,9 +327,20 @@ function connectWS() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
+  let _msgCount = 0;
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
+      _msgCount++;
+      if (_msgCount % 20 === 0) {
+        const uav = (msg.data && msg.data.uav) || (msg.data && msg.data.map && msg.data.map.uav) || {};
+        console.log(
+          `[WS #${_msgCount}] DETAIL type=${msg.type} | ` +
+          `uav=(${uav.x?.toFixed(1)}, ${uav.y?.toFixed(1)}) spd=${uav.speed_mps?.toFixed(2)} | ` +
+          `mapFollow=${state.mapFollow} dragging=${state.mapDragging} | ` +
+          `view=(${state.mapViewX?.toFixed(1)}, ${state.mapViewY?.toFixed(1)})`
+        );
+      }
       if (msg.type === "state") {
         render(msg.data);
       } else if (msg.type === "telemetry") {
@@ -296,7 +361,7 @@ function connectWS() {
 }
 
 setInterval(updateClock, 1000);
-window.addEventListener("resize", resizeMissionMap);
+window.addEventListener("resize", () => { resizeMissionMap(); resize3dMap(); });
 
 api("/api/state").then(render).catch((err) => console.warn(err));
 api("/api/telemetry").then(renderTelemetry).catch((err) => console.warn(err));

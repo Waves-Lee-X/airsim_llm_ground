@@ -1076,18 +1076,53 @@ select {
   line-height: 1;
 }
 
-.zoomLevel {
-  min-width: 34px;
-  padding: 3px 5px;
+.mapZoomBadge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 28px;
+  padding: 2px 6px;
   border: 1px solid rgba(184, 199, 206, 0.22);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.035);
   color: #9fb0b7;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
-  line-height: 1;
+  font-style: normal;
   text-align: center;
   white-space: nowrap;
+}
+
+.formationOnly { display: none; }
+
+.advancedParam { display: none; }
+
+.perceptionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.perceptionItem {
+  border: 1px solid #31444f;
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: #0f171c;
+}
+
+.perceptionItem b {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.perceptionItem span {
+  display: block;
+  margin-top: 4px;
+  color: #dff1f5;
+  font-size: 13px;
 }
 
 .mapStatus {
@@ -1203,4 +1238,54 @@ select {
   .videoFrame { height: 340px; }
   .preflightItem { grid-template-columns: 1fr; }
   .toolPreviewStats { flex-direction: column; }
+}
+
+/* 3D Mapping Mini View */
+.map3dToggle {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 10;
+}
+.map3dToggle .miniBtn {
+  font-size: 10px;
+  padding: 4px 10px;
+  min-height: 28px;
+}
+.map3dContainer {
+  position: absolute;
+  bottom: 44px;
+  right: 8px;
+  width: 320px;
+  height: 260px;
+  background: rgba(13, 18, 22, 0.92);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 9;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+}
+.map3dContainer canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.map3dLegend {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  font-size: 9px;
+  color: var(--muted);
+}
+.m3dNear { color: #43c7b9; }
+.m3dFar { color: #e15d5d; }
+.m3dBar {
+  width: 4px;
+  height: 40px;
+  border-radius: 2px;
+  background: linear-gradient(to bottom, #e15d5d 0%, #d9a441 40%, #e0c060 65%, #43c7b9 100%);
 }

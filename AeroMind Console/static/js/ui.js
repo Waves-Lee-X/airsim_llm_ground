@@ -1,5 +1,6 @@
 import { state, text, templateParams, el, checked, valueOf, fmt, numInput, statusText, riskText, directionText, plannerText, statusLabel, toast, withBusy } from "./common.js";
 import { clearedMissionMap, renderMapStatus, drawMissionMap, fitMissionMap, setMapFollow } from "./map.js";
+import { update3dData } from "./three_map.js";
 
 export async function api(path, body = null) {
   const options = body === null ? {} : {
@@ -67,7 +68,8 @@ export function render(data) {
   renderRoute(visiblePlan, data.task.status, state.agentProgress);
   renderEvents(staleTaskView ? [] : (data.events || []));
   state.map = staleTaskView ? clearedMissionMap(data.map) : (data.map || null);
-  if (!state.mapFollow && data.uav.speed_mps > 0.5) {
+  // Force map follow unless the user is actively dragging
+  if (!state.mapFollow && !state.mapDragging) {
     setMapFollow(true);
   }
   if (state.mapFollow && state.map && state.map.uav) {
@@ -76,6 +78,7 @@ export function render(data) {
   }
   renderMapStatus();
   drawMissionMap();
+  update3dData(data.map || null);
   updateClock();
   updateMissionLog(data);
 }
@@ -138,9 +141,10 @@ export function renderTelemetry(data) {
     uavs: data.map && Array.isArray(data.map.uavs) ? data.map.uavs : [],
     trail: data.map && Array.isArray(data.map.trail) ? data.map.trail : (state.map.trail || []),
   };
-  // Auto re-enable map follow when the drone is moving (e.g. after
-  // point-fly double-click disables it).
-  if (!state.mapFollow && data.uav.speed_mps > 0.5) {
+  // Auto re-enable map follow when the drone is moving (speed-based)
+  // or has drifted far from the view center (distance-based fallback).
+  // Force map follow unless the user is actively dragging
+  if (!state.mapFollow && !state.mapDragging) {
     setMapFollow(true);
   }
   if (state.mapFollow && state.map.uav) {
@@ -188,6 +192,7 @@ export function renderVehicleSelector(vehicle) {
   }
   select.value = selected;
   state.selectedVehicle = selected;
+  select.style.display = vehicles.length > 1 ? "inline-block" : "none";
 }
 
 export function renderPlan(plan, status = state.currentStatus, agentProgress = null) {
@@ -400,6 +405,14 @@ export function applyTemplateParams(name) {
   if (el("obstacleDistanceInput")) el("obstacleDistanceInput").value = params.obstacle_distance_m;
   if (el("avoidanceOffsetInput")) el("avoidanceOffsetInput").value = params.avoidance_offset_m;
   if (el("stopOnRiskInput")) el("stopOnRiskInput").checked = params.pre_scan_stop_on_high_risk;
+  // Toggle formation / advanced fields visibility
+  const isFormation = name === "formation";
+  document.querySelectorAll(".formationOnly").forEach((el) => {
+    el.style.display = isFormation ? "" : "none";
+  });
+  document.querySelectorAll(".advancedParam").forEach((el) => {
+    el.style.display = isFormation ? "" : "none";
+  });
 }
 
 export function buildTaskTextFromParams() {

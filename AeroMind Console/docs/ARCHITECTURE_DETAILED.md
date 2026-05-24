@@ -99,7 +99,7 @@ AeroMind Console 是一个**自然语言无人机任务控制台**，基于 AirS
 
 ### 3.1 server.py — HTTP/WebSocket 服务层
 
-**文件**：[server.py](../server.py)（~1270行）
+**文件**：[server.py](../server.py)（~1400行）
 
 **职责**：整个系统的入口和HTTP路由层。使用Python标准库的 `http.server.ThreadingHTTPServer` 实现多线程HTTP服务。
 
@@ -116,17 +116,31 @@ class MissionConsoleServer(ThreadingHTTPServer):
 
 #### 3.1.2 GET 路由
 
+路由使用分层匹配策略，避免路径前缀误匹配：
+
+```python
+if path == "/" or path == "/index.html":    # 精确匹配
+    self._handle_public_get(path); return
+if path.startswith(("/static/", "/video/front", "/camera/latest")):  # 前缀匹配
+    self._handle_public_get(path); return
+if path == "/ws":                            # WebSocket 升级
+    self._handle_ws(); return
+if not path.startswith("/api/"):             # 非 API → 静态文件回退
+    self._handle_public_get(path); return
+# 之后处理 /api/* 路由
+```
+
 | 路径 | 处理器 | 说明 |
 |------|--------|------|
-| `/` | `send_static` | 重定向到 `/index.html` |
+| `/` | `send_static` | 返回 `/index.html` |
 | `/index.html` | `send_static` | 主页面 |
 | `/static/*` | `send_static` | 静态文件（CSS、JS模块） |
 | `/video/front` | `send_mjpeg` | MJPEG 视频流（multipart/x-mixed-replace） |
 | `/camera/latest` | `send_latest_camera_frame` | 最新单帧JPEG |
 | `/ws` | `_handle_ws` | **WebSocket 升级**（实时遥测推送） |
-| `/api/state` | `console.snapshot` | **完整状态快照**（需认证） |
-| `/api/telemetry` | `console.telemetry_snapshot` | **轻量遥测**（需认证） |
-| 其他路径 | `send_static` | 尝试作为静态文件返回 |
+| `/api/state` | `console.snapshot` | **完整状态快照** |
+| `/api/telemetry` | `console.telemetry_snapshot` | **轻量遥测** |
+| 其他非 `/api/` 路径 | `send_static` | 尝试作为静态文件返回 |
 
 #### 3.1.3 POST 路由
 
@@ -148,19 +162,40 @@ class MissionConsoleServer(ThreadingHTTPServer):
 
 #### 3.1.4 WebSocket 实现 (`_handle_ws`)
 
+**架构 v2**：采用**后台缓存发布器 + WebSocket 零阻塞读**模式，彻底解决 WebSocket 推送阻塞 RPC 引擎的问题。
+
 ```
-客户端请求 GET /ws (带 Upgrade: websocket 头)
-  → ws_handshake() 验证握手密钥
-  → 返回 101 Switching Protocols
-  → 进入推送循环:
-      每 200ms: 发送 {"type": "telemetry", "data": ...}
-      每 1000ms (tick%5==0): 发送 {"type": "state", "data": ...}
-  → 客户端断开: BrokenPipeError → 线程退出
+后台 WS 缓存发布器 (_run_ws_cache_publisher):
+  while not stopped:
+    state_json      = json.dumps({"type": "state", "data": fast_state_snapshot()})    # 2Hz
+    telemetry_json  = json.dumps({"type": "telemetry", "data": telemetry_snapshot()})  # 10Hz
+    写入 self._ws_cache (带锁)
+
+WebSocket 推送 (_handle_ws):
+  每 100ms tick:
+    if tick % 5 == 0:
+        payload = ws_cache["state"]       # 微秒级锁读取
+    else:
+        payload = ws_cache["telemetry"]
+    ws_send_text(wfile, payload)          # 直接推送预序列化的 JSON
 ```
 
-每个WebSocket客户端占用一个线程（ThreadingHTTPServer 为每个连接创建新线程），服务器端主动推送，前端无需轮询。
+**关键设计**：`_handle_ws` 不再调用任何 AirSim RPC 或状态快照方法，只从 `_ws_cache` 字典读取预序列化的 JSON 字符串并推送。锁持有时间仅为字典查找（微秒级），不会阻塞引擎命令队列。
 
-#### 3.1.5 安全措施
+每个 WebSocket 客户端占用一个线程（ThreadingHTTPServer 为每个连接创建新线程），服务器端主动推送，前端无需轮询。
+
+#### 3.1.5 LLM 可用性检查
+
+在智能任务（Agentic 模式）启动前，`_run_agentic_mission()` 检查 `agent_loop.llm` 是否可用：
+
+```python
+if not self.agent_loop.llm:
+    return {"error": "AGENT_NO_LLM", "message": "未配置 LLM API 密钥..."}
+```
+
+任务预览面板（`_mission_draft`）的飞行前检查也包含 `llm_available` 项，在 API 密钥缺失时显示红色警告。LLM 客户端通过 `self.planner._llm if self.planner else None` 注入，当 `AEROMIND_LLM_API_KEY` 环境变量为空时自然为 `None`。
+
+#### 3.1.6 安全措施
 
 - **认证默认启用**：`AuthConfig(enabled=True)`
 - **请求体限制**：`MAX_CONTENT_LENGTH = 1MB`
@@ -329,9 +364,9 @@ AvoidancePlan:
 
 ### 3.6 core/airsim_adapter.py — AirSim 仿真适配层
 
-**文件**：[core/airsim_adapter.py](../core/airsim_adapter.py)（1624行）
+**文件**：[core/airsim_adapter.py](../core/airsim_adapter.py)（~2400行）
 
-**职责**：封装所有与 AirSim 的交互。这是项目中最大的模块，因为需要处理 AirSim API 的各种细节。
+**职责**：封装所有与 AirSim 的交互。这是项目中最大的模块。
 
 #### 3.6.1 数据模型
 
@@ -343,64 +378,114 @@ ObstacleStatus         # 障碍物状态：阻塞标志、最近距离、扇区�
 DistanceSensorsStatus  # 距离传感器：前/左/右距离、紧急方向
 ```
 
-#### 3.6.2 连接管理
+#### 3.6.2 AirSimRpcEngine — 专用 RPC 引擎线程
 
-**自动重连机制** (`_reconnect_loop`)：
-- 后台 daemon 线程每 3 秒检查连接状态
-- 连接断开时自动调用 `_try_connect()` 重连
-- 连接正常时执行心跳检测（`getMultirotorState`），连续 3 次失败判定断连
+**核心设计**：所有 AirSim RPC 调用必须在同一线程上串行执行（AirSim 客户端不保证线程安全）。`AirSimRpcEngine` 是一个独立的 daemon 线程，拥有自己的 tornado IOLoop 和 AirSim 客户端实例：
 
-**连接流程** (`_try_connect`)：
-1. `import airsim`（动态导入，模块缺失时抛出可捕获异常）
-2. `airsim.MultirotorClient(ip, port, timeout_value=1.5)` 创建客户端
-3. `client.confirmConnection()` 确认连接
-4. `client.listVehicles()` 发现可用无人机
-5. 对每架无人机调用 `enableApiControl(True)` + `armDisarm(True)`
-6. 预热相机（获取 3 帧）
+```
+引擎线程 _run() 主循环:
+  while not stopped:
+    1. 连接管理        → client is None → _try_connect() → wait 3s
+    2. Nav 控制模式    → if _nav_active → _nav_tick_direct() → _drain_queue() → continue
+    3. 位置保持        → if _hold_active → _hold_tick() → continue
+    4. 指令队列等待    → _cmd_queue.get(timeout=0.35)
+    5. 执行排队指令    → job.fn(client, airsim) → job.done.set()
+```
 
-#### 3.6.3 命令线程模型
+#### 3.6.3 指令队列与 _exec_rpc
 
-为避免阻塞 AirSim API 调用影响 WebSocket 推送和 HTTP 响应，所有飞控命令通过**单线程命令队列**执行：
+Agent 线程通过 `_exec_rpc(fn, timeout_s)` 将 AirSim RPC 调用投递到引擎线程执行：
 
 ```python
-_command_queue: queue.Queue[CommandJob | None]
-
-def _command_loop(self):
-    while True:
-        job = self._command_queue.get()
-        if job is None: return
-        job.result = job.fn()        # 在命令线程中执行 AirSim API 调用
-        job.done.set()               # 通知调用线程结果已就绪
-
-def _run_command(self, fn, timeout_s=None):
-    job = CommandJob(fn)
-    self._command_queue.put(job)
-    job.done.wait(timeout=timeout_s)  # 调用线程阻塞等待
+def _exec_rpc(self, fn, timeout_s=30.0):
+    job = CommandJob(fn)            # 包装函数
+    self._engine._cmd_queue.put(job) # 入队
+    job.done.wait(timeout=timeout_s) # 阻塞等待引擎处理完成
     if job.error: raise job.error
     return job.result
 ```
 
-**设计原理**：AirSim 客户端的某些操作不是线程安全的。通过将所有命令序列化到单个线程中执行，避免了竞态条件。
+引擎在位置保持空闲期（每 0.35s）或 nav 模式 drain 阶段处理队列中的作业。这使得 agent 线程可以安全地调用 LiDAR、深度相机等耗时 RPC，而不会引发跨线程冲突。
 
-#### 3.6.4 位置保持机制
+#### 3.6.4 Nav 控制模式（零队列开销）
 
-每次飞行操作（起飞、goto、悬停......）结束后，自动启动**位置保持线程**：
+**设计动机**：位置保持模式下的 `_exec_rpc` 每次调用有 ~50ms 的队列往返开销。对于高频闭环导航（20Hz 速度指令 + 遥测反馈），这种开销不可接受。
+
+Nav 控制模式通过共享内存 + 回调机制实现零队列开销：
+
+```
+Agent 线程:                    Engine 线程:
+  set_nav_velocity(vx,vy,vz)      _nav_tick_impl():
+    写入共享内存 ─────────→       1. 读取 _nav_vx/vy/vz (锁)
+    (无 RPC, 无队列)              2. moveByVelocityAsync()
+                                  3. getMultirotorState()
+                                  4. simGetCollisionInfo()
+  get_nav_cache()                 5. getDistanceSensorData() ×3
+    读取缓存 ←─────────────       6. callback → update_nav_cache()
+    (无 RPC, 无队列)
+```
+
+**关键机制**：
+- **`start_nav_control()`**：设置 `_nav_active=True`，引擎主循环进入步骤 2 的 tight loop
+- **`set_nav_velocity(vx, vy, vz, dur)`**：纯内存写入（带锁），引擎每轮读取最新值
+- **`_nav_tick_impl()`**：6 个直接 RPC 调用（无队列），每轮耗时 ~50-120ms，更新率 8-20Hz
+- **`_drain_queue()`**：每轮 nav tick 后最多处理 1 个排队作业（LiDAR 等），防止 agent 线程饿死，同时确保单个慢作业不会永久阻塞导航循环
+- **`stop_nav_control()`**：退出 nav 模式，引擎回到位置保持或指令队列模式
+
+#### 3.6.5 遥测轮询线程（Telemetry Poller）
+
+**设计动机**：引擎线程可能被 LiDAR 采集或指令队列中的慢 RPC 长时间阻塞（2-30 秒），如果遥测缓存依赖引擎回调更新，前端地图会在此期间完全冻结。
+
+遥测轮询器是一个**独立的 daemon 线程 + 独立的 AirSim 客户端**，完全解耦于引擎的指令队列：
+
+```
+遥测线程 (_run_telemetry_poller):
+  while not stopped:
+    client.getMultirotorState()                 # 仅 1 个轻量 RPC
+    UavTelemetry(x, y, z, speed, altitude)
+    callback → update_nav_cache({"telemetry": tel})
+    sleep(0.1)                                   # 恒定的 10Hz 刷新率
+```
+
+**与引擎 nav tick 的协作**：
+- 遥测线程和引擎 nav tick 都会调用 `update_nav_cache()`，写入带锁保护
+- 遥测线程仅更新 `telemetry` 字段；碰撞、距离传感器等仍由引擎 nav tick 更新
+- 即使引擎被 LiDAR 阻塞 30 秒，遥测线程每 100ms 推送一次最新位置 → WebSocket → 前端地图始终实时
+
+#### 3.6.6 共享 LiDAR 缓存
+
+Agent 的 `_update_temporal_grid()` 在导航模式下不再通过 `_exec_rpc` 获取 LiDAR 数据（那会导致引擎 `_drain_queue` 阻塞导航循环）。改为读取引擎在 `_nav_tick_impl` 中周期性采集的共享缓存：
+
+```
+引擎 _nav_tick_impl (每 0.8s 采集一次):
+  capture_lidar_to_shared_cache(client, px, py, pz, orientation)
+    getLidarData() → 旋转到世界坐标 → _shared_lidar_points
+
+Agent _update_temporal_grid:
+  if engine._nav_active:
+    raw_lidar, (px, py, pz) = adapter.get_shared_lidar()  # 零阻塞读取
+  else:
+    raw_lidar = adapter.lidar_obstacle_points_world(...)   # 传统 _exec_rpc 路径
+```
+
+这完全消除了导航模式下 LiDAR 导致的引擎阻塞。
+
+#### 3.6.7 位置保持机制
+
+每次飞行操作结束后，引擎进入位置保持模式：
 
 ```python
-def _position_hold_loop(self):
-    while not stop_event.wait(0.35):
-        # 读取当前位置
-        state = client.getMultirotorState()
-        # 计算位置偏差
-        vx = clamp((hold_x - px) * 0.35, -0.45, 0.45)
-        vy = clamp((hold_y - py) * 0.35, -0.45, 0.45)
-        # 速度修正回到目标点
-        client.moveByVelocityZAsync(vx, vy, target_z, 0.49)
+def _hold_tick(self, client, airsim_module):
+    state = client.getMultirotorState()
+    # PD 比例控制器
+    vx = clamp((hold_x - px) * 0.35, -0.45, 0.45)
+    vy = clamp((hold_y - py) * 0.35, -0.45, 0.45)
+    client.moveByVelocityZAsync(vx, vy, target_z, 0.5)
 ```
 
 使用比例控制器（P=0.35），速度上限 0.45 m/s，每 350ms 刷新一次。防止无人机在悬停时漂移。
 
-#### 3.6.5 核心飞行操作
+#### 3.6.8 核心飞行操作
 
 **`takeoff(altitude_m)`**：
 1. 调用 `takeoffAsync()` 地面起飞
@@ -416,7 +501,7 @@ def _position_hold_loop(self):
 
 **`move_on_path(path, speed_mps)`** — 使用 AirSim 内置 `moveOnPathAsync` 沿平滑路径飞行。
 
-**`return_to_launch(altitude_m)`** — 先爬升至安全高度，然后 `moveToPositionAsync(0, 0, safe_z)`。
+**`return_to_launch(altitude_m)`** — 先爬升至安全高度，然后飞向 `_home_position` 记录的真实起飞点坐标（不再是硬编码的 (0,0)）。`home_position` 属性对外暴露为 `{"x": hx, "y": hy}` 的 dict，server.py 中的 4 处状态快照均通过该属性读取返航点。
 
 **`recover_from_collision(climb_m, backoff_m)`** — 碰撞恢复：
 1. 取消当前任务
@@ -424,7 +509,7 @@ def _position_hold_loop(self):
 3. 向 X 负方向后退 `backoff_m` 米
 4. 如果位移不足或被卡住 → 使用 `simSetVehiclePose` 强制传送
 
-#### 3.6.6 障碍物感知
+#### 3.6.9 障碍物感知
 
 **`obstacle_status(lookahead_m, corridor_width_m)`** — LiDAR 扇区分析：
 - 从 LiDAR 点云提取前方点
@@ -443,7 +528,7 @@ def _position_hold_loop(self):
 **`distance_sensors_status()`** — 前/左/右距离传感器：
 - 判定紧急状态：前方 ≤2.5m 或侧方 ≤1.5m
 
-#### 3.6.7 对象生成与轨迹绘制
+#### 3.6.10 对象生成与轨迹绘制
 
 - **`spawn_object`**：在指定位置生成 3D 模型（用于回放中的目标标记）
 - **`destroy_object`**：销毁指定对象
@@ -467,12 +552,10 @@ class TaskPlanner:
         self._llm = llm_client  # 可选，None时只使用规则引擎
 
     def plan(self, text: str) -> MissionPlan:
-        # 1. 如果配置了LLM，先尝试LLM解析
-        if self._llm is not None:
-            llm_result = self._llm.plan_mission(raw)
-            if llm_result is not None:
-                return self._from_json(raw, llm_result)  # LLM成功
-        # 2. LLM失败或未配置 → 使用规则引擎
+        # 1. 如果配置了LLM且开启Agentic模式 → 使用ReAct Agent决策
+        if self._llm is not None and _AGENTIC_MODE:
+            return self.plan_agentic(raw)
+        # 2. 否则使用规则引擎（关键词匹配+正则提取）
         return self._plan_rules(raw)
 ```
 
@@ -716,7 +799,7 @@ Pydantic 的 `Field(ge=..., le=...)` 约束和 `@model_validator` 自动处理�
 
 ### 3.12 core/agent_tools.py — Agent 工具运行时
 
-**文件**：[core/agent_tools.py](../core/agent_tools.py)（~2033行）
+**文件**：[core/agent_tools.py](../core/agent_tools.py)（~2500行）
 
 **职责**：实现 15 种 LLM Agent 可调用的工具，每种工具在独立线程中运行，支持中止和进度报告。
 
@@ -737,32 +820,37 @@ Pydantic 的 `Field(ge=..., le=...)` 约束和 `@model_validator` 自动处理�
 | `search_area` | `_search_area` | ✓ | ✓ |
 | `collect_images` | `_collect_images` | ✓ | ✓ |
 | `replay_trajectory` | `_replay_trajectory` | ✓ | ✓ |
-| `detect_objects` | `_detect_objects` | - | - |
-| `report_target` | `_report_target` | - | - |
+| `detect_objects` | `_detect_objects` | ✓ | - |
+| `report_target` | `_report_target` | ✓ | - |
+
+**`detect_objects`** — 调用 YOLO 目标检测（异步线程池，`max_workers=1`），支持按目标类型（`target_filter`）过滤结果。从 `adapter.camera_frame()` 获取当前相机帧，通过 `VisionDetector.detect_async()` 推理，返回 `DetectionResult` 包含标签、置信度、边界框和耗时。
+
+**`report_target`** — 为检测到的目标生成结构化报告，包含目标 ID、类别、置信度、边界框、当前无人机位置和时间戳。报告存储在 `_target_reports` 历史列表中，返回完整的位置上下文。
 
 #### 3.12.2 任务中止机制
 
 ```python
-def _prepare_new_mission(self, timeout=3.0):
-    self._mission_stop.set()           # 通知旧任务线程停止
-    old = self._mission_thread
-    if old is not None and old.is_alive():
-        old.join(timeout=timeout)      # 等待旧线程退出
-    self._mission_stop.clear()         # 重置停止标志
+def _stop_active_mission(self):
+    """停止并清空当前活跃任务，所有中断路径统一调用。"""
+    if self._active_mission:
+        self._active_mission.stop()
+        self._active_mission = None
 
-def call_tool(self, tool, args):
-    self._prepare_new_mission()        # 确保上一次任务已停止
-    self._mission_thread = threading.Thread(
-        target=self._mission_runner,
-        args=(tool, args),
-        daemon=True
-    )
-    self._mission_thread.start()
+def _prepare_new_mission(self, timeout=3.0):
+    if self._active_mission is not None:
+        self._active_mission.stop()
+        old = self._active_mission.thread
+        if old is not None and old.is_alive():
+            old.join(timeout=timeout)      # 等待旧线程退出
+    self._active_mission = ActiveMission(stop_event=threading.Event())
+    return self._active_mission.stop_event
 ```
 
-每个长时间运行的工具（如 `_autonomous_nav`、`_search_area`）在其主循环中检查 `self._mission_stop.is_set()`：
+`_stop_active_mission()` 统一了 `_hover`、`_stop`、`_land`、`_return_home`、`_recover_from_collision` 和 `agent_loop.stop()` 中的重复代码，确保所有停止路径一致地清空 `_active_mission`，防止旧任务线程变为孤儿。
+
+每个长时间运行的工具（如 `_autonomous_nav`、`_search_area`）在其主循环中检查 `self._active_mission.stop_event.is_set()`：
 ```python
-while not self._mission_stop.is_set():
+while not self._active_mission.stop_event.is_set():
     # 执行一个航点/一个控制周期
     ...
 ```
@@ -797,12 +885,16 @@ def _push_progress(self, status, message, **extra):
 6. 检测到目标 → 报告并悬停
 
 **`_autonomous_nav`** — 闭环自主导航：
-1. 获取当前 LiDAR 障碍点
-2. 调用 `plan_local_path()` 生成 A* 路径
-3. 取路径的前 `lookahead_m` 米作为短期目标
-4. 使用 `move_velocity` 进行 PD 控制飞行
-5. 每个 `replan_interval_s` 秒重新规划
-6. 到达目标或超时
+1. 确保体素网格已初始化，预热遥测缓存
+2. 启动引擎 Nav 控制模式（`start_nav_control()`），引擎进入零队列开销的 tight loop
+3. 主循环（`_closed_loop_drive_to_goal`）：
+   - 从共享缓存读取遥测（无 RPC）
+   - 每 `replan_interval_s` 秒调用 `_replan_to_goal()` 进行 A* 路径规划
+   - `_update_temporal_grid()` 导航模式下从共享 LiDAR 缓存读取（零阻塞）
+   - 如果当前高度切片被阻塞，`_try_alt_replan()` 尝试上下偏移高度寻找自由通道
+   - EMA 平滑速度指令，通过 `set_nav_velocity()` 写入共享内存
+   - 健康检查：缓存年龄 >1s 或 nav 模式意外停止 → 自动重启
+4. 到达目标、碰撞或超时 → `finally` 块停止 nav 模式并触发位置保持
 
 **`_collect_images`** — 数据集采集：
 1. 创建 `datasets/yolo_collect/<dataset_name>/images/` 目录
@@ -1317,13 +1409,13 @@ class SomeService:
 
 ### 4.1 index.html — UI 布局
 
-**文件**：[static/index.html](../static/index.html)（219行）
+**文件**：[static/index.html](../static/index.html)（265行）
 
 整体布局分为三个区域：
 
 ```
 ┌─────────────────────────────────────────────┐
-│  .topbar: 品牌 + 连接/视觉/任务状态指示器    │
+│  .topbar: 品牌 + 连接/视觉/任务状态 + 无人机选择器 │
 ├──────────────────────┬──────────────────────┤
 │  .topDeck            │  .missionPanel       │
 │  ┌─────────────────┐ │  ┌────────────────┐  │
@@ -1340,15 +1432,23 @@ class SomeService:
 │                       │  │ (任务日志)     │  │
 │                       │  └────────────────┘  │
 ├──────────────────────┴──────────────────────┤
-│  .bottomDeck: 任务状态/位置/进度/事件流     │
+│  .bottomDeck: 状态/位置/进度/感知面板/事件流 │
 └─────────────────────────────────────────────┘
 ```
+
+新增元素：
+- `#vehicleSelect`：多无人机切换下拉框（动态显示/隐藏）
+- `#mapZoomLevel`：地图缩放级别徽章（L1-L10）
+- 编队参数：`#formationCountInput`（编队数量）、`#formationShapeSelect`（队形选择：V字/横线/三角/菱形/纵队）
+- 高级参数：`#obstacleDistanceInput`、`#avoidanceOffsetInput`、`#scanMarginInput`、`#stopOnRiskInput`
+- `#detectBtn`：手动触发目标检测按钮
+- 感知面板：`#riskText`、`#plannerText`、`#detectionText`、`#sensorList`
 
 通过 CSS Grid 实现响应式布局。`<script type="module">` 加载 ES 模块入口。
 
 ### 4.2 app.js — 入口与事件绑定
 
-**文件**：[static/app.js](../static/app.js)（~189行）
+**文件**：[static/app.js](../static/app.js)（~359行）
 
 **职责**：模块编排 + 事件绑定 + WebSocket 连接 + 初始化。
 
@@ -1374,7 +1474,7 @@ import { api, render, renderTelemetry, updateClock, previewTask, runTask, comman
 | `#pauseBtn` | click | `command("/api/task/pause")` |
 | `#stopBtn` | click | 确认弹窗 → `command("/api/task/stop")` |
 | `#rtlBtn` | click | 确认弹窗 → `command("/api/task/rtl")` |
-| `#voiceBtn` | click | 切换 `state.isListening`，预留语音入口 |
+| `#voiceBtn` | click | Web Speech API 语音识别（中文），自动填入任务输入框并触发预览 |
 | `#missionMap` | mousemove | 拖拽平移 / 光标坐标显示 |
 | `#missionMap` | mousedown | 开始拖拽 |
 | window | mouseup | 停止拖拽 |
@@ -1389,6 +1489,25 @@ import { api, render, renderTelemetry, updateClock, previewTask, runTask, comman
 | `#vehicleSelect` | change | 切换无人机 |
 | `#clearLogBtn` | click | 清空任务日志 |
 
+#### 语音识别
+
+使用浏览器原生 `SpeechRecognition` API（Web Speech API），设置为中文识别（`lang="zh-CN"`）：
+
+```javascript
+on("voiceBtn", "click", () => {
+    const rec = new SpeechRecognition();
+    rec.lang = "zh-CN";
+    rec.onresult = (event) => {
+        el("taskInput").value = event.results[0][0].transcript.trim();
+        previewTask().catch(() => {});  // 自动触发任务预览
+    };
+    rec.onend = () => stopVoice();
+    rec.start();
+});
+```
+
+不支持的浏览器会显示友好的 toast 提示。
+
 #### WebSocket 连接
 
 ```javascript
@@ -1402,6 +1521,8 @@ function connectWS() {
     ws.onclose = () => setTimeout(connectWS, 1200);  // 自动重连
 }
 ```
+
+调试日志每 20 条消息才输出一次（`_msgCount % 20 === 0`），减少控制台噪音。
 
 #### 初始化
 
@@ -1529,7 +1650,7 @@ visibleUavs(uavs):
 
 ### 4.5 ui.js — DOM 渲染与 API 调用
 
-**文件**：[static/js/ui.js](../static/js/ui.js)（516行）
+**文件**：[static/js/ui.js](../static/js/ui.js)（~600行）
 
 **职责**：所有 DOM 更新和 HTTP API 调用。
 
@@ -1609,15 +1730,36 @@ updateMissionLog(data)        → 追加日志条目（去重）
 ### 5.2 实时遥测推流
 
 ```
-AirSim 仿真 (200Hz)
-  → AirSimAdapter.telemetry()        [读取多旋翼状态]
-  → ConsoleState.telemetry_snapshot() [组装遥测包]
-  → WebSocket: {"type": "telemetry", "data": {...}}   [每200ms]
-  ──或──
-  → ConsoleState.snapshot()          [完整状态快照]
-  → WebSocket: {"type": "state", "data": {...}}        [每1000ms]
-  → 前端: render(msg.data) / renderTelemetry(msg.data)
+┌─ AirSim 仿真 ─────────────────────────────────────────────┐
+│                                                            │
+│  ┌── 遥测轮询线程 (独立客户端, 10Hz) ──────────┐          │
+│  │  getMultirotorState() → 写入共享缓存         │          │
+│  └──────────────────────────────────────────────┘          │
+│                                                            │
+│  ┌── 引擎 Nav Tick (8-20Hz, 客户端 A) ──────────┐         │
+│  │  遥测 + 碰撞 + 距离传感器 → callback → 缓存   │         │
+│  └──────────────────────────────────────────────┘          │
+│                                                            │
+└────────────────────┬───────────────────────────────────────┘
+                     │ 共享 nav_cache (线程安全锁)
+                     ▼
+  ┌─ WS 缓存发布器线程 (独立, 2Hz state + 10Hz telemetry) ──┐
+  │  fast_state_snapshot() / telemetry_snapshot()            │
+  │  → json.dumps() → ws_cache["state"/"telemetry"]          │
+  └────────────────────┬─────────────────────────────────────┘
+                       │ _ws_cache (线程安全锁, 微秒读取)
+                       ▼
+  WebSocket _handle_ws: 每 100ms 从缓存读取预序列化 JSON → 推送
+                       │
+                       ▼
+  前端: render() / renderTelemetry() → drawMissionMap() → 地图实时更新
 ```
+
+**三层架构，彻底解决 RPC 阻塞**：
+- **遥测轮询线程**：恒定 10Hz，仅更新 `telemetry` 字段。即使引擎被 LiDAR 阻塞 30 秒，地图依然实时
+- **引擎 Nav Tick**：8-20Hz（取决于 RPC 延迟），更新 `telemetry` + `collision` + `distances`
+- **WS 缓存发布器**：后台线程独立计算状态/遥测 JSON（2Hz/10Hz），预序列化存入 `_ws_cache` 字典
+- **WebSocket 推送线程**：只从 `_ws_cache` 读取预序列化字符串（微秒锁），**绝不调用任何 AirSim RPC**，因此永不阻塞引擎命令队列
 
 遥测包包含:
 ```json
@@ -1725,11 +1867,15 @@ server.py
 ├── core/safety_gate.py
 │   └── core/validation.py
 │       └── core/task_schema.py
+├── core/agent_loop.py (ReAct Agent 决策循环)
 ├── core/agent_tools.py
 │   ├── core/airsim_adapter.py
+│   │   ├── core/depth_camera.py
+│   │   └── core/temporal_grid.py
 │   ├── core/task_executor.py ─── core/airsim_adapter.py
 │   ├── core/obstacle_avoidance.py
 │   │   ├── core/occupancy_grid.py
+│   │   ├── core/temporal_grid.py
 │   │   └── core/path_planner.py ─── core/task_schema.py
 │   ├── core/preflight.py
 │   │   ├── core/path_planner.py
@@ -1761,3 +1907,5 @@ app.js
     ├── js/common.js
     └── js/map.js
 ```
+
+注：`server.py` 中 `ConsoleState` 直接持有 `AgentLoop` 实例（`self.agent_loop`），Agent Loop 在 `_run_agentic_mission()` 中通过后台线程异步执行，通过 `self.planner._llm` 注入 LLM 客户端。

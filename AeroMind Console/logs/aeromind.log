@@ -1215,3 +1215,689 @@ RuntimeError: AirSim is not connected: Request timed out
 2026-05-23T21:09:07 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
 2026-05-23T21:09:32 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
 2026-05-23T21:19:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T21:50:37 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T21:50:49 AIRSIM  AirSim connection established.
+2026-05-23T21:50:49 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T21:50:59 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T21:51:05 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T21:51:10 TOOL    Tool accepted: autonomous_nav {'x': 3.9, 'y': -9.5, 'z': -7.533177852630615, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T21:51:10 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T21:51:10 MISSION Mission progress: autonomous | Autonomous navigation started to X 3.9, Y -9.5. | waypoint 0/1 | alt=7.8m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T21:51:36 FLIGHT  Mission stopped.
+2026-05-23T21:51:36 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.6m speed=0.4m/s d2wp=0.0m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T22:02:54 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T22:06:15 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T22:06:23 AIRSIM  AirSim connection established.
+2026-05-23T22:06:24 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:06:33 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T22:06:38 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T22:06:42 TOOL    Tool accepted: autonomous_nav {'x': 3.9, 'y': -15.9, 'z': -7.536962985992432, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T22:06:42 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T22:06:42 MISSION Mission progress: autonomous | Autonomous navigation started to X 3.9, Y -15.9. | waypoint 0/1 | alt=7.3m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:07:07 FLIGHT  Mission stopped.
+2026-05-23T22:07:07 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.5m speed=0.5m/s d2wp=0.0m risk=- obs=- front=40.3m planner=blocked/closed_loop_replan
+2026-05-23T22:19:32 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T22:24:14 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T22:24:23 AIRSIM  AirSim connection established.
+2026-05-23T22:24:23 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:24:33 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T22:24:38 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T22:24:41 TOOL    Tool accepted: autonomous_nav {'x': 7.7, 'y': -12.0, 'z': -7.29570198059082, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T22:24:41 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T22:24:41 MISSION Mission progress: autonomous | Autonomous navigation started to X 7.7, Y -12.0. | waypoint 0/1 | alt=7.4m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:25:05 FLIGHT  Mission stopped.
+2026-05-23T22:25:05 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.2m speed=0.2m/s d2wp=0.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T22:26:22 FLIGHT  Mission stopped.
+2026-05-23T22:32:16 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T22:35:49 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T22:36:07 AIRSIM  AirSim connection established.
+2026-05-23T22:36:07 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:36:17 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T22:36:23 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T22:36:25 TOOL    Tool accepted: autonomous_nav {'x': 9.3, 'y': -10.7, 'z': -7.557040691375732, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T22:36:25 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T22:36:25 MISSION Mission progress: autonomous | Autonomous navigation started to X 9.3, Y -10.7. | waypoint 0/1 | alt=7.5m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:37:46 FLIGHT  Mission stopped.
+2026-05-23T22:37:46 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.5m speed=0.2m/s d2wp=0.0m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T22:37:53 SAFE    Return-to-launch command sent.
+2026-05-23T22:52:46 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T22:52:51 AIRSIM  AirSim connection established.
+2026-05-23T22:52:51 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:53:03 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T22:53:09 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T22:53:11 TOOL    Tool accepted: autonomous_nav {'x': -0.1, 'y': -0.1, 'z': -7.435397624969482, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T22:53:11 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T22:53:11 MISSION Mission progress: autonomous | Autonomous navigation started to X -0.1, Y -0.1. | waypoint 0/1 | alt=7.3m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T22:53:47 FLIGHT  Mission stopped.
+2026-05-23T22:53:47 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.2m speed=0.2m/s d2wp=0.0m risk=- obs=- front=16.8m planner=ok/closed_loop_replan
+2026-05-23T23:00:51 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T23:00:55 AIRSIM  AirSim connection established.
+2026-05-23T23:00:55 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:01:04 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:01:07 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:01:11 TOOL    Tool accepted: autonomous_nav {'x': 15.7, 'y': -18.5, 'z': -7.48222541809082, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:01:11 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:01:11 MISSION Mission progress: autonomous | Autonomous navigation started to X 15.7, Y -18.5. | waypoint 0/1 | alt=7.4m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:02:20 AIRSIM  AirSim connection established.
+2026-05-23T23:02:20 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.3m speed=2.4m/s d2wp=0.0m risk=- obs=- front=27.9m planner=blocked/closed_loop_replan
+2026-05-23T23:13:43 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T23:13:50 AIRSIM  AirSim connection established.
+2026-05-23T23:13:50 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:13:59 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:14:05 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:14:08 TOOL    Tool accepted: autonomous_nav {'x': 22.5, 'y': -23.9, 'z': -7.566343784332275, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:14:08 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:14:08 MISSION Mission progress: autonomous | Autonomous navigation started to X 22.5, Y -23.9. | waypoint 0/1 | alt=7.9m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:15:10 AIRSIM  AirSim connection established.
+2026-05-23T23:15:10 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.6m speed=0.0m/s d2wp=0.0m risk=- obs=- front=32.1m planner=blocked/closed_loop_replan
+2026-05-23T23:24:19 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:24:29 AIRSIM  AirSim connection established.
+2026-05-23T23:24:29 AIRSIM  AirSim connection established.
+2026-05-23T23:24:37 AIRSIM  Camera selected: front_center
+2026-05-23T23:25:09 ERROR   Takeoff failed: Request timed out
+2026-05-23T23:25:09 TRACE   Traceback (most recent call last):
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\server.py", line 715, in flight_takeoff
+    self.executor.takeoff(altitude_m=altitude_m)
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\task_executor.py", line 18, in takeoff
+    self.adapter.takeoff(altitude_m=altitude_m)
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\airsim_adapter.py", line 1482, in takeoff
+    hx, hy, fx, fy, fz = self._exec_rpc(_do)
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\airsim_adapter.py", line 1070, in _exec_rpc
+    return self._engine.execute(fn, timeout_s=timeout_s)
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\airsim_adapter.py", line 316, in execute
+    raise job.error
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\airsim_adapter.py", line 790, in _run
+    job.result = job.fn(client, airsim_module)
+  File "D:\workspace\airsim_llm_ground\AeroMind Console\core\airsim_adapter.py", line 1444, in _do
+    init_state = c.getMultirotorState(vehicle_name=vehicle)
+  File "D:\workspace\airsim_llm_ground\.venv\lib\site-packages\airsim\client.py", line 1567, in getMultirotorState
+    return MultirotorState.from_msgpack(self.client.call('getMultirotorState', vehicle_name))
+  File "D:\workspace\airsim_llm_ground\.venv\lib\site-packages\msgpackrpc\session.py", line 41, in call
+    return self.send_request(method, args).get()
+  File "D:\workspace\airsim_llm_ground\.venv\lib\site-packages\msgpackrpc\future.py", line 43, in get
+    raise self._error
+msgpackrpc.error.TimeoutError: Request timed out
+
+2026-05-23T23:26:11 SAFE    Tool rejected: autonomous_nav | Altitude 0.6m is below minimum 1.0m
+2026-05-23T23:26:30 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:26:36 AIRSIM  AirSim connection established.
+2026-05-23T23:26:36 AIRSIM  AirSim connection established.
+2026-05-23T23:26:51 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:26:54 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:26:57 TOOL    Tool accepted: autonomous_nav {'x': 36.1, 'y': -26.5, 'z': -7.475136756896973, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:26:57 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:26:57 MISSION Mission progress: autonomous | Autonomous navigation started to X 36.1, Y -26.5. | waypoint 0/1 | alt=7.8m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:26:57 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.7m speed=0.1m/s d2wp=44.8m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:26:58 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.7m speed=0.4m/s d2wp=44.8m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:26:59 MISSION Mission progress: autonomous | Autonomous navigation v=1.83 m/s to (-2.5, -4.5) | waypoint 1/1 | alt=7.4m speed=1.5m/s d2wp=44.8m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:26:59 MISSION Mission progress: autonomous | Autonomous navigation v=1.51 m/s to (3.5, 1.5) | waypoint 1/1 | alt=7.4m speed=1.6m/s d2wp=43.5m risk=- obs=- front=13.5m planner=ok/closed_loop_replan
+2026-05-23T23:27:00 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (3.5, 1.5) | waypoint 1/1 | alt=7.6m speed=0.9m/s d2wp=43.3m risk=- obs=- front=38.0m planner=ok/closed_loop_replan
+2026-05-23T23:27:00 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (3.5, 0.5) | waypoint 1/1 | alt=7.8m speed=1.0m/s d2wp=43.2m risk=- obs=- front=13.1m planner=ok/closed_loop_replan
+2026-05-23T23:27:03 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (6.5, 4.5) | waypoint 1/1 | alt=7.4m speed=1.9m/s d2wp=42.5m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:27:03 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (8.5, 5.5) | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=42.4m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-23T23:27:04 MISSION Mission progress: autonomous | A* on temporal slice: 25 waypoints | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=42.4m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T23:27:05 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (8.5, 7.5) | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=42.3m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-23T23:27:05 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (8.5, 8.5) | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=42.3m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-23T23:27:07 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (8.5, 10.5) | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=42.8m risk=- obs=- front=15.6m planner=ok/closed_loop_replan
+2026-05-23T23:27:07 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (8.5, 10.5) | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=43.1m risk=- obs=- front=2.4m planner=ok/closed_loop_replan
+2026-05-23T23:27:08 MISSION Mission progress: blocked | Autonomous navigation stopped by distance safety bubble. | waypoint 1/1 | alt=7.5m speed=0.8m/s d2wp=43.1m risk=- obs=- front=2.4m planner=ok/closed_loop_replan
+2026-05-23T23:27:33 AIRSIM  AirSim connection established.
+2026-05-23T23:27:33 AIRSIM  AirSim connection established.
+2026-05-23T23:30:11 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:30:22 AIRSIM  AirSim connection established.
+2026-05-23T23:30:30 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:30:35 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:30:37 TOOL    Tool accepted: autonomous_nav {'x': 45.1, 'y': -22.0, 'z': -7.420856952667236, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:30:37 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:30:37 MISSION Mission progress: autonomous | Autonomous navigation started to X 45.1, Y -22.0. | waypoint 0/1 | alt=7.7m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:30:38 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.6m speed=0.2m/s d2wp=50.2m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:30:38 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.6m speed=0.8m/s d2wp=50.2m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-23T23:30:39 MISSION Mission progress: autonomous | Autonomous navigation v=1.85 m/s to (-1.5, -3.5) | waypoint 1/1 | alt=7.4m speed=1.3m/s d2wp=50.2m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:30:40 MISSION Mission progress: autonomous | Autonomous navigation v=0.83 m/s to (3.5, 2.5) | waypoint 1/1 | alt=7.2m speed=1.7m/s d2wp=49.7m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:30:41 MISSION Mission progress: autonomous | Autonomous navigation v=1.58 m/s to (3.5, 0.5) | waypoint 1/1 | alt=7.3m speed=0.7m/s d2wp=49.1m risk=- obs=- front=13.3m planner=ok/closed_loop_replan
+2026-05-23T23:30:42 MISSION Mission progress: autonomous | Autonomous navigation v=1.85 m/s to (3.5, -0.5) | waypoint 1/1 | alt=7.6m speed=1.4m/s d2wp=48.7m risk=- obs=- front=38.3m planner=ok/closed_loop_replan
+2026-05-23T23:30:43 MISSION Mission progress: autonomous | Autonomous navigation v=1.94 m/s to (3.5, -0.5) | waypoint 1/1 | alt=7.8m speed=1.7m/s d2wp=47.3m risk=- obs=- front=14.9m planner=ok/closed_loop_replan
+2026-05-23T23:30:44 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (5.5, 0.5) | waypoint 1/1 | alt=7.8m speed=1.8m/s d2wp=47.3m risk=- obs=- front=23.7m planner=ok/closed_loop_replan
+2026-05-23T23:30:45 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (6.5, 1.5) | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=46.6m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:30:46 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (7.5, 2.5) | waypoint 1/1 | alt=7.1m speed=2.0m/s d2wp=45.9m risk=- obs=- front=40.4m planner=ok/closed_loop_replan
+2026-05-23T23:30:47 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (9.5, 5.5) | waypoint 1/1 | alt=7.0m speed=2.0m/s d2wp=44.8m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:30:48 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.4 | waypoint 1/1 | alt=7.2m speed=2.0m/s d2wp=44.8m risk=- obs=- front=8.0m planner=blocked/closed_loop_replan
+2026-05-23T23:30:49 TOOL    Tool accepted: autonomous_nav {'x': 12.3, 'y': -9.8, 'z': -7.704003810882568, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:30:49 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:30:49 MISSION Mission progress: autonomous | Autonomous navigation started to X 12.3, Y -9.8. | waypoint 0/1 | alt=7.4m speed=1.8m/s d2wp=44.8m risk=- obs=- front=8.0m planner=wait
+2026-05-23T23:30:50 MISSION Mission progress: autonomous | A* on temporal slice: 15 waypoints | waypoint 0/1 | alt=7.5m speed=1.1m/s d2wp=14.8m risk=- obs=- front=20.7m planner=ok/closed_loop_replan
+2026-05-23T23:30:50 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (10.6, 1.3) | waypoint 1/1 | alt=7.6m speed=0.7m/s d2wp=15.0m risk=- obs=- front=20.6m planner=ok/closed_loop_replan
+2026-05-23T23:30:51 MISSION Mission progress: autonomous | Autonomous navigation v=1.70 m/s to (9.6, 2.3) | waypoint 1/1 | alt=7.8m speed=0.8m/s d2wp=15.0m risk=- obs=- front=20.6m planner=ok/closed_loop_replan
+2026-05-23T23:30:52 MISSION Mission progress: autonomous | Autonomous navigation v=1.89 m/s to (10.6, 1.3) | waypoint 1/1 | alt=8.1m speed=1.4m/s d2wp=14.8m risk=- obs=- front=4.0m planner=ok/closed_loop_replan
+2026-05-23T23:30:53 MISSION Mission progress: autonomous | Autonomous navigation v=1.95 m/s to (9.6, 0.3) | waypoint 1/1 | alt=8.0m speed=1.8m/s d2wp=13.7m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:30:54 MISSION Mission progress: autonomous | A* on temporal slice: 13 waypoints | waypoint 1/1 | alt=7.9m speed=1.9m/s d2wp=12.3m risk=- obs=- front=31.4m planner=ok/closed_loop_replan
+2026-05-23T23:30:54 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (9.6, -0.7) | waypoint 1/1 | alt=7.7m speed=1.9m/s d2wp=10.8m risk=- obs=- front=26.9m planner=ok/closed_loop_replan
+2026-05-23T23:30:55 MISSION Mission progress: autonomous | A* on temporal slice: 12 waypoints | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=10.8m risk=- obs=- front=26.9m planner=ok/closed_loop_replan
+2026-05-23T23:30:55 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (9.6, -2.7) | waypoint 1/1 | alt=7.3m speed=2.0m/s d2wp=9.2m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-23T23:30:56 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (9.6, -4.7) | waypoint 1/1 | alt=7.2m speed=2.0m/s d2wp=9.2m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-23T23:30:57 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (8.6, -5.7) | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=7.8m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-23T23:30:58 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (8.6, -7.7) | waypoint 1/1 | alt=7.9m speed=2.0m/s d2wp=6.5m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-23T23:30:59 MISSION Mission progress: autonomous | Autonomous navigation v=1.94 m/s to (12.3, -9.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=4.8m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:30:59 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (12.3, -9.8) | waypoint 1/1 | alt=8.0m speed=1.6m/s d2wp=4.5m risk=- obs=- front=40.3m planner=ok/closed_loop_replan
+2026-05-23T23:31:01 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.7m speed=1.9m/s d2wp=0.0m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:34:04 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:34:04 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T23:35:07 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:35:07 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T23:35:14 AIRSIM  AirSim connection established.
+2026-05-23T23:35:14 AIRSIM  AirSim connection established.
+2026-05-23T23:35:23 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:35:33 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:35:36 TOOL    Tool accepted: autonomous_nav {'x': 18.1, 'y': -14.5, 'z': -7.471714496612549, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:35:36 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:35:36 MISSION Mission progress: autonomous | Autonomous navigation started to X 18.1, Y -14.5. | waypoint 0/1 | alt=7.7m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:35:36 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (3.5, 0.5) | waypoint 1/1 | alt=7.7m speed=0.1m/s d2wp=23.2m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:35:37 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (3.5, 0.5) | waypoint 1/1 | alt=7.6m speed=0.5m/s d2wp=23.2m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:35:38 MISSION Mission progress: autonomous | Autonomous navigation v=1.43 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.4m speed=1.3m/s d2wp=22.6m risk=- obs=- front=40.3m planner=ok/closed_loop_replan
+2026-05-23T23:35:39 MISSION Mission progress: autonomous | Autonomous navigation v=1.72 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.3m speed=1.3m/s d2wp=21.6m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:35:39 MISSION Mission progress: autonomous | Autonomous navigation v=1.74 m/s to (-0.5, -2.5) | waypoint 1/1 | alt=7.3m speed=1.5m/s d2wp=21.6m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-23T23:35:41 MISSION Mission progress: autonomous | Autonomous navigation v=1.83 m/s to (-0.5, -2.5) | waypoint 1/1 | alt=7.5m speed=1.6m/s d2wp=19.8m risk=- obs=- front=16.6m planner=ok/closed_loop_replan
+2026-05-23T23:35:41 MISSION Mission progress: autonomous | Autonomous navigation v=1.28 m/s to (18.1, -14.5) | waypoint 1/1 | alt=7.7m speed=1.6m/s d2wp=19.8m risk=- obs=- front=16.6m planner=blocked/closed_loop_replan
+2026-05-23T23:35:42 MISSION Mission progress: autonomous | Autonomous navigation v=1.69 m/s to (18.1, -14.5) | waypoint 1/1 | alt=7.9m speed=1.2m/s d2wp=19.6m risk=- obs=- front=27.1m planner=blocked/closed_loop_replan
+2026-05-23T23:35:43 MISSION Mission progress: autonomous | Autonomous navigation v=1.88 m/s to (18.1, -14.5) | waypoint 1/1 | alt=7.8m speed=1.3m/s d2wp=19.3m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:35:44 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.5 | waypoint 1/1 | alt=7.5m speed=1.7m/s d2wp=19.3m risk=- obs=- front=39.8m planner=blocked/closed_loop_replan
+2026-05-23T23:35:44 MISSION Mission progress: autonomous | Autonomous navigation v=1.96 m/s to (18.1, -14.5) | waypoint 1/1 | alt=7.3m speed=1.9m/s d2wp=17.1m risk=- obs=- front=23.4m planner=blocked/closed_loop_replan
+2026-05-23T23:35:45 MISSION Mission progress: autonomous | A* on temporal slice: 25 waypoints | waypoint 1/1 | alt=7.0m speed=1.9m/s d2wp=17.1m risk=- obs=- front=23.4m planner=ok/closed_loop_replan
+2026-05-23T23:35:46 MISSION Mission progress: autonomous | Autonomous navigation v=1.01 m/s to (2.5, -3.5) | waypoint 1/1 | alt=6.9m speed=1.4m/s d2wp=15.5m risk=- obs=- front=17.1m planner=ok/closed_loop_replan
+2026-05-23T23:35:46 MISSION Mission progress: autonomous | Autonomous navigation v=1.65 m/s to (6.5, -4.5) | waypoint 1/1 | alt=7.0m speed=0.9m/s d2wp=15.5m risk=- obs=- front=17.1m planner=ok/closed_loop_replan
+2026-05-23T23:35:47 MISSION Mission progress: autonomous | Autonomous navigation v=1.47 m/s to (18.1, -14.5) | waypoint 1/1 | alt=7.5m speed=1.5m/s d2wp=14.3m risk=- obs=- front=40.1m planner=blocked/closed_loop_replan
+2026-05-23T23:35:48 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.8m speed=1.4m/s d2wp=14.0m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:35:48 MISSION Mission progress: autonomous | Autonomous navigation v=1.78 m/s to (18.1, -14.5) | waypoint 1/1 | alt=8.1m speed=1.3m/s d2wp=14.0m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:35:49 MISSION Mission progress: autonomous | no free start or goal cell in slice | waypoint 1/1 | alt=8.2m speed=1.5m/s d2wp=13.6m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:35:49 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (18.1, -14.5) | waypoint 1/1 | alt=8.0m speed=1.8m/s d2wp=12.2m risk=- obs=- front=39.8m planner=blocked/closed_loop_replan
+2026-05-23T23:35:56 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.4m speed=1.8m/s d2wp=0.0m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:39:29 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:39:29 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T23:39:47 AIRSIM  AirSim connection established.
+2026-05-23T23:39:59 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:40:07 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:40:10 TOOL    Tool accepted: autonomous_nav {'x': 5.6, 'y': -7.4, 'z': -7.598348617553711, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:40:10 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:40:10 MISSION Mission progress: autonomous | Autonomous navigation started to X 5.6, Y -7.4. | waypoint 0/1 | alt=7.9m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:40:10 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (2.5, -2.5) | waypoint 1/1 | alt=7.8m speed=0.3m/s d2wp=9.3m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:40:11 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (2.5, -2.5) | waypoint 1/1 | alt=7.7m speed=0.9m/s d2wp=9.2m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T23:40:11 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (2.5, -3.5) | waypoint 1/1 | alt=7.6m speed=1.3m/s d2wp=9.2m risk=- obs=- front=19.9m planner=ok/closed_loop_replan
+2026-05-23T23:40:12 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (2.5, -3.5) | waypoint 1/1 | alt=7.4m speed=1.8m/s d2wp=7.6m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T23:40:13 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (3.5, -4.5) | waypoint 1/1 | alt=7.3m speed=1.9m/s d2wp=7.6m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T23:40:14 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (4.5, -5.5) | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=5.9m risk=- obs=- front=21.8m planner=ok/closed_loop_replan
+2026-05-23T23:40:15 MISSION Mission progress: autonomous | A* on temporal slice: 3 waypoints | waypoint 1/1 | alt=7.6m speed=2.0m/s d2wp=4.1m risk=- obs=- front=16.2m planner=ok/closed_loop_replan
+2026-05-23T23:40:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (5.5, -7.5) | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=4.1m risk=- obs=- front=16.2m planner=ok/closed_loop_replan
+2026-05-23T23:40:16 MISSION Mission progress: autonomous | A* on temporal slice: 2 waypoints | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=2.2m risk=- obs=- front=20.1m planner=ok/closed_loop_replan
+2026-05-23T23:40:16 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (5.5, -7.5) | waypoint 1/1 | alt=7.9m speed=2.0m/s d2wp=0.4m risk=- obs=- front=20.1m planner=ok/closed_loop_replan
+2026-05-23T23:40:17 MISSION Mission progress: autonomous | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.9m speed=2.0m/s d2wp=0.0m risk=- obs=- front=20.1m planner=ok/closed_loop_replan
+2026-05-23T23:40:17 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.9m speed=1.5m/s d2wp=0.0m risk=- obs=- front=20.1m planner=ok/closed_loop_replan
+2026-05-23T23:40:23 TOOL    Tool accepted: autonomous_nav {'x': 5.2, 'y': -2.9, 'z': -7.90488862991333, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:40:23 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:40:23 MISSION Mission progress: autonomous | Autonomous navigation started to X 5.2, Y -2.9. | waypoint 0/1 | alt=7.9m speed=0.2m/s d2wp=0.0m risk=- obs=- front=20.1m planner=wait
+2026-05-23T23:40:23 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (6.1, -5.2) | waypoint 1/1 | alt=7.9m speed=0.3m/s d2wp=6.0m risk=- obs=- front=40.3m planner=ok/closed_loop_replan
+2026-05-23T23:40:25 MISSION Mission progress: autonomous | Autonomous navigation v=1.70 m/s to (3.1, -7.2) | waypoint 1/1 | alt=8.0m speed=1.3m/s d2wp=6.0m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T23:40:26 MISSION Mission progress: autonomous | Autonomous navigation v=1.85 m/s to (3.1, -7.2) | waypoint 1/1 | alt=8.0m speed=1.5m/s d2wp=5.2m risk=- obs=- front=35.1m planner=ok/closed_loop_replan
+2026-05-23T23:40:27 MISSION Mission progress: autonomous | Autonomous navigation v=1.93 m/s to (2.1, -6.2) | waypoint 1/1 | alt=8.0m speed=1.7m/s d2wp=3.9m risk=- obs=- front=20.0m planner=ok/closed_loop_replan
+2026-05-23T23:40:28 MISSION Mission progress: autonomous | Autonomous navigation v=1.53 m/s to (5.2, -2.9) | waypoint 1/1 | alt=7.9m speed=1.6m/s d2wp=2.9m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-23T23:40:28 MISSION Mission progress: autonomous | Autonomous navigation v=1.64 m/s to (5.2, -2.9) | waypoint 1/1 | alt=7.9m speed=1.5m/s d2wp=2.9m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-23T23:40:30 MISSION Mission progress: autonomous | Autonomous navigation v=1.77 m/s to (5.2, -2.9) | waypoint 1/1 | alt=7.9m speed=1.4m/s d2wp=3.5m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:40:31 MISSION Mission progress: autonomous | Autonomous navigation v=1.14 m/s to (2.1, -6.2) | waypoint 1/1 | alt=8.0m speed=1.4m/s d2wp=3.5m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:40:31 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=8.2m speed=0.7m/s d2wp=2.7m risk=- obs=- front=18.6m planner=blocked/closed_loop_replan
+2026-05-23T23:40:32 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (5.2, -2.9) | waypoint 1/1 | alt=8.2m speed=1.0m/s d2wp=2.3m risk=- obs=- front=39.7m planner=blocked/closed_loop_replan
+2026-05-23T23:40:32 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (5.2, -2.9) | waypoint 1/1 | alt=8.0m speed=1.5m/s d2wp=2.3m risk=- obs=- front=39.7m planner=blocked/closed_loop_replan
+2026-05-23T23:40:33 MISSION Mission progress: autonomous | Autonomous navigation v=1.43 m/s to (1.1, -5.2) | waypoint 1/1 | alt=7.8m speed=1.7m/s d2wp=2.0m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:40:33 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.8m speed=1.3m/s d2wp=0.0m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:41:26 AIRSIM  AirSim connection established.
+2026-05-23T23:41:26 AIRSIM  AirSim connection established.
+2026-05-23T23:47:01 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T23:47:01 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:47:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-23T23:47:36 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:48:59 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:53:20 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+ed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:53:39 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:53:45 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:53:48 TOOL    Tool accepted: autonomous_nav {'x': 4.7, 'y': -4.6, 'z': -7.760633945465088, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:53:48 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:53:48 MISSION Mission progress: autonomous | Autonomous navigation started to X 4.7, Y -4.6. | waypoint 0/1 | alt=7.8m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:53:49 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (2.5, -2.5) | waypoint 1/1 | alt=7.8m speed=0.4m/s d2wp=6.6m risk=- obs=- front=40.4m planner=ok/closed_loop_replan
+2026-05-23T23:53:50 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (2.5, -2.5) | waypoint 1/1 | alt=7.8m speed=1.4m/s d2wp=6.5m risk=- obs=- front=19.5m planner=ok/closed_loop_replan
+2026-05-23T23:53:51 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (3.5, -3.5) | waypoint 1/1 | alt=7.8m speed=1.8m/s d2wp=5.7m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:53:53 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (4.5, -4.5) | waypoint 1/1 | alt=7.8m speed=1.9m/s d2wp=2.6m risk=- obs=- front=40.3m planner=ok/closed_loop_replan
+2026-05-23T23:53:53 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=0.0m risk=- obs=- front=22.1m planner=ok/closed_loop_replan
+2026-05-23T23:56:27 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+ed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:57:00 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:57:14 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-23T23:57:20 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-23T23:57:25 TOOL    Tool accepted: autonomous_nav {'x': 26.8, 'y': -18.8, 'z': -7.736907005310059, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:57:25 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:57:25 MISSION Mission progress: autonomous | Autonomous navigation started to X 26.8, Y -18.8. | waypoint 0/1 | alt=7.7m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-23T23:57:26 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (3.5, 0.5) | waypoint 1/1 | alt=7.7m speed=0.3m/s d2wp=32.7m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-23T23:57:27 MISSION Mission progress: autonomous | Autonomous navigation v=1.43 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.8m speed=1.3m/s d2wp=32.7m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T23:57:28 MISSION Mission progress: autonomous | Autonomous navigation v=1.72 m/s to (0.5, -3.5) | waypoint 1/1 | alt=7.9m speed=1.2m/s d2wp=32.1m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:57:29 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.9m speed=1.6m/s d2wp=31.1m risk=- obs=- front=40.2m planner=blocked/closed_loop_replan
+2026-05-23T23:57:30 MISSION Mission progress: autonomous | Autonomous navigation v=1.90 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.9m speed=1.6m/s d2wp=29.6m risk=- obs=- front=23.7m planner=blocked/closed_loop_replan
+2026-05-23T23:57:30 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.8m speed=1.7m/s d2wp=29.2m risk=- obs=- front=20.0m planner=blocked/closed_loop_replan
+2026-05-23T23:57:31 MISSION Mission progress: autonomous | Autonomous navigation v=1.96 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.7m speed=1.8m/s d2wp=27.9m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T23:57:31 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.6m speed=1.9m/s d2wp=27.9m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T23:57:32 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.5m speed=1.9m/s d2wp=26.2m risk=- obs=- front=20.5m planner=blocked/closed_loop_replan
+2026-05-23T23:57:33 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=25.6m risk=- obs=- front=35.8m planner=blocked/closed_loop_replan
+2026-05-23T23:57:33 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=25.6m risk=- obs=- front=35.8m planner=blocked/closed_loop_replan
+2026-05-23T23:57:34 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.9m speed=2.0m/s d2wp=22.4m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T23:57:35 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=22.4m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T23:57:36 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.7 | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=20.0m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T23:57:36 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=20.0m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T23:57:37 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.6m speed=2.0m/s d2wp=17.4m risk=- obs=- front=39.7m planner=blocked/closed_loop_replan
+2026-05-23T23:57:37 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=17.4m risk=- obs=- front=39.7m planner=blocked/closed_loop_replan
+2026-05-23T23:57:39 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=13.1m risk=- obs=- front=40.3m planner=blocked/closed_loop_replan
+2026-05-23T23:57:40 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.6m speed=2.0m/s d2wp=13.1m risk=- obs=- front=40.3m planner=blocked/closed_loop_replan
+2026-05-23T23:57:41 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.7 | waypoint 1/1 | alt=7.9m speed=2.0m/s d2wp=10.6m risk=- obs=- front=26.8m planner=blocked/closed_loop_replan
+2026-05-23T23:57:41 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=10.6m risk=- obs=- front=26.8m planner=blocked/closed_loop_replan
+2026-05-23T23:57:44 MISSION Mission progress: autonomous | A* on temporal slice: 1 waypoints | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=3.9m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:57:45 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.8, -18.8) | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=3.9m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-23T23:57:46 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.5m speed=1.8m/s d2wp=0.0m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:59:20 TOOL    Tool accepted: autonomous_nav {'x': -0.1, 'y': -6.3, 'z': -7.524829387664795, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-23T23:59:20 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-23T23:59:20 MISSION Mission progress: autonomous | Autonomous navigation started to X -0.1, Y -6.3. | waypoint 0/1 | alt=7.5m speed=0.3m/s d2wp=0.0m risk=- obs=- front=39.9m planner=wait
+2026-05-23T23:59:21 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (24.1, -16.9) | waypoint 1/1 | alt=7.5m speed=0.4m/s d2wp=29.4m risk=- obs=- front=34.0m planner=ok/closed_loop_replan
+2026-05-23T23:59:22 MISSION Mission progress: autonomous | Autonomous navigation v=1.90 m/s to (24.1, -15.9) | waypoint 1/1 | alt=7.6m speed=1.4m/s d2wp=29.4m risk=- obs=- front=39.6m planner=ok/closed_loop_replan
+2026-05-23T23:59:23 MISSION Mission progress: autonomous | Autonomous navigation v=1.96 m/s to (23.1, -14.9) | waypoint 1/1 | alt=7.7m speed=1.8m/s d2wp=27.4m risk=- obs=- front=32.9m planner=ok/closed_loop_replan
+2026-05-23T23:59:24 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (22.1, -13.9) | waypoint 1/1 | alt=7.6m speed=1.9m/s d2wp=25.7m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-23T23:59:25 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (21.1, -12.9) | waypoint 1/1 | alt=7.5m speed=1.9m/s d2wp=24.6m risk=- obs=- front=37.4m planner=ok/closed_loop_replan
+2026-05-23T23:59:25 MISSION Mission progress: autonomous | A* on temporal slice: 25 waypoints | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=24.6m risk=- obs=- front=37.4m planner=ok/closed_loop_replan
+2026-05-23T23:59:26 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (19.1, -10.9) | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=23.0m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-23T23:59:27 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (17.1, -8.9) | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=21.4m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-23T23:59:28 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.5 | waypoint 1/1 | alt=7.6m speed=2.0m/s d2wp=20.9m risk=- obs=- front=32.6m planner=blocked/closed_loop_replan
+2026-05-23T23:59:29 MISSION Mission progress: autonomous | Autonomous navigation v=1.92 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=20.9m risk=- obs=- front=32.6m planner=blocked/closed_loop_replan
+2026-05-23T23:59:29 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.8m speed=1.9m/s d2wp=18.4m risk=- obs=- front=39.7m planner=blocked/closed_loop_replan
+2026-05-23T23:59:30 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.8m speed=1.9m/s d2wp=16.9m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-23T23:59:31 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.5 | waypoint 1/1 | alt=7.6m speed=1.9m/s d2wp=16.3m risk=- obs=- front=18.1m planner=blocked/closed_loop_replan
+2026-05-23T23:59:31 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.4m speed=2.0m/s d2wp=13.9m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:59:32 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.5 | waypoint 1/1 | alt=7.3m speed=2.0m/s d2wp=13.9m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:59:33 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.2m speed=2.0m/s d2wp=12.1m risk=- obs=- front=27.4m planner=blocked/closed_loop_replan
+2026-05-23T23:59:33 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.3m speed=2.0m/s d2wp=11.7m risk=- obs=- front=25.8m planner=blocked/closed_loop_replan
+2026-05-23T23:59:34 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.5m speed=2.0m/s d2wp=11.7m risk=- obs=- front=25.8m planner=blocked/closed_loop_replan
+2026-05-23T23:59:34 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.6m speed=2.0m/s d2wp=9.8m risk=- obs=- front=40.0m planner=blocked/closed_loop_replan
+2026-05-23T23:59:35 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=8.0m risk=- obs=- front=39.8m planner=blocked/closed_loop_replan
+2026-05-23T23:59:36 MISSION Mission progress: autonomous | Replanned at alternative altitude: climb 4m to z=-11.5 | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=7.4m risk=- obs=- front=26.0m planner=blocked/closed_loop_replan
+2026-05-23T23:59:36 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.6m speed=2.0m/s d2wp=4.8m risk=- obs=- front=32.8m planner=blocked/closed_loop_replan
+2026-05-23T23:59:38 MISSION Mission progress: autonomous | no free start or goal cell in slice | waypoint 1/1 | alt=7.3m speed=2.0m/s d2wp=2.3m risk=- obs=- front=39.6m planner=blocked/closed_loop_replan
+2026-05-23T23:59:39 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.1, -6.3) | waypoint 1/1 | alt=7.3m speed=2.0m/s d2wp=2.3m risk=- obs=- front=39.6m planner=blocked/closed_loop_replan
+2026-05-23T23:59:39 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.2m speed=1.5m/s d2wp=0.0m risk=- obs=- front=39.6m planner=blocked/closed_loop_replan
+2026-05-23T23:59:42 FLIGHT  Mission stopped.
+2026-05-23T23:59:43 FLIGHT  Land command sent.
+2026-05-24T00:09:58 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T00:09:58 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T00:10:17 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+ed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T00:10:31 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-24T00:10:39 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-24T00:10:42 TOOL    Tool accepted: autonomous_nav {'x': 10.1, 'y': -7.3, 'z': -7.9007415771484375, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T00:10:42 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T00:10:42 MISSION Mission progress: autonomous | Autonomous navigation started to X 10.1, Y -7.3. | waypoint 0/1 | alt=7.9m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T00:10:46 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (3.5, -2.5) | waypoint 1/1 | alt=7.9m speed=0.4m/s d2wp=12.5m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-24T00:10:47 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (3.5, -2.5) | waypoint 1/1 | alt=8.0m speed=1.2m/s d2wp=12.1m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-24T00:10:47 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (2.5, -2.5) | waypoint 1/1 | alt=8.1m speed=1.5m/s d2wp=12.1m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T00:10:48 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (4.5, -3.5) | waypoint 1/1 | alt=8.1m speed=1.8m/s d2wp=10.9m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T00:10:49 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (5.5, -4.5) | waypoint 1/1 | alt=7.9m speed=1.9m/s d2wp=9.3m risk=- obs=- front=26.9m planner=ok/closed_loop_replan
+2026-05-24T00:10:51 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (6.5, -4.5) | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=7.6m risk=- obs=- front=25.5m planner=ok/closed_loop_replan
+2026-05-24T00:10:52 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (8.5, -6.5) | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=4.0m risk=- obs=- front=18.5m planner=ok/closed_loop_replan
+2026-05-24T00:10:53 MISSION Mission progress: autonomous | A* on temporal slice: 1 waypoints | waypoint 1/1 | alt=7.9m speed=2.0m/s d2wp=2.8m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T00:10:53 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=0.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T00:32:27 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T00:37:48 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T00:45:08 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T00:45:27 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-24T00:45:27 PLAN    Intent resolved: area_search
+2026-05-24T00:45:27 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-24T00:45:27 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-24T00:45:27 MISSION Mission progress: running | Search area started for target 'vehicle'. | waypoint 0/8 | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T00:45:27 MISSION Mission progress: taking_off | Taking off before search_area: target altitude 8.0m. | waypoint 0/8 | alt=0.0m speed=0.4m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T00:45:31 MISSION Mission progress: taking_off | Taking off before search_area: target altitude 8.0m. | waypoint 0/8 | alt=4.1m speed=1.8m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T00:45:33 MISSION Mission progress: running | Flying to waypoint 1/8 segment 1/1. | waypoint 1/8 | alt=7.7m speed=0.5m/s d2wp=0.4m risk=- obs=- front=40.3m planner=ok
+2026-05-24T00:45:36 MISSION Mission progress: running | Flying to waypoint 1/8 segment 1/1. | waypoint 1/8 | alt=7.9m speed=1.2m/s d2wp=0.4m risk=- obs=- front=40.3m planner=ok
+2026-05-24T00:45:39 MISSION Mission progress: running | Flying to waypoint 1/8 segment 1/1. | waypoint 1/8 | alt=8.0m speed=1.2m/s d2wp=0.4m risk=- obs=- front=40.3m planner=ok
+2026-05-24T00:45:43 MISSION Mission progress: running | Flying to waypoint 1/8 segment 1/1. | waypoint 1/8 | alt=8.0m speed=1.2m/s d2wp=0.4m risk=- obs=- front=40.3m planner=ok
+2026-05-24T00:45:46 MISSION Mission progress: running | Flying to waypoint 1/8 segment 1/1. | waypoint 1/8 | alt=8.0m speed=1.2m/s d2wp=0.4m risk=- obs=- front=40.3m planner=ok
+2026-05-24T00:45:49 MISSION Mission progress: running | Flying to waypoint 1/8 segment 1/1. | waypoint 1/8 | alt=8.0m speed=0.2m/s d2wp=0.4m risk=- obs=- front=40.3m planner=ok
+2026-05-24T00:45:50 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=0.1m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:45:53 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:45:56 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:00 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:03 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:06 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:09 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:13 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:16 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:19 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:22 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:26 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:29 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:32 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=1.2m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:36 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=0.7m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:39 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=0.6m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:42 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=0.3m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:45 MISSION Mission progress: running | Flying to waypoint 2/8 segment 1/1. | waypoint 2/8 | alt=8.0m speed=0.1m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T00:46:49 MISSION Mission progress: failed | Waypoint 2 command failed: AirSim RPC timed out | waypoint 2/8 | alt=8.0m speed=0.0m/s d2wp=0.2m risk=- obs=- front=40.4m planner=ok
+2026-05-24T11:39:36 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T11:39:36 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T11:39:53 AIRSIM  AirSim connection established.
+2026-05-24T11:39:53 AIRSIM  AirSim connection established.
+2026-05-24T11:40:11 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+ed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T11:40:42 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T11:40:42 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T11:40:56 AIRSIM  Camera selected: bottom_center
+2026-05-24T11:40:59 AIRSIM  Camera selected: front_center
+2026-05-24T11:41:17 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-24T11:41:39 TASK    Mission received: 搜索前方 60 米区域，发现车辆后悬停并报告坐标
+2026-05-24T11:41:39 PLAN    Intent resolved: area_search
+2026-05-24T11:41:39 PLAN    Intent score: {'image_collection': 0, 'autonomous_navigation': 0, 'takeoff': 0, 'formation_flight': 0, 'area_search': 1, 'object_or_area_scan': 0, 'obstacle_aware_navigation': 0, 'path_planning': 0}
+2026-05-24T11:41:39 TOOL    Natural-language tool dispatched: search_area | ok=True | Search area mission started with 8 waypoints
+2026-05-24T11:41:39 MISSION Mission progress: running | Search area started for target 'vehicle'. | waypoint 0/8 | alt=8.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T11:41:42 MISSION Mission progress: running | Search [vehicle] v=1.97 m/s to (0.5, -6.5) | waypoint 1/8 | alt=7.9m speed=0.4m/s d2wp=16.5m risk=- obs=- front=40.1m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:42 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (0.5, -6.5) | waypoint 1/8 | alt=8.1m speed=1.1m/s d2wp=16.2m risk=- obs=- front=40.1m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:43 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (0.5, -7.5) | waypoint 1/8 | alt=8.1m speed=1.6m/s d2wp=15.5m risk=- obs=- front=31.3m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:43 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (0.5, -8.5) | waypoint 1/8 | alt=8.0m speed=1.8m/s d2wp=14.6m risk=- obs=- front=21.4m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:44 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (0.5, -9.5) | waypoint 1/8 | alt=8.0m speed=1.9m/s d2wp=13.9m risk=- obs=- front=13.8m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:44 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (0.5, -10.5) | waypoint 1/8 | alt=8.0m speed=1.9m/s d2wp=12.8m risk=- obs=- front=19.1m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:45 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (0.5, -11.5) | waypoint 1/8 | alt=8.0m speed=2.0m/s d2wp=11.8m risk=- obs=- front=30.2m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:45 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (1.5, -12.5) | waypoint 1/8 | alt=8.0m speed=2.0m/s d2wp=10.6m risk=- obs=- front=18.7m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:46 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (4.0, -16.0) | waypoint 1/8 | alt=8.0m speed=2.0m/s d2wp=9.7m risk=- obs=- front=40.2m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:49 MISSION Mission progress: running | Search [vehicle] v=2.00 m/s to (4.0, -16.0) | waypoint 1/8 | alt=8.0m speed=2.0m/s d2wp=3.6m risk=- obs=- front=18.2m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:51 MISSION Mission progress: running | Reached search waypoint 1/8. | waypoint 1/8 | alt=8.0m speed=1.4m/s d2wp=0.0m risk=- obs=- front=39.8m planner=ok/search_closed_loop_replan
+2026-05-24T11:41:54 MISSION Mission progress: blocked | Search area A* planner blocked: start or goal outside grid slice | waypoint 1/8 | alt=8.0m speed=0.7m/s d2wp=51.9m risk=- obs=- front=40.0m planner=blocked/search_closed_loop_replan
+2026-05-24T11:42:13 FLIGHT  Mission stopped.
+2026-05-24T11:42:18 SAFE    Return-to-launch command sent.
+2026-05-24T11:42:40 FLIGHT  Land command sent.
+2026-05-24T13:06:00 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T13:06:00 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:06:59 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-24T13:07:05 SAFE    Tool rejected: autonomous_nav | Cannot execute flight command while in collision state
+2026-05-24T13:07:08 TOOL    Tool accepted: autonomous_nav {'x': 7.2, 'y': -6.2, 'z': -7.995151042938232, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:07:08 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:07:08 MISSION Mission progress: autonomous | Autonomous navigation started to X 7.2, Y -6.2. | waypoint 0/1 | alt=8.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:07:11 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (3.5, -2.5) | waypoint 1/1 | alt=8.0m speed=0.6m/s d2wp=9.4m risk=- obs=- front=19.2m planner=ok/closed_loop_replan
+2026-05-24T13:07:12 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (3.5, -3.5) | waypoint 1/1 | alt=8.1m speed=1.6m/s d2wp=8.3m risk=- obs=- front=40.3m planner=ok/closed_loop_replan
+2026-05-24T13:07:14 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (4.5, -4.5) | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=6.4m risk=- obs=- front=29.7m planner=ok/closed_loop_replan
+2026-05-24T13:07:14 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (5.5, -4.5) | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=5.5m risk=- obs=- front=20.6m planner=ok/closed_loop_replan
+2026-05-24T13:07:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (6.5, -5.5) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=4.4m risk=- obs=- front=24.1m planner=ok/closed_loop_replan
+2026-05-24T13:07:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (7.5, -6.5) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=3.4m risk=- obs=- front=20.2m planner=ok/closed_loop_replan
+2026-05-24T13:07:16 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=0.0m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:10:29 TOOL    Tool accepted: autonomous_nav {'x': -5.6, 'y': -4.3, 'z': -7.992061138153076, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:10:29 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:10:29 MISSION Mission progress: autonomous | Autonomous navigation started to X -5.6, Y -4.3. | waypoint 0/1 | alt=8.0m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.0m planner=wait
+2026-05-24T13:10:32 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (2.6, -4.9) | waypoint 1/1 | alt=7.9m speed=0.1m/s d2wp=11.8m risk=- obs=- front=23.3m planner=ok/closed_loop_replan
+2026-05-24T13:10:33 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (2.6, -4.9) | waypoint 1/1 | alt=8.0m speed=1.0m/s d2wp=11.6m risk=- obs=- front=21.7m planner=ok/closed_loop_replan
+2026-05-24T13:10:34 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (1.6, -4.9) | waypoint 1/1 | alt=8.1m speed=1.4m/s d2wp=11.0m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-24T13:10:34 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (0.6, -4.9) | waypoint 1/1 | alt=8.1m speed=1.7m/s d2wp=10.2m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:10:35 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.4, -4.9) | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=9.2m risk=- obs=- front=32.3m planner=ok/closed_loop_replan
+2026-05-24T13:10:35 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-1.4, -4.9) | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=8.2m risk=- obs=- front=18.0m planner=ok/closed_loop_replan
+2026-05-24T13:10:36 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-2.4, -4.9) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=6.3m risk=- obs=- front=40.3m planner=ok/closed_loop_replan
+2026-05-24T13:10:37 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-4.4, -4.9) | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=5.2m risk=- obs=- front=35.5m planner=ok/closed_loop_replan
+2026-05-24T13:10:38 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-5.4, -3.9) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=3.0m risk=- obs=- front=17.5m planner=ok/closed_loop_replan
+2026-05-24T13:10:39 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=1.8m/s d2wp=0.0m risk=- obs=- front=40.4m planner=ok/closed_loop_replan
+2026-05-24T13:11:15 TOOL    Tool accepted: autonomous_nav {'x': -9.4, 'y': -8.9, 'z': -8.082714080810547, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:11:15 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:11:15 MISSION Mission progress: autonomous | Autonomous navigation started to X -9.4, Y -8.9. | waypoint 0/1 | alt=8.1m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.4m planner=wait
+2026-05-24T13:11:18 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (-7.7, -7.1) | waypoint 1/1 | alt=8.0m speed=0.0m/s d2wp=6.8m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:18 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-7.7, -7.1) | waypoint 1/1 | alt=8.1m speed=0.9m/s d2wp=6.6m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:11:19 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-8.7, -8.1) | waypoint 1/1 | alt=8.1m speed=1.7m/s d2wp=5.3m risk=- obs=- front=8.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:20 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-8.7, -9.1) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=4.3m risk=- obs=- front=28.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:21 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (-9.7, -9.1) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=3.3m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:21 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-9.7, -9.1) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=2.3m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:22 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=0.0m risk=- obs=- front=15.2m planner=ok/closed_loop_replan
+2026-05-24T13:11:46 TOOL    Tool accepted: autonomous_nav {'x': -0.9, 'y': -17.5, 'z': -8.086480140686035, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:11:46 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:11:46 MISSION Mission progress: autonomous | Autonomous navigation started to X -0.9, Y -17.5. | waypoint 0/1 | alt=8.1m speed=0.0m/s d2wp=0.0m risk=- obs=- front=15.2m planner=wait
+2026-05-24T13:11:49 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (-4.8, -10.6) | waypoint 1/1 | alt=8.0m speed=0.2m/s d2wp=12.0m risk=- obs=- front=9.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:50 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-4.8, -10.6) | waypoint 1/1 | alt=8.1m speed=0.9m/s d2wp=11.8m risk=- obs=- front=7.9m planner=ok/closed_loop_replan
+2026-05-24T13:11:51 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-3.8, -11.6) | waypoint 1/1 | alt=8.1m speed=1.7m/s d2wp=10.4m risk=- obs=- front=6.5m planner=ok/closed_loop_replan
+2026-05-24T13:11:52 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-2.8, -12.6) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=8.6m risk=- obs=- front=10.7m planner=ok/closed_loop_replan
+2026-05-24T13:11:53 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-1.8, -13.6) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=7.6m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:53 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.8, -14.6) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=6.7m risk=- obs=- front=21.3m planner=ok/closed_loop_replan
+2026-05-24T13:11:54 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (0.2, -15.6) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.8m risk=- obs=- front=25.8m planner=ok/closed_loop_replan
+2026-05-24T13:11:55 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (-0.9, -17.5) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=3.9m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-24T13:11:56 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-0.9, -17.5) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=3.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:11:57 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=0.0m risk=- obs=- front=15.2m planner=ok/closed_loop_replan
+2026-05-24T13:12:05 TOOL    Tool accepted: autonomous_nav {'x': 17.8, 'y': -16.6, 'z': -8.098620414733887, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:12:05 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:12:05 MISSION Mission progress: autonomous | Autonomous navigation started to X 17.8, Y -16.6. | waypoint 0/1 | alt=8.1m speed=0.3m/s d2wp=0.0m risk=- obs=- front=15.2m planner=wait
+2026-05-24T13:12:09 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (3.0, -16.0) | waypoint 1/1 | alt=8.1m speed=0.7m/s d2wp=18.2m risk=- obs=- front=8.5m planner=ok/closed_loop_replan
+2026-05-24T13:12:10 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (4.0, -16.0) | waypoint 1/1 | alt=8.2m speed=1.7m/s d2wp=17.1m risk=- obs=- front=9.6m planner=ok/closed_loop_replan
+2026-05-24T13:12:10 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (5.0, -16.0) | waypoint 1/1 | alt=8.1m speed=1.8m/s d2wp=16.3m risk=- obs=- front=10.8m planner=ok/closed_loop_replan
+2026-05-24T13:12:11 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (6.0, -16.0) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=15.1m risk=- obs=- front=11.6m planner=ok/closed_loop_replan
+2026-05-24T13:12:11 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (7.0, -16.0) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=14.4m risk=- obs=- front=12.6m planner=ok/closed_loop_replan
+2026-05-24T13:12:12 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (8.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=13.2m risk=- obs=- front=13.6m planner=ok/closed_loop_replan
+2026-05-24T13:12:13 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (9.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=12.4m risk=- obs=- front=14.1m planner=ok/closed_loop_replan
+2026-05-24T13:12:13 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (10.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=11.2m risk=- obs=- front=15.4m planner=ok/closed_loop_replan
+2026-05-24T13:12:14 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (11.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=10.1m risk=- obs=- front=16.4m planner=ok/closed_loop_replan
+2026-05-24T13:12:14 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (12.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=9.0m risk=- obs=- front=17.4m planner=ok/closed_loop_replan
+2026-05-24T13:12:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (13.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=8.1m risk=- obs=- front=19.4m planner=ok/closed_loop_replan
+2026-05-24T13:12:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (14.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=7.1m risk=- obs=- front=21.7m planner=ok/closed_loop_replan
+2026-05-24T13:12:16 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (15.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=6.1m risk=- obs=- front=24.6m planner=ok/closed_loop_replan
+2026-05-24T13:12:16 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (16.0, -16.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=5.1m risk=- obs=- front=27.4m planner=ok/closed_loop_replan
+2026-05-24T13:12:17 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (17.0, -17.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.1m risk=- obs=- front=28.2m planner=ok/closed_loop_replan
+2026-05-24T13:12:17 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (18.0, -17.0) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=3.1m risk=- obs=- front=23.9m planner=ok/closed_loop_replan
+2026-05-24T13:12:19 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=1.8m/s d2wp=0.0m risk=- obs=- front=21.1m planner=ok/closed_loop_replan
+2026-05-24T13:12:47 TOOL    Tool accepted: autonomous_nav {'x': 28.3, 'y': -21.0, 'z': -8.098711967468262, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:12:47 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:12:47 MISSION Mission progress: autonomous | Autonomous navigation started to X 28.3, Y -21.0. | waypoint 0/1 | alt=8.1m speed=0.0m/s d2wp=0.0m risk=- obs=- front=21.1m planner=wait
+2026-05-24T13:12:50 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (19.9, -16.9) | waypoint 1/1 | alt=8.0m speed=0.1m/s d2wp=12.8m risk=- obs=- front=21.4m planner=ok/closed_loop_replan
+2026-05-24T13:12:51 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (19.9, -16.9) | waypoint 1/1 | alt=8.2m speed=0.9m/s d2wp=12.6m risk=- obs=- front=21.4m planner=ok/closed_loop_replan
+2026-05-24T13:12:51 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (20.9, -17.9) | waypoint 1/1 | alt=8.2m speed=1.4m/s d2wp=12.0m risk=- obs=- front=21.6m planner=ok/closed_loop_replan
+2026-05-24T13:12:52 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (21.9, -17.9) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=10.4m risk=- obs=- front=24.9m planner=ok/closed_loop_replan
+2026-05-24T13:12:53 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (22.9, -18.9) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=9.4m risk=- obs=- front=34.2m planner=ok/closed_loop_replan
+2026-05-24T13:12:53 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (23.9, -18.9) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=8.4m risk=- obs=- front=35.7m planner=ok/closed_loop_replan
+2026-05-24T13:12:54 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.9, -19.9) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=7.3m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:12:55 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (25.9, -19.9) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=6.3m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:12:55 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.9, -20.9) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=5.2m risk=- obs=- front=31.0m planner=ok/closed_loop_replan
+2026-05-24T13:12:56 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.9, -20.9) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.1m risk=- obs=- front=26.2m planner=ok/closed_loop_replan
+2026-05-24T13:12:57 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=0.0m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:13:26 TOOL    Tool accepted: autonomous_nav {'x': 29.0, 'y': -32.6, 'z': -8.09569263458252, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:13:26 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:13:26 MISSION Mission progress: autonomous | Autonomous navigation started to X 29.0, Y -32.6. | waypoint 0/1 | alt=8.1m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.2m planner=wait
+2026-05-24T13:13:29 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (27.4, -24.1) | waypoint 1/1 | alt=8.0m speed=0.1m/s d2wp=12.2m risk=- obs=- front=27.6m planner=ok/closed_loop_replan
+2026-05-24T13:13:29 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.4, -24.1) | waypoint 1/1 | alt=8.1m speed=0.8m/s d2wp=12.0m risk=- obs=- front=36.8m planner=ok/closed_loop_replan
+2026-05-24T13:13:30 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.4, -25.1) | waypoint 1/1 | alt=8.2m speed=1.4m/s d2wp=11.5m risk=- obs=- front=24.5m planner=ok/closed_loop_replan
+2026-05-24T13:13:31 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.4, -26.1) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=9.7m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:13:31 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.4, -27.1) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=8.8m risk=- obs=- front=35.6m planner=ok/closed_loop_replan
+2026-05-24T13:13:32 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.4, -28.1) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=7.9m risk=- obs=- front=26.8m planner=ok/closed_loop_replan
+2026-05-24T13:13:32 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.4, -29.1) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=6.9m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:13:33 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (28.4, -30.1) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=5.9m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:13:33 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (28.4, -31.1) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.9m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:13:34 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (28.4, -32.1) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=3.8m risk=- obs=- front=26.1m planner=ok/closed_loop_replan
+2026-05-24T13:13:35 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (29.4, -33.1) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=2.9m risk=- obs=- front=30.9m planner=ok/closed_loop_replan
+2026-05-24T13:13:36 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=1.6m/s d2wp=0.0m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:14:06 TOOL    Tool accepted: autonomous_nav {'x': 28.9, 'y': -52.6, 'z': -8.097589492797852, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:14:06 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:14:06 MISSION Mission progress: autonomous | Autonomous navigation started to X 28.9, Y -52.6. | waypoint 0/1 | alt=8.1m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.2m planner=wait
+2026-05-24T13:14:10 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (24.9, -33.8) | waypoint 1/1 | alt=8.0m speed=0.3m/s d2wp=21.3m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:14:10 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.9, -33.8) | waypoint 1/1 | alt=8.2m speed=1.1m/s d2wp=21.1m risk=- obs=- front=27.4m planner=ok/closed_loop_replan
+2026-05-24T13:14:11 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.9, -34.8) | waypoint 1/1 | alt=8.1m speed=1.8m/s d2wp=20.3m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-24T13:14:12 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.9, -35.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=19.8m risk=- obs=- front=33.1m planner=ok/closed_loop_replan
+2026-05-24T13:14:12 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.9, -36.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=19.2m risk=- obs=- front=35.8m planner=ok/closed_loop_replan
+2026-05-24T13:14:13 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.9, -37.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=18.4m risk=- obs=- front=25.6m planner=ok/closed_loop_replan
+2026-05-24T13:14:13 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.9, -38.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=17.5m risk=- obs=- front=25.3m planner=ok/closed_loop_replan
+2026-05-24T13:14:14 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (25.9, -39.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=16.5m risk=- obs=- front=40.4m planner=ok/closed_loop_replan
+2026-05-24T13:14:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.9, -40.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=15.7m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:14:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (27.9, -41.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=14.6m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:14:16 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (28.9, -42.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=12.7m risk=- obs=- front=31.1m planner=ok/closed_loop_replan
+2026-05-24T13:14:17 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (29.9, -43.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=11.0m risk=- obs=- front=25.2m planner=ok/closed_loop_replan
+2026-05-24T13:14:18 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (29.9, -44.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=10.5m risk=- obs=- front=25.9m planner=ok/closed_loop_replan
+2026-05-24T13:14:18 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (29.9, -46.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=9.5m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:14:19 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (30.9, -47.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=8.7m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:14:19 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (30.9, -47.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=7.9m risk=- obs=- front=18.9m planner=ok/closed_loop_replan
+2026-05-24T13:14:20 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (31.9, -48.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=6.9m risk=- obs=- front=15.5m planner=ok/closed_loop_replan
+2026-05-24T13:14:21 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (32.9, -49.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=6.2m risk=- obs=- front=30.4m planner=ok/closed_loop_replan
+2026-05-24T13:14:21 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (33.9, -50.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=5.5m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:14:22 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (34.9, -51.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.8m risk=- obs=- front=40.4m planner=ok/closed_loop_replan
+2026-05-24T13:14:23 MISSION Mission progress: autonomous | Autonomous navigation v=1.95 m/s to (32.9, -53.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.9m risk=- obs=- front=36.5m planner=ok/closed_loop_replan
+2026-05-24T13:14:23 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (32.9, -53.8) | waypoint 1/1 | alt=8.2m speed=1.8m/s d2wp=5.0m risk=- obs=- front=20.4m planner=ok/closed_loop_replan
+2026-05-24T13:14:24 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (31.9, -54.8) | waypoint 1/1 | alt=8.2m speed=1.8m/s d2wp=5.0m risk=- obs=- front=20.5m planner=ok/closed_loop_replan
+2026-05-24T13:14:25 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (31.9, -55.8) | waypoint 1/1 | alt=8.2m speed=1.8m/s d2wp=4.8m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:14:25 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (30.9, -56.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=4.7m risk=- obs=- front=21.2m planner=ok/closed_loop_replan
+2026-05-24T13:14:26 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (29.9, -57.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=4.4m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:14:27 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (28.9, -58.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.5m risk=- obs=- front=19.6m planner=ok/closed_loop_replan
+2026-05-24T13:14:27 MISSION Mission progress: autonomous | Autonomous navigation v=1.95 m/s to (27.9, -57.8) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=4.8m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:14:28 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.9, -56.8) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=5.1m risk=- obs=- front=17.9m planner=ok/closed_loop_replan
+2026-05-24T13:14:28 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (26.9, -55.8) | waypoint 1/1 | alt=7.9m speed=1.8m/s d2wp=5.3m risk=- obs=- front=21.8m planner=ok/closed_loop_replan
+2026-05-24T13:14:29 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (26.9, -54.8) | waypoint 1/1 | alt=8.2m speed=1.8m/s d2wp=5.2m risk=- obs=- front=32.6m planner=ok/closed_loop_replan
+2026-05-24T13:14:30 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (28.9, -52.6) | waypoint 1/1 | alt=8.3m speed=1.7m/s d2wp=4.9m risk=- obs=- front=23.4m planner=ok/closed_loop_replan
+2026-05-24T13:14:30 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (28.9, -52.6) | waypoint 1/1 | alt=8.4m speed=1.6m/s d2wp=4.3m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-24T13:14:32 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=1.7m/s d2wp=0.0m risk=- obs=- front=30.0m planner=ok/closed_loop_replan
+2026-05-24T13:15:36 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:15:50 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-24T13:16:05 TOOL    Tool accepted: autonomous_nav {'x': 5.8, 'y': -84.9, 'z': -7.9979248046875, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:16:05 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:16:05 MISSION Mission progress: autonomous | Autonomous navigation started to X 5.8, Y -84.9. | waypoint 0/1 | alt=8.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:16:10 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (25.2, -56.4) | waypoint 1/1 | alt=8.0m speed=0.6m/s d2wp=38.3m risk=- obs=- front=20.6m planner=ok/closed_loop_replan
+2026-05-24T13:16:10 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (24.7, -56.9) | waypoint 1/1 | alt=8.1m speed=1.3m/s d2wp=37.6m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:16:11 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (25.2, -56.4) | waypoint 1/1 | alt=8.1m speed=1.7m/s d2wp=37.6m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:16:12 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (24.2, -57.4) | waypoint 1/1 | alt=8.1m speed=1.8m/s d2wp=36.0m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:16:13 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (22.2, -59.4) | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=34.2m risk=- obs=- front=26.7m planner=ok/closed_loop_replan
+2026-05-24T13:16:14 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (21.2, -60.4) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=32.3m risk=- obs=- front=30.6m planner=ok/closed_loop_replan
+2026-05-24T13:16:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (20.7, -60.9) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=30.5m risk=- obs=- front=17.2m planner=ok/closed_loop_replan
+2026-05-24T13:16:16 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (19.2, -62.4) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=28.4m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:16:17 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (16.7, -64.9) | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=26.6m risk=- obs=- front=33.6m planner=ok/closed_loop_replan
+2026-05-24T13:16:18 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (17.2, -64.4) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=24.4m risk=- obs=- front=0.6m planner=ok/closed_loop_replan
+2026-05-24T13:16:19 MISSION Mission progress: blocked | Autonomous navigation stopped by distance safety bubble. | waypoint 1/1 | alt=7.9m speed=0.4m/s d2wp=24.4m risk=- obs=- front=0.6m planner=ok/closed_loop_replan
+2026-05-24T13:17:06 FLIGHT  Mission stopped.
+2026-05-24T13:22:43 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:22:43 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T13:22:59 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-24T13:23:05 TOOL    Tool accepted: autonomous_nav {'x': -10.9, 'y': -24.3, 'z': -7.994081020355225, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:23:05 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:23:05 MISSION Mission progress: autonomous | Autonomous navigation started to X -10.9, Y -24.3. | waypoint 0/1 | alt=8.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:23:09 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (-1.2, -2.8) | waypoint 1/1 | alt=7.9m speed=0.5m/s d2wp=26.6m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:23:09 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-1.8, -3.2) | waypoint 1/1 | alt=8.2m speed=1.3m/s d2wp=26.0m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:23:10 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-1.8, -4.2) | waypoint 1/1 | alt=8.1m speed=1.7m/s d2wp=25.6m risk=- obs=- front=22.9m planner=ok/closed_loop_replan
+2026-05-24T13:23:11 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-1.8, -3.8) | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=25.6m risk=- obs=- front=22.9m planner=ok/closed_loop_replan
+2026-05-24T13:23:12 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-3.2, -7.2) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=22.0m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-24T13:23:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-4.2, -9.2) | waypoint 1/1 | alt=8.2m speed=2.0m/s d2wp=18.0m risk=- obs=- front=11.3m planner=ok/closed_loop_replan
+2026-05-24T13:23:15 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-5.2, -10.8) | waypoint 1/1 | alt=8.2m speed=2.0m/s d2wp=16.2m risk=- obs=- front=23.6m planner=ok/closed_loop_replan
+2026-05-24T13:23:16 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-5.8, -12.8) | waypoint 1/1 | alt=8.2m speed=2.0m/s d2wp=14.3m risk=- obs=- front=21.7m planner=ok/closed_loop_replan
+2026-05-24T13:23:17 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (-6.8, -14.2) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=12.3m risk=- obs=- front=8.3m planner=ok/closed_loop_replan
+2026-05-24T13:23:18 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (-4.2, -15.8) | waypoint 1/1 | alt=7.7m speed=2.0m/s d2wp=10.4m risk=- obs=- front=23.5m planner=ok/closed_loop_replan
+2026-05-24T13:23:20 MISSION Mission progress: autonomous | Autonomous navigation v=1.76 m/s to (-3.8, -16.2) | waypoint 1/1 | alt=7.9m speed=1.7m/s d2wp=8.7m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:23:20 MISSION Mission progress: autonomous | Autonomous navigation v=1.60 m/s to (-10.9, -24.3) | waypoint 1/1 | alt=8.1m speed=1.7m/s d2wp=8.7m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-24T13:23:21 MISSION Mission progress: autonomous | Autonomous navigation v=1.78 m/s to (-8.8, -20.8) | waypoint 1/1 | alt=8.5m speed=1.5m/s d2wp=6.9m risk=- obs=- front=4.1m planner=ok/closed_loop_replan
+2026-05-24T13:23:23 MISSION Mission progress: autonomous | Autonomous navigation v=1.86 m/s to (-5.8, -22.8) | waypoint 1/1 | alt=8.3m speed=1.7m/s d2wp=5.7m risk=- obs=- front=30.8m planner=ok/closed_loop_replan
+2026-05-24T13:23:24 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (-7.8, -23.8) | waypoint 1/1 | alt=8.5m speed=0.6m/s d2wp=5.8m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:23:25 MISSION Mission progress: blocked | Autonomous navigation stopped by distance safety bubble. | waypoint 1/1 | alt=8.4m speed=0.5m/s d2wp=5.8m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:23:37 TOOL    Tool accepted: autonomous_nav {'x': 35.6, 'y': -3.8, 'z': -8.412824630737305, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:23:37 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:23:37 MISSION Mission progress: autonomous | Autonomous navigation started to X 35.6, Y -3.8. | waypoint 0/1 | alt=8.4m speed=0.0m/s d2wp=5.8m risk=- obs=- front=40.0m planner=wait
+2026-05-24T13:23:42 MISSION Mission progress: blocked | Autonomous navigation stopped by distance safety bubble. | waypoint 0/1 | alt=8.4m speed=0.0m/s d2wp=45.1m risk=- obs=- front=1.8m planner=wait
+2026-05-24T13:23:52 FLIGHT  Mission stopped.
+2026-05-24T13:25:33 FLIGHT  Mission stopped.
+2026-05-24T13:40:22 INFO    AeroMind Console 已启动，等待 AirSim/UE 视频输入。
+2026-05-24T13:40:22 MISSION Mission progress: idle | No active tool mission. | alt=0.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:40:34 FLIGHT  Takeoff complete; holding altitude=8.0m
+2026-05-24T13:40:50 TOOL    Tool accepted: autonomous_nav {'x': -5.2, 'y': -8.3, 'z': -7.9979248046875, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:40:50 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:40:50 MISSION Mission progress: autonomous | Autonomous navigation started to X -5.2, Y -8.3. | waypoint 0/1 | alt=8.0m speed=0.0m/s d2wp=- risk=- obs=- front=- planner=wait
+2026-05-24T13:40:53 TOOL    Tool accepted: autonomous_nav {'x': 9.2, 'y': -8.5, 'z': -7.921217441558838, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:40:53 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:40:53 MISSION Mission progress: autonomous | Autonomous navigation started to X 9.2, Y -8.5. | waypoint 0/1 | alt=7.9m speed=0.0m/s d2wp=9.8m risk=- obs=- front=40.0m planner=wait
+2026-05-24T13:40:58 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (2.2, -2.8) | waypoint 1/1 | alt=7.8m speed=0.5m/s d2wp=12.5m risk=- obs=- front=39.6m planner=ok/closed_loop_replan
+2026-05-24T13:40:59 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (2.2, -2.8) | waypoint 1/1 | alt=8.0m speed=1.0m/s d2wp=12.0m risk=- obs=- front=39.7m planner=ok/closed_loop_replan
+2026-05-24T13:41:00 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (2.7, -2.8) | waypoint 1/1 | alt=8.0m speed=1.7m/s d2wp=10.7m risk=- obs=- front=26.4m planner=ok/closed_loop_replan
+2026-05-24T13:41:01 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (3.7, -3.8) | waypoint 1/1 | alt=8.0m speed=1.9m/s d2wp=9.1m risk=- obs=- front=22.0m planner=ok/closed_loop_replan
+2026-05-24T13:41:02 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (4.7, -5.3) | waypoint 1/1 | alt=7.9m speed=1.9m/s d2wp=7.2m risk=- obs=- front=16.9m planner=ok/closed_loop_replan
+2026-05-24T13:41:03 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (6.2, -6.3) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=5.4m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:41:04 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (8.7, -8.3) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=3.5m risk=- obs=- front=12.5m planner=ok/closed_loop_replan
+2026-05-24T13:41:05 MISSION Mission progress: autonomous | Autonomous navigation v=2.00 m/s to (9.2, -8.3) | waypoint 1/1 | alt=8.0m speed=2.0m/s d2wp=1.6m risk=- obs=- front=15.3m planner=ok/closed_loop_replan
+2026-05-24T13:41:06 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=8.1m speed=2.0m/s d2wp=0.0m risk=- obs=- front=15.3m planner=ok/closed_loop_replan
+2026-05-24T13:41:25 TOOL    Tool accepted: autonomous_nav {'x': 11.0, 'y': -1.7, 'z': -8.093633651733398, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:41:25 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:41:25 MISSION Mission progress: autonomous | Autonomous navigation started to X 11.0, Y -1.7. | waypoint 0/1 | alt=8.1m speed=0.0m/s d2wp=0.0m risk=- obs=- front=15.3m planner=wait
+2026-05-24T13:41:30 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (8.1, -6.2) | waypoint 1/1 | alt=8.0m speed=0.1m/s d2wp=7.4m risk=- obs=- front=39.9m planner=ok/closed_loop_replan
+2026-05-24T13:41:31 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (8.1, -6.2) | waypoint 1/1 | alt=8.2m speed=1.2m/s d2wp=7.1m risk=- obs=- front=30.2m planner=ok/closed_loop_replan
+2026-05-24T13:41:32 MISSION Mission progress: autonomous | Autonomous navigation v=1.96 m/s to (7.6, -4.2) | waypoint 1/1 | alt=8.3m speed=1.5m/s d2wp=6.2m risk=- obs=- front=23.1m planner=ok/closed_loop_replan
+2026-05-24T13:41:33 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (7.1, -4.2) | waypoint 1/1 | alt=8.1m speed=1.9m/s d2wp=5.2m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:41:34 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (6.6, -3.2) | waypoint 1/1 | alt=7.9m speed=1.9m/s d2wp=4.5m risk=- obs=- front=32.5m planner=ok/closed_loop_replan
+2026-05-24T13:41:35 MISSION Mission progress: autonomous | Autonomous navigation v=1.54 m/s to (11.0, -1.7) | waypoint 1/1 | alt=7.8m speed=2.0m/s d2wp=4.8m risk=- obs=- front=27.4m planner=blocked/closed_loop_replan
+2026-05-24T13:41:37 MISSION Mission progress: autonomous | Autonomous navigation v=1.66 m/s to (11.0, -1.7) | waypoint 1/1 | alt=8.1m speed=1.5m/s d2wp=5.2m risk=- obs=- front=39.8m planner=blocked/closed_loop_replan
+2026-05-24T13:41:38 MISSION Mission progress: autonomous | Autonomous navigation v=1.79 m/s to (11.0, -1.7) | waypoint 1/1 | alt=8.5m speed=1.5m/s d2wp=5.2m risk=- obs=- front=39.8m planner=blocked/closed_loop_replan
+2026-05-24T13:41:40 MISSION Mission progress: autonomous | Autonomous navigation v=1.86 m/s to (11.0, -1.7) | waypoint 1/1 | alt=8.7m speed=1.7m/s d2wp=3.5m risk=- obs=- front=39.9m planner=blocked/closed_loop_replan
+2026-05-24T13:41:41 MISSION Mission progress: autonomous | Autonomous navigation v=1.83 m/s to (11.0, -1.7) | waypoint 1/1 | alt=8.2m speed=1.8m/s d2wp=3.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:41:42 MISSION Mission progress: autonomous | Autonomous navigation v=1.82 m/s to (11.0, -1.7) | waypoint 1/1 | alt=7.7m speed=1.8m/s d2wp=3.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:41:44 MISSION Mission progress: autonomous | Autonomous navigation v=1.74 m/s to (11.0, -1.7) | waypoint 1/1 | alt=7.2m speed=1.8m/s d2wp=3.0m risk=- obs=- front=12.8m planner=blocked/closed_loop_replan
+2026-05-24T13:41:45 MISSION Mission progress: autonomous | Autonomous navigation v=1.68 m/s to (11.0, -1.7) | waypoint 1/1 | alt=7.4m speed=1.7m/s d2wp=3.4m risk=- obs=- front=39.0m planner=blocked/closed_loop_replan
+2026-05-24T13:41:46 MISSION Mission progress: autonomous | Autonomous navigation v=1.71 m/s to (11.0, -1.7) | waypoint 1/1 | alt=8.2m speed=1.5m/s d2wp=3.6m risk=- obs=- front=29.2m planner=ok/closed_loop_replan
+2026-05-24T13:41:47 MISSION Mission progress: autonomous | Autonomous navigation v=1.80 m/s to (11.0, -1.7) | waypoint 1/1 | alt=8.7m speed=1.8m/s d2wp=3.4m risk=- obs=- front=24.1m planner=ok/closed_loop_replan
+2026-05-24T13:41:49 MISSION Mission progress: autonomous | Autonomous navigation v=1.85 m/s to (11.0, -1.7) | waypoint 1/1 | alt=9.1m speed=1.7m/s d2wp=2.9m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:41:49 MISSION Mission progress: autonomous | Autonomous navigation v=1.84 m/s to (11.0, -1.7) | waypoint 1/1 | alt=8.9m speed=1.8m/s d2wp=2.5m risk=- obs=- front=9.1m planner=ok/closed_loop_replan
+2026-05-24T13:41:51 MISSION Mission progress: autonomous | Autonomous navigation v=1.58 m/s to (12.1, -2.7) | waypoint 1/1 | alt=7.9m speed=1.9m/s d2wp=2.7m risk=- obs=- front=26.8m planner=ok/closed_loop_replan
+2026-05-24T13:41:52 MISSION Mission progress: autonomous | Autonomous navigation v=0.87 m/s to (6.6, -3.2) | waypoint 1/1 | alt=6.8m speed=1.0m/s d2wp=3.0m risk=- obs=- front=30.1m planner=ok/closed_loop_replan
+2026-05-24T13:41:53 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=6.9m speed=0.4m/s d2wp=3.0m risk=- obs=- front=30.1m planner=blocked/closed_loop_replan
+2026-05-24T13:41:54 MISSION Mission progress: autonomous | Autonomous navigation v=1.52 m/s to (11.0, -1.7) | waypoint 1/1 | alt=7.2m speed=1.2m/s d2wp=2.8m risk=- obs=- front=40.3m planner=blocked/closed_loop_replan
+2026-05-24T13:41:54 MISSION Mission progress: autonomous | A* could not find a free path on temporal slice | waypoint 1/1 | alt=7.6m speed=1.4m/s d2wp=2.8m risk=- obs=- front=40.3m planner=blocked/closed_loop_replan
+2026-05-24T13:41:55 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.9m speed=1.2m/s d2wp=0.0m risk=- obs=- front=40.3m planner=blocked/closed_loop_replan
+2026-05-24T13:44:07 TOOL    Tool accepted: autonomous_nav {'x': 8.7, 'y': -6.1, 'z': -7.795731067657471, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:44:07 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:44:07 MISSION Mission progress: autonomous | Autonomous navigation started to X 8.7, Y -6.1. | waypoint 0/1 | alt=7.8m speed=0.0m/s d2wp=0.0m risk=- obs=- front=40.3m planner=wait
+2026-05-24T13:44:12 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (9.2, -3.1) | waypoint 1/1 | alt=7.7m speed=0.0m/s d2wp=6.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:44:13 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (8.7, -3.6) | waypoint 1/1 | alt=7.9m speed=1.3m/s d2wp=5.5m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:44:14 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (8.7, -5.1) | waypoint 1/1 | alt=7.9m speed=1.7m/s d2wp=4.1m risk=- obs=- front=22.9m planner=ok/closed_loop_replan
+2026-05-24T13:44:15 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (9.2, -5.1) | waypoint 1/1 | alt=7.8m speed=1.9m/s d2wp=2.5m risk=- obs=- front=32.8m planner=ok/closed_loop_replan
+2026-05-24T13:44:16 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.7m speed=1.5m/s d2wp=0.0m risk=- obs=- front=32.8m planner=ok/closed_loop_replan
+2026-05-24T13:44:29 TOOL    Tool accepted: autonomous_nav {'x': 16.2, 'y': -7.4, 'z': -7.697559356689453, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:44:29 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:44:29 MISSION Mission progress: autonomous | Autonomous navigation started to X 16.2, Y -7.4. | waypoint 0/1 | alt=7.7m speed=0.0m/s d2wp=0.0m risk=- obs=- front=32.8m planner=wait
+2026-05-24T13:44:34 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (11.1, -6.9) | waypoint 1/1 | alt=7.6m speed=0.3m/s d2wp=8.2m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:44:35 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (11.6, -6.9) | waypoint 1/1 | alt=7.8m speed=1.2m/s d2wp=7.7m risk=- obs=- front=40.2m planner=ok/closed_loop_replan
+2026-05-24T13:44:36 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (11.6, -6.9) | waypoint 1/1 | alt=7.8m speed=1.6m/s d2wp=6.5m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:44:37 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (13.1, -7.4) | waypoint 1/1 | alt=7.7m speed=1.9m/s d2wp=4.9m risk=- obs=- front=23.5m planner=ok/closed_loop_replan
+2026-05-24T13:44:38 MISSION Mission progress: autonomous | Autonomous navigation v=1.96 m/s to (14.6, -6.9) | waypoint 1/1 | alt=7.6m speed=1.9m/s d2wp=3.3m risk=- obs=- front=27.4m planner=ok/closed_loop_replan
+2026-05-24T13:44:39 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (16.1, -7.4) | waypoint 1/1 | alt=7.6m speed=1.9m/s d2wp=3.3m risk=- obs=- front=27.4m planner=ok/closed_loop_replan
+2026-05-24T13:44:40 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.6m speed=2.0m/s d2wp=0.0m risk=- obs=- front=30.4m planner=ok/closed_loop_replan
+2026-05-24T13:44:51 TOOL    Tool accepted: autonomous_nav {'x': 21.8, 'y': -9.8, 'z': -7.6114654541015625, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:44:51 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:44:51 MISSION Mission progress: autonomous | Autonomous navigation started to X 21.8, Y -9.8. | waypoint 0/1 | alt=7.6m speed=0.1m/s d2wp=0.0m risk=- obs=- front=30.4m planner=wait
+2026-05-24T13:44:56 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (19.6, -9.3) | waypoint 1/1 | alt=7.5m speed=0.0m/s d2wp=5.6m risk=- obs=- front=32.1m planner=ok/closed_loop_replan
+2026-05-24T13:44:57 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (19.6, -9.3) | waypoint 1/1 | alt=7.6m speed=0.6m/s d2wp=5.6m risk=- obs=- front=31.9m planner=ok/closed_loop_replan
+2026-05-24T13:44:57 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (19.6, -8.8) | waypoint 1/1 | alt=7.8m speed=1.3m/s d2wp=4.9m risk=- obs=- front=31.9m planner=ok/closed_loop_replan
+2026-05-24T13:44:59 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (20.1, -9.3) | waypoint 1/1 | alt=7.9m speed=1.8m/s d2wp=3.5m risk=- obs=- front=31.6m planner=ok/closed_loop_replan
+2026-05-24T13:44:59 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (21.6, -9.8) | waypoint 1/1 | alt=7.8m speed=1.9m/s d2wp=1.7m risk=- obs=- front=33.9m planner=ok/closed_loop_replan
+2026-05-24T13:45:00 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.5m speed=1.8m/s d2wp=0.0m risk=- obs=- front=33.9m planner=ok/closed_loop_replan
+2026-05-24T13:45:16 TOOL    Tool accepted: autonomous_nav {'x': 31.0, 'y': -11.1, 'z': -7.546766757965088, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:45:16 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:45:16 MISSION Mission progress: autonomous | Autonomous navigation started to X 31.0, Y -11.1. | waypoint 0/1 | alt=7.5m speed=0.0m/s d2wp=0.0m risk=- obs=- front=33.9m planner=wait
+2026-05-24T13:45:20 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (25.2, -9.8) | waypoint 1/1 | alt=7.4m speed=0.1m/s d2wp=9.2m risk=- obs=- front=40.0m planner=ok/closed_loop_replan
+2026-05-24T13:45:21 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (25.2, -9.8) | waypoint 1/1 | alt=7.6m speed=1.1m/s d2wp=8.7m risk=- obs=- front=39.5m planner=ok/closed_loop_replan
+2026-05-24T13:45:23 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (25.7, -10.3) | waypoint 1/1 | alt=7.7m speed=1.6m/s d2wp=7.5m risk=- obs=- front=24.7m planner=ok/closed_loop_replan
+2026-05-24T13:45:23 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (28.2, -11.3) | waypoint 1/1 | alt=7.7m speed=1.8m/s d2wp=5.9m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:45:25 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (28.2, -11.3) | waypoint 1/1 | alt=7.5m speed=1.9m/s d2wp=4.1m risk=- obs=- front=32.7m planner=ok/closed_loop_replan
+2026-05-24T13:45:25 MISSION Mission progress: autonomous | Autonomous navigation v=1.98 m/s to (30.2, -10.8) | waypoint 1/1 | alt=7.3m speed=2.0m/s d2wp=2.4m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:45:27 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.3m speed=1.6m/s d2wp=0.0m risk=- obs=- front=40.1m planner=ok/closed_loop_replan
+2026-05-24T13:45:36 TOOL    Tool accepted: autonomous_nav {'x': 39.0, 'y': -12.6, 'z': -7.280300617218018, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:45:36 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:45:36 MISSION Mission progress: autonomous | Autonomous navigation started to X 39.0, Y -12.6. | waypoint 0/1 | alt=7.3m speed=0.2m/s d2wp=0.0m risk=- obs=- front=40.1m planner=wait
+2026-05-24T13:45:40 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (33.2, -13.4) | waypoint 1/1 | alt=7.2m speed=0.1m/s d2wp=8.8m risk=- obs=- front=39.8m planner=ok/closed_loop_replan
+2026-05-24T13:45:42 MISSION Mission progress: autonomous | Autonomous navigation v=1.91 m/s to (33.2, -13.4) | waypoint 1/1 | alt=7.4m speed=1.3m/s d2wp=8.2m risk=- obs=- front=26.9m planner=ok/closed_loop_replan
+2026-05-24T13:45:43 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (35.2, -13.9) | waypoint 1/1 | alt=7.5m speed=1.8m/s d2wp=6.8m risk=- obs=- front=20.3m planner=ok/closed_loop_replan
+2026-05-24T13:45:44 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (35.2, -13.4) | waypoint 1/1 | alt=7.3m speed=1.9m/s d2wp=5.4m risk=- obs=- front=18.1m planner=ok/closed_loop_replan
+2026-05-24T13:45:45 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (36.7, -13.9) | waypoint 1/1 | alt=7.0m speed=2.0m/s d2wp=4.0m risk=- obs=- front=18.2m planner=ok/closed_loop_replan
+2026-05-24T13:45:46 MISSION Mission progress: autonomous | Autonomous navigation v=1.88 m/s to (39.0, -12.6) | waypoint 1/1 | alt=6.9m speed=2.0m/s d2wp=2.8m risk=- obs=- front=17.9m planner=ok/closed_loop_replan
+2026-05-24T13:45:47 MISSION Mission progress: autonomous | Autonomous navigation v=1.87 m/s to (39.0, -12.6) | waypoint 1/1 | alt=7.4m speed=1.8m/s d2wp=1.9m risk=- obs=- front=12.3m planner=ok/closed_loop_replan
+2026-05-24T13:45:48 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.6m speed=1.5m/s d2wp=0.0m risk=- obs=- front=12.3m planner=ok/closed_loop_replan
+2026-05-24T13:46:04 TOOL    Tool accepted: autonomous_nav {'x': 44.6, 'y': -15.7, 'z': -7.572031497955322, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:46:04 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:46:04 MISSION Mission progress: autonomous | Autonomous navigation started to X 44.6, Y -15.7. | waypoint 0/1 | alt=7.6m speed=0.0m/s d2wp=0.0m risk=- obs=- front=12.3m planner=wait
+2026-05-24T13:46:09 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (42.9, -15.2) | waypoint 1/1 | alt=7.5m speed=0.4m/s d2wp=5.0m risk=- obs=- front=40.4m planner=ok/closed_loop_replan
+2026-05-24T13:46:09 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (42.9, -15.2) | waypoint 1/1 | alt=7.6m speed=0.9m/s d2wp=4.5m risk=- obs=- front=17.9m planner=ok/closed_loop_replan
+2026-05-24T13:46:11 MISSION Mission progress: autonomous | Autonomous navigation v=1.97 m/s to (44.4, -15.7) | waypoint 1/1 | alt=7.7m speed=1.6m/s d2wp=3.3m risk=- obs=- front=11.1m planner=ok/closed_loop_replan
+2026-05-24T13:46:12 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (44.4, -15.7) | waypoint 1/1 | alt=7.5m speed=1.9m/s d2wp=1.7m risk=- obs=- front=8.7m planner=ok/closed_loop_replan
+2026-05-24T13:46:13 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.4m speed=1.9m/s d2wp=0.0m risk=- obs=- front=8.7m planner=ok/closed_loop_replan
+2026-05-24T13:46:19 TOOL    Tool accepted: autonomous_nav {'x': 51.1, 'y': -17.4, 'z': -7.381739616394043, 'speed_mps': 2.0, 'replan_interval_s': 1.0, 'control_dt_s': 0.2, 'lookahead_m': 3.0, 'timeout_s': 120.0}
+2026-05-24T13:46:19 TOOL    Tool result: autonomous_nav | ok=True | Autonomous navigation started
+2026-05-24T13:46:19 MISSION Mission progress: autonomous | Autonomous navigation started to X 51.1, Y -17.4. | waypoint 0/1 | alt=7.4m speed=0.4m/s d2wp=0.0m risk=- obs=- front=8.7m planner=wait
+2026-05-24T13:46:24 MISSION Mission progress: autonomous | Autonomous navigation v=1.30 m/s to (48.4, -16.1) | waypoint 1/1 | alt=7.3m speed=0.1m/s d2wp=5.9m risk=- obs=- front=9.8m planner=ok/closed_loop_replan
+2026-05-24T13:46:26 MISSION Mission progress: autonomous | Autonomous navigation v=1.75 m/s to (48.4, -16.1) | waypoint 1/1 | alt=7.5m speed=1.1m/s d2wp=5.5m risk=- obs=- front=8.3m planner=ok/closed_loop_replan
+2026-05-24T13:46:26 MISSION Mission progress: autonomous | Autonomous navigation v=1.96 m/s to (50.4, -16.6) | waypoint 1/1 | alt=7.6m speed=1.5m/s d2wp=4.3m risk=- obs=- front=6.0m planner=ok/closed_loop_replan
+2026-05-24T13:46:27 MISSION Mission progress: autonomous | Autonomous navigation v=1.99 m/s to (50.4, -16.6) | waypoint 1/1 | alt=7.4m speed=1.9m/s d2wp=2.7m risk=- obs=- front=4.8m planner=ok/closed_loop_replan
+2026-05-24T13:46:28 MISSION Mission progress: completed | Autonomous navigation reached goal and is holding. | waypoint 1/1 | alt=7.2m speed=1.9m/s d2wp=0.0m risk=- obs=- front=4.8m planner=ok/closed_loop_replan

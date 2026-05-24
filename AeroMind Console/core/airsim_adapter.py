@@ -241,6 +241,12 @@ class AirSimRpcEngine:
         self._nav_lock = threading.Lock()
         self._nav_cache_cb: Any = None  # set by adapter
 
+        # Direct shared telemetry — engine and telemetry poller both write
+        # the latest position here.  Server reads it directly without any
+        # callback indirection or cache expiry logic.
+        self._last_telemetry: UavTelemetry = UavTelemetry()
+        self._last_telemetry_lock = threading.Lock()
+
         # Shared LiDAR cache — engine captures during nav tick so the
         # agent thread never needs to _exec_rpc for LiDAR (which would
         # block the nav loop for multi-second RPC durations).
@@ -392,10 +398,19 @@ class AirSimRpcEngine:
                 lz = float(raw_points[idx + 2])
                 if lx <= 0.6 or math.hypot(lx, ly) < 1.0 or math.hypot(lx, ly) > max_range:
                     continue
-                if lz < -3.0 or lz > 2.0:
+                # Vertical filter in sensor frame:
+                #   lz < 0 = above sensor, lz > 0 = below sensor (NED)
+                #   Keep [-3.0, 1.5] — modest downward to capture obstacle body
+                #   while still excluding extreme downward beams.
+                if lz < -3.0 or lz > 1.5:
                     continue
                 rx, ry, rz = self._rotate_vector_by_quaternion(lx, ly, lz, orientation)
-                points_3d.append((px + rx, py + ry, pz + rz))
+                world_z = pz + rz
+                # Reject points at ground level (within 0.8 m of z=0 in NED).
+                # This removes ground clutter while preserving obstacles ≥ 1 m tall.
+                if world_z > -0.8:
+                    continue
+                points_3d.append((px + rx, py + ry, world_z))
             with self._shared_lidar_lock:
                 self._shared_lidar_points = points_3d
                 self._shared_lidar_pos = (px, py, pz)
@@ -404,6 +419,25 @@ class AirSimRpcEngine:
         except Exception:
             logger.warning("capture_lidar_to_shared_cache failed", exc_info=True)
             return False
+
+    def get_last_telemetry(self) -> UavTelemetry:
+        """Return the most recent telemetry snapshot.
+
+        Updated by _nav_tick_impl and the telemetry poller on every cycle.
+        Safe to call from any thread.  Returns a UavTelemetry value object.
+        """
+        with self._last_telemetry_lock:
+            return self._last_telemetry
+
+    def publish_telemetry(self, tel: UavTelemetry) -> None:
+        """Update _last_telemetry from any thread.
+
+        Call this inside long-running command polling loops so the frontend
+        map keeps updating even while the engine thread is blocked on a
+        goto / takeoff / RTL command.
+        """
+        with self._last_telemetry_lock:
+            self._last_telemetry = tel
 
     def get_shared_lidar(self) -> tuple[list[tuple[float, float, float]], tuple[float, float, float]]:
         """Return a copy of the engine-captured LiDAR points + position.
@@ -490,6 +524,7 @@ class AirSimRpcEngine:
         speed = 0.0
         telemetry_ok = False
         orientation: Any = None
+        tel: UavTelemetry | None = None
         try:
             state = client.getMultirotorState(vehicle_name=vehicle)
             kinematics = state.kinematics_estimated
@@ -503,6 +538,16 @@ class AirSimRpcEngine:
                 float(velocity.x_val) ** 2 + float(velocity.y_val) ** 2 + float(velocity.z_val) ** 2
             )
             telemetry_ok = True
+            tel = UavTelemetry(
+                name=vehicle, mode="AIRSIM-LIVE",
+                altitude_m=max(0.0, -pz), speed_mps=speed,
+                x=px, y=py, z=pz,
+            )
+            # Write directly — no callback, no condition, no delay.
+            # Only overwrite _last_telemetry when telemetry actually
+            # succeeded so we never regress to (0,0,0) on failures.
+            with self._last_telemetry_lock:
+                self._last_telemetry = tel
         except Exception:
             logger.warning("_nav_tick_direct telemetry read failed", exc_info=True)
             if self._nav_cache_cb is None:
@@ -541,11 +586,16 @@ class AirSimRpcEngine:
         # -- populate cache via callback -----------------------------------
         cb = self._nav_cache_cb
         if cb is not None:
-            tel = UavTelemetry(
-                name=vehicle, mode="AIRSIM-LIVE",
-                altitude_m=max(0.0, -pz), speed_mps=speed,
-                x=px, y=py, z=pz,
-            )
+            if tel is None:
+                # Telemetry read failed — build a fallback with whatever
+                # px/py/pz we have (may be zero).  This keeps the nav
+                # cache updated but does NOT overwrite _last_telemetry,
+                # which retains the last good position for the frontend.
+                tel = UavTelemetry(
+                    name=vehicle, mode="AIRSIM-LIVE",
+                    altitude_m=max(0.0, -pz), speed_mps=speed,
+                    x=px, y=py, z=pz,
+                )
             valid = {k: v for k, v in dists.items() if v is not None}
             nd, mv = ("none", None)
             if valid:
@@ -590,13 +640,15 @@ class AirSimRpcEngine:
         """Dedicated telemetry thread.
 
         Own AirSim client, completely independent of the engine's RPC queue.
-        Polls getMultirotorState every 100 ms and pushes telemetry into the
-        shared nav-cache so the WebSocket map updates at a fixed rate
+        Polls getMultirotorState every 100 ms and pushes telemetry into
+        _last_telemetry so the WebSocket map updates at a fixed rate
         regardless of what the engine command loop is doing.
         """
         client: Any = None
         vehicle = self._vehicle_name
         host, port = self._host, self._port
+        poll_ok_logged = False
+        poll_fail_count = 0
 
         while not self._telemetry_poller_stop.is_set():
             # -- connect / reconnect -----------------------------------------
@@ -605,7 +657,20 @@ class AirSimRpcEngine:
                     import airsim
                     client = airsim.MultirotorClient(ip=host, port=port, timeout_value=1.5)
                     client.confirmConnection()
+                    logger.info(
+                        "telemetry poller connected to AirSim at %s:%s, vehicle=%s",
+                        host, port, vehicle,
+                    )
+                    poll_ok_logged = False  # force re-log on reconnect
+                    poll_fail_count = 0
                 except Exception:
+                    if not poll_ok_logged:
+                        logger.warning(
+                            "telemetry poller cannot connect to AirSim at %s:%s "
+                            "(multi-client may be unsupported by this AirSim version)",
+                            host, port,
+                        )
+                        poll_ok_logged = True  # log only once per outage
                     client = None
                     self._telemetry_poller_stop.wait(2.0)
                     continue
@@ -619,15 +684,30 @@ class AirSimRpcEngine:
                 vel = kinematics.linear_velocity
                 px, py, pz = float(pos.x_val), float(pos.y_val), float(pos.z_val)
                 speed = math.sqrt(float(vel.x_val)**2 + float(vel.y_val)**2 + float(vel.z_val)**2)
+                tel = UavTelemetry(
+                    name=vehicle, mode="AIRSIM-LIVE",
+                    altitude_m=max(0.0, -pz), speed_mps=speed,
+                    x=px, y=py, z=pz,
+                )
+                # Direct write — no callback indirection, always succeeds
+                with self._last_telemetry_lock:
+                    self._last_telemetry = tel
                 if cb is not None:
-                    tel = UavTelemetry(
-                        name=vehicle, mode="AIRSIM-LIVE",
-                        altitude_m=max(0.0, -pz), speed_mps=speed,
-                        x=px, y=py, z=pz,
-                    )
                     cb({"telemetry": tel})
+                # One-shot log so we know the poller is delivering data.
+                if not poll_ok_logged:
+                    logger.info(
+                        "telemetry poller delivering: x=%.1f y=%.1f z=%.1f",
+                        px, py, pz,
+                    )
+                    poll_ok_logged = True
+                poll_fail_count = 0
             except Exception:
-                logger.warning("telemetry poller read failed", exc_info=True)
+                poll_fail_count += 1
+                if poll_fail_count <= 1 or poll_fail_count % 20 == 0:
+                    logger.warning(
+                        "telemetry poller read failed (count=%s)", poll_fail_count,
+                    )
                 cb = self._nav_cache_cb  # re-read in case it was set mid-flight
                 client = None  # force reconnect next iteration
                 self._telemetry_poller_stop.wait(0.5)
@@ -783,11 +863,24 @@ class AirSimRpcEngine:
         client.armDisarm(True, vehicle_name=self._vehicle_name)
         state = client.getMultirotorState(vehicle_name=self._vehicle_name)
         position = state.kinematics_estimated.position
+        velocity = state.kinematics_estimated.linear_velocity
         px = float(position.x_val)
         py = float(position.y_val)
+        pz = float(position.z_val)
+        speed = math.sqrt(
+            float(velocity.x_val) ** 2 + float(velocity.y_val) ** 2 + float(velocity.z_val) ** 2
+        )
+        # Update shared telemetry so the frontend map stays live even when
+        # the engine is in command-queue mode (nav inactive).
+        with self._last_telemetry_lock:
+            self._last_telemetry = UavTelemetry(
+                name=self._vehicle_name, mode="AIRSIM-LIVE",
+                altitude_m=max(0.0, -pz), speed_mps=speed,
+                x=px, y=py, z=pz,
+            )
         hold_x = self._hold_x if self._hold_x is not None else px
         hold_y = self._hold_y if self._hold_y is not None else py
-        target_z = self._hold_z if self._hold_z is not None else float(position.z_val)
+        target_z = self._hold_z if self._hold_z is not None else pz
 
         if self._hold_x is None:
             self._hold_x = hold_x
@@ -886,6 +979,7 @@ class AirSimAdapter:
         self.active_camera_name = "front_center"
         self.last_success_at = 0.0
         self.failure_count = 0
+        self._home_position: tuple[float, float] = (0.0, 0.0)
 
         self._engine = AirSimRpcEngine(
             host=host, port=port, vehicle_name=vehicle_name,
@@ -915,6 +1009,14 @@ class AirSimAdapter:
             self._nav_cache["stale"] = False
             self._nav_cache["updated_at"] = time.time()
 
+    def get_last_telemetry(self) -> UavTelemetry:
+        """Return the most recent telemetry directly from the engine.
+
+        No callback indirection, no cache expiry — the engine and telemetry
+        poller both write this shared variable on every cycle.
+        """
+        return self._engine.get_last_telemetry()
+
     def get_nav_cache(self) -> dict[str, Any]:
         with self._nav_cache_lock:
             return dict(self._nav_cache)
@@ -942,33 +1044,22 @@ class AirSimAdapter:
     def vehicle_names(self) -> tuple[str, ...]:
         return self._engine.vehicle_names
 
-    @vehicle_names.setter
-    def vehicle_names(self, value: tuple[str, ...]) -> None:
-        pass  # engine owns this; set during _try_connect
+    @property
+    def home_position(self) -> dict[str, float]:
+        hx, hy = self._home_position
+        return {"x": round(float(hx), 2), "y": round(float(hy), 2)}
 
     @property
     def connected(self) -> bool:
         return self._engine.connected
 
-    @connected.setter
-    def connected(self, value: bool) -> None:
-        pass  # no-op; engine owns this state
-
     @property
     def client(self) -> Any:
         return self._engine.client
 
-    @client.setter
-    def client(self, value: Any) -> None:
-        pass
-
     @property
     def airsim(self) -> Any:
         return self._engine.airsim
-
-    @airsim.setter
-    def airsim(self, value: Any) -> None:
-        pass
 
     # -- internal helpers -------------------------------------------------
 
@@ -1346,7 +1437,13 @@ class AirSimAdapter:
         self._stop_position_hold()
         vehicle = self.vehicle_name
 
-        def _do(c: Any, a: Any) -> tuple[float, float, float]:
+        def _do(c: Any, a: Any) -> tuple[float, float, float, float, float]:
+            # Record the real home position before takeoff for accurate RTL.
+            init_state = c.getMultirotorState(vehicle_name=vehicle)
+            init_pos = init_state.kinematics_estimated.position
+            home_x = float(init_pos.x_val)
+            home_y = float(init_pos.y_val)
+
             c.enableApiControl(True, vehicle_name=vehicle)
             c.armDisarm(True, vehicle_name=vehicle)
             try:
@@ -1359,7 +1456,17 @@ class AirSimAdapter:
             settle_deadline = time.time() + max(6.0, abs(target_z) * 1.2)
             while time.time() < settle_deadline:
                 state = c.getMultirotorState(vehicle_name=vehicle)
-                current_z = float(state.kinematics_estimated.position.z_val)
+                px = float(state.kinematics_estimated.position.x_val)
+                py = float(state.kinematics_estimated.position.y_val)
+                pz = float(state.kinematics_estimated.position.z_val)
+                vel = state.kinematics_estimated.linear_velocity
+                speed = math.sqrt(float(vel.x_val)**2 + float(vel.y_val)**2 + float(vel.z_val)**2)
+                self._engine.publish_telemetry(UavTelemetry(
+                    name=vehicle, mode="AIRSIM-LIVE",
+                    altitude_m=max(0.0, -pz), speed_mps=speed,
+                    x=px, y=py, z=pz,
+                ))
+                current_z = pz
                 if abs(current_z - target_z) <= 0.6:
                     break
                 retry_task = c.moveToZAsync(z=target_z, velocity=1.8, vehicle_name=vehicle)
@@ -1367,9 +1474,11 @@ class AirSimAdapter:
                 time.sleep(0.12)
             final_state = c.getMultirotorState(vehicle_name=vehicle)
             final_position = final_state.kinematics_estimated.position
-            return float(final_position.x_val), float(final_position.y_val), float(target_z)
+            return (home_x, home_y,
+                    float(final_position.x_val), float(final_position.y_val), float(target_z))
 
-        fx, fy, fz = self._exec_rpc(_do)
+        hx, hy, fx, fy, fz = self._exec_rpc(_do)
+        self._home_position = (hx, hy)
         self.last_success_at = self._engine.last_success_at
         self._start_position_hold(x=fx, y=fy, z=fz)
 
@@ -1552,6 +1661,7 @@ class AirSimAdapter:
         self._stop_position_hold()
         vehicle = self.vehicle_name
         alt = float(altitude_m)
+        home_x, home_y = self._home_position
 
         def _do(c: Any, a: Any) -> None:
             try:
@@ -1562,7 +1672,7 @@ class AirSimAdapter:
                 safe_z = -abs(alt)
             c.moveToZAsync(z=safe_z, velocity=3.0, vehicle_name=vehicle)
             time.sleep(0.3)
-            c.moveToPositionAsync(x=0.0, y=0.0, z=safe_z, velocity=4.0, vehicle_name=vehicle)
+            c.moveToPositionAsync(x=home_x, y=home_y, z=safe_z, velocity=4.0, vehicle_name=vehicle)
 
         self._exec_rpc(_do)
         self.last_success_at = self._engine.last_success_at
@@ -1604,50 +1714,95 @@ class AirSimAdapter:
             c.armDisarm(True, vehicle_name=vehicle)
 
             start = time.time()
+            last_control_at = 0.0
             while time.time() - start <= timeout_s:
+                # ── telemetry read + publish (every iteration, ≥10 Hz) ──
                 state = c.getMultirotorState(vehicle_name=vehicle)
                 position = state.kinematics_estimated.position
                 velocity = state.kinematics_estimated.linear_velocity
-                dx = target_x - float(position.x_val)
-                dy = target_y - float(position.y_val)
-                dz = target_z - float(position.z_val)
-                dist_xy = math.hypot(dx, dy)
-                speed_now = math.sqrt(
+                px = float(position.x_val)
+                py = float(position.y_val)
+                pz = float(position.z_val)
+                spd = math.sqrt(
                     float(velocity.x_val) ** 2
                     + float(velocity.y_val) ** 2
                     + float(velocity.z_val) ** 2
                 )
-                if dist_xy <= 0.6 and abs(dz) <= 0.35 and speed_now <= 0.8:
+                self._engine.publish_telemetry(UavTelemetry(
+                    name=vehicle, mode="AIRSIM-LIVE",
+                    altitude_m=max(0.0, -pz), speed_mps=spd,
+                    x=px, y=py, z=pz,
+                ))
+
+                # ── arrival check ──
+                dx = target_x - px
+                dy = target_y - py
+                dz = target_z - pz
+                dist_xy = math.hypot(dx, dy)
+                if dist_xy <= 0.6 and abs(dz) <= 0.35 and spd <= 0.8:
                     break
-                desired_vx = kp_xy * dx - damp * float(velocity.x_val)
-                desired_vy = kp_xy * dy - damp * float(velocity.y_val)
-                desired_vz = kp_z * dz - damp * float(velocity.z_val)
-                v_xy = math.hypot(desired_vx, desired_vy)
-                if v_xy > cruise_speed:
-                    scale = cruise_speed / max(1e-6, v_xy)
-                    desired_vx *= scale
-                    desired_vy *= scale
-                desired_vz = max(-1.6, min(1.6, desired_vz))
-                max_delta = accel_limit * control_dt
-                vx_cmd += max(-max_delta, min(max_delta, desired_vx - vx_cmd))
-                vy_cmd += max(-max_delta, min(max_delta, desired_vy - vy_cmd))
-                vz_cmd += max(-max_delta, min(max_delta, desired_vz - vz_cmd))
-                yaw_deg = self._yaw_to_world_target(c, target_x, target_y)
-                yaw_mode = a.YawMode(False, yaw_deg) if (face_target and a is not None) else (a.YawMode(True, 0.0) if a is not None else None)
-                try:
-                    task = c.moveByVelocityAsync(
-                        vx=float(vx_cmd), vy=float(vy_cmd), vz=float(vz_cmd),
-                        duration=control_dt,
-                        drivetrain=a.DrivetrainType.MaxDegreeOfFreedom if a is not None else 0,
-                        yaw_mode=yaw_mode,
-                        vehicle_name=vehicle,
-                    )
-                except TypeError:
-                    task = c.moveByVelocityAsync(
-                        float(vx_cmd), float(vy_cmd), float(vz_cmd), control_dt,
-                        vehicle_name=vehicle,
-                    )
-                self._join_async(task, timeout_s=control_dt + 0.35)
+
+                # ── velocity update at control rate (~10 Hz) ──
+                now = time.time()
+                if now - last_control_at >= control_dt:
+                    desired_vx = kp_xy * dx - damp * float(velocity.x_val)
+                    desired_vy = kp_xy * dy - damp * float(velocity.y_val)
+                    desired_vz = kp_z * dz - damp * float(velocity.z_val)
+                    v_xy = math.hypot(desired_vx, desired_vy)
+                    if v_xy > cruise_speed:
+                        scale = cruise_speed / max(1e-6, v_xy)
+                        desired_vx *= scale
+                        desired_vy *= scale
+                    desired_vz = max(-1.6, min(1.6, desired_vz))
+                    max_delta = accel_limit * control_dt
+                    vx_cmd += max(-max_delta, min(max_delta, desired_vx - vx_cmd))
+                    vy_cmd += max(-max_delta, min(max_delta, desired_vy - vy_cmd))
+                    vz_cmd += max(-max_delta, min(max_delta, desired_vz - vz_cmd))
+                    yaw_deg = self._yaw_to_world_target(c, target_x, target_y)
+                    yaw_mode = a.YawMode(False, yaw_deg) if (face_target and a is not None) else (a.YawMode(True, 0.0) if a is not None else None)
+                    try:
+                        c.moveByVelocityAsync(
+                            vx=float(vx_cmd), vy=float(vy_cmd), vz=float(vz_cmd),
+                            duration=0.35,
+                            drivetrain=a.DrivetrainType.MaxDegreeOfFreedom if a is not None else 0,
+                            yaw_mode=yaw_mode,
+                            vehicle_name=vehicle,
+                        )
+                    except TypeError:
+                        c.moveByVelocityAsync(
+                            float(vx_cmd), float(vy_cmd), float(vz_cmd), 0.35,
+                            vehicle_name=vehicle,
+                        )
+                    last_control_at = now
+
+                time.sleep(0.06)
+
+            # -- precision final positioning ---------------------------------
+            # PID loop brought us within ~0.6 m.  One precise position
+            # command closes the remaining gap to ≤0.2 m.
+            try:
+                c.moveToPositionAsync(
+                    x=target_x, y=target_y, z=target_z, velocity=1.0,
+                    timeout_sec=3.0, vehicle_name=vehicle,
+                )
+            except TypeError:
+                c.moveToPositionAsync(target_x, target_y, target_z, 1.0, vehicle_name=vehicle)
+
+            precision_deadline = time.time() + 5.0
+            while time.time() < precision_deadline:
+                state2 = c.getMultirotorState(vehicle_name=vehicle)
+                pos2 = state2.kinematics_estimated.position
+                vel2 = state2.kinematics_estimated.linear_velocity
+                px2 = float(pos2.x_val); py2 = float(pos2.y_val); pz2 = float(pos2.z_val)
+                spd2 = math.sqrt(float(vel2.x_val) ** 2 + float(vel2.y_val) ** 2 + float(vel2.z_val) ** 2)
+                self._engine.publish_telemetry(UavTelemetry(
+                    name=vehicle, mode="AIRSIM-LIVE",
+                    altitude_m=max(0.0, -pz2), speed_mps=spd2,
+                    x=px2, y=py2, z=pz2,
+                ))
+                if math.hypot(target_x - px2, target_y - py2) <= 0.2 and abs(target_z - pz2) <= 0.2 and spd2 <= 0.3:
+                    break
+                time.sleep(0.15)
 
         self._exec_rpc(_do)
         self.hold_current_position(duration_s=0.7)

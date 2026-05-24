@@ -3,6 +3,7 @@ import json
 import mimetypes
 import os
 import sys
+import threading
 import time
 import traceback
 import logging
@@ -56,6 +57,7 @@ class ConsoleState:
         self.plan: list[dict[str, str]] = []
         self.events: list[dict[str, str]] = []
         self.trail: list[dict[str, float]] = []
+        self._trail_lock = threading.Lock()
         self.route: list[dict[str, float]] = []
         self.search_area: dict[str, float] | None = None
         self.targets: list[dict[str, float | str]] = []
@@ -82,7 +84,12 @@ class ConsoleState:
             rate_limit_window_s=60,
             allowed_ips=("127.0.0.1", "::1", "localhost"),
         ))
-        self.video_stream = VideoStream(self.airsim)
+        self.video_stream = VideoStream(
+            host=self.airsim.host,
+            port=self.airsim.port,
+            vehicle_name=self.airsim.vehicle_name,
+            camera_candidates=self.airsim.camera_candidates,
+        )
         self.latest_detection: dict[str, Any] = {
             "ok": False,
             "detections": [],
@@ -94,6 +101,20 @@ class ConsoleState:
         self._last_progress_message = ""
         self._last_progress_waypoint = (-1, -1)
         self._last_progress_heartbeat_ts = 0.0
+
+        # -- WebSocket pre-computed payload cache (background thread) ----------
+        # The publisher thread computes state + telemetry snapshots and
+        # JSON-serialises them at 10 Hz.  _handle_ws only reads these cached
+        # strings, holding the lock for microseconds — it NEVER calls any
+        # AirSim RPC or blocks on the engine command queue.
+        self._ws_cache: dict[str, str] = {}
+        self._ws_cache_lock = threading.Lock()
+        self._ws_stop = threading.Event()
+        self._ws_publisher_thread = threading.Thread(
+            target=self._run_ws_cache_publisher, name="aeromind-ws-cache", daemon=True,
+        )
+        self._ws_publisher_thread.start()
+
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         self.log("AeroMind Console 已启动，等待 AirSim/UE 视频输入。", "INFO")
 
@@ -114,8 +135,8 @@ class ConsoleState:
             print(f"[aeromind] log write failed: {log_err}", file=sys.stderr)
 
     def snapshot(self) -> dict[str, Any]:
+        telemetry = self.airsim.get_last_telemetry()
         cache = self.airsim.get_nav_cache()
-        telemetry = cache["telemetry"]
         connected = self.airsim.is_connected()
         if connected:
             self.video_stream.start()
@@ -180,14 +201,20 @@ class ConsoleState:
             },
             "events": self.events,
             "map": {
-                "home": {"x": 0.0, "y": 0.0},
+                "home": self.airsim.home_position,
                 "uav": {"x": telemetry.x, "y": telemetry.y, "z": telemetry.z},
                 "uavs": uavs,
-                "trail": self.trail[-240:],
+                "trail": self._trail_snapshot(),
                 "route": self._progress_route(agent_progress) or self.route,
                 "search_area": self.search_area,
                 "targets": self.targets,
                 "obstacles": obstacle_points,
+                "occupancy_grid": cache.get("occupancy_grid", []),
+                "voxel_grid_3d": cache.get("voxel_grid_3d", []),
+                "raw_lidar_3d": cache.get("raw_lidar_3d", []),
+                "drone_pos": cache.get("drone_pos", (0.0, 0.0, 0.0)),
+                "cmd_vx": cache.get("cmd_vx", 0.0),
+                "cmd_vy": cache.get("cmd_vy", 0.0),
                 "blocked_zones": self._assessment_blocked_zones(agent_progress),
             },
             "uptime_s": round(time.time() - self.started_at, 1),
@@ -209,12 +236,12 @@ class ConsoleState:
             "vision": {
                 "detector": self.detector.status(),
                 "latest_detection": self.latest_detection,
+                "target_reports": self.agent_tools.target_reports(),
                 },
             }
 
     def telemetry_snapshot(self) -> dict[str, Any]:
-        cache = self.airsim.get_nav_cache()
-        telemetry = cache["telemetry"]
+        telemetry = self.airsim.get_last_telemetry()
         connected = self.airsim.is_connected()
         if connected:
             self._update_trail(float(telemetry.x), float(telemetry.y), float(telemetry.z))
@@ -227,9 +254,98 @@ class ConsoleState:
             "map": {
                 "uav": {"x": telemetry.x, "y": telemetry.y, "z": telemetry.z, "name": telemetry.name},
                 "uavs": [uav_api],
-                "trail": self.trail[-240:],
+                "trail": self._trail_snapshot(),
             },
             "airsim_error": self.airsim.last_error,
+        }
+
+    def fast_state_snapshot(self) -> dict[str, Any]:
+        """Lightweight state snapshot — reads ONLY shared memory, NEVER calls RPC.
+
+        Safe to call from the WebSocket push loop at 5 Hz without blocking
+        the engine's command queue.  Uses cached LiDAR / collision / distance
+        data from the nav tick instead of fresh RPC queries.
+        """
+        telemetry = self.airsim.get_last_telemetry()
+        cache = self.airsim.get_nav_cache()
+        connected = self.airsim.is_connected()
+        if connected:
+            self.video_stream.start()
+        if connected:
+            collision = cache["collision"]
+            obstacle = cache["obstacle"]
+            distances = cache["distances"]
+            # NEVER call RPC — use cached LiDAR only
+            obstacle_points = cache.get("lidar_points", []) or []
+            uavs = [telemetry.to_api()]
+        else:
+            collision = CollisionStatus()
+            obstacle = ObstacleStatus(error=self.airsim.last_error)
+            distances = DistanceSensorsStatus(error=self.airsim.last_error)
+            obstacle_points = []
+            uavs = []
+        video_ready = self.video_stream.is_ready()
+        video_mode = "airsim_front" if connected else "placeholder"
+        agent_progress = self.agent_tools.mission_progress()
+        self._sync_agent_progress_events(agent_progress)
+        self._sync_terminal_agent_state(agent_progress)
+        if connected:
+            self._update_trail(float(telemetry.x), float(telemetry.y), float(telemetry.z))
+        return {
+            "connected": connected,
+            "server": {
+                "started_at": self.started_at,
+                "started_at_iso": datetime.fromtimestamp(self.started_at).isoformat(timespec="seconds"),
+            },
+            "video": {
+                "mode": video_mode,
+                "front_camera_url": "/video/front",
+                "message": "AirSim 前视相机在线。" if video_ready else "相机视频流尚未连接。",
+                "camera_name": self.airsim.last_camera_name,
+                "selected_camera_name": self.airsim.active_camera_name,
+                "camera_candidates": list(self.airsim.camera_candidates),
+                "image_type": self.airsim.last_image_type,
+            },
+            "vehicle": self.airsim.vehicle_options(),
+            "uav": telemetry.to_api(),
+            "uavs": uavs,
+            "task": {
+                "status": self.task_status,
+                "title": self.current_task,
+                "plan": self.plan,
+                "agent_progress": agent_progress,
+            },
+            "events": self.events,
+            "map": {
+                "home": self.airsim.home_position,
+                "uav": {"x": telemetry.x, "y": telemetry.y, "z": telemetry.z},
+                "uavs": uavs,
+                "trail": self._trail_snapshot(),
+                "route": self._progress_route(agent_progress) or self.route,
+                "search_area": self.search_area,
+                "targets": self.targets,
+                "obstacles": obstacle_points,
+                "occupancy_grid": cache.get("occupancy_grid", []),
+                "voxel_grid_3d": cache.get("voxel_grid_3d", []),
+                "raw_lidar_3d": cache.get("raw_lidar_3d", []),
+                "drone_pos": cache.get("drone_pos", (0.0, 0.0, 0.0)),
+                "cmd_vx": cache.get("cmd_vx", 0.0),
+                "cmd_vy": cache.get("cmd_vy", 0.0),
+                "blocked_zones": self._assessment_blocked_zones(agent_progress),
+            },
+            "uptime_s": round(time.time() - self.started_at, 1),
+            "airsim_error": self.airsim.last_error,
+            "safety": {
+                "collision": collision.to_api(),
+                "obstacle": obstacle.to_api(),
+                "distance_sensors": distances.to_api(),
+                "lidar": {"world_points": len(obstacle_points)},
+            },
+            "vision": {
+                "detector": self.detector.status(),
+                "latest_detection": self.latest_detection,
+                "target_reports": self.agent_tools.target_reports(),
+            },
         }
 
     @staticmethod
@@ -278,7 +394,7 @@ class ConsoleState:
         current = int(agent_progress.get("current_waypoint_index") or 0)
         total = int(agent_progress.get("total_waypoints") or 0)
         waypoint = (current, total)
-        telemetry = self.airsim.telemetry()
+        telemetry = self.airsim.get_last_telemetry()
         distance_to_wp = agent_progress.get("distance_to_waypoint_m")
         obstacle = agent_progress.get("obstacle") if isinstance(agent_progress.get("obstacle"), dict) else {}
         distances = agent_progress.get("distance_sensors") if isinstance(agent_progress.get("distance_sensors"), dict) else {}
@@ -321,6 +437,41 @@ class ConsoleState:
         self._last_progress_message = message
         self._last_progress_waypoint = waypoint
 
+    def _run_ws_cache_publisher(self) -> None:
+        """Background thread: pre-compute WS JSON payloads at 10 Hz.
+
+        Computes fast_state_snapshot() and telemetry_snapshot(), serialises
+        them to JSON, and stores the strings in _ws_cache.  The WebSocket
+        handler only reads these cached strings — it NEVER calls AirSim RPC
+        or holds a lock for longer than a dict lookup (microseconds).
+        """
+        tick = 0
+        while not self._ws_stop.is_set():
+            try:
+                # state snapshot (heavier — every 5th tick = 2 Hz)
+                if tick % 5 == 0:
+                    state_json = json.dumps(
+                        {"type": "state", "data": self.fast_state_snapshot()},
+                        ensure_ascii=False,
+                    )
+                # telemetry snapshot (lightweight — every tick = 10 Hz)
+                telemetry_json = json.dumps(
+                    {"type": "telemetry", "data": self.telemetry_snapshot()},
+                    ensure_ascii=False,
+                )
+                with self._ws_cache_lock:
+                    if tick % 5 == 0:
+                        self._ws_cache["state"] = state_json
+                    self._ws_cache["telemetry"] = telemetry_json
+            except Exception:
+                logger.warning("WS cache publisher tick failed", exc_info=True)
+            tick += 1
+            self._ws_stop.wait(0.1)
+
+    def shutdown(self) -> None:
+        """Signal background threads to stop."""
+        self._ws_stop.set()
+
     def reconnect_airsim(self) -> dict[str, Any]:
         if self.airsim.connect():
             self.video_stream.start()
@@ -351,6 +502,7 @@ class ConsoleState:
         try:
             self.airsim.switch_vehicle(vehicle)
             self.video_stream.reset()
+            self.video_stream.set_vehicle(vehicle)
             self.trail = []
             self.log(f"Vehicle selected: {vehicle}", "AIRSIM")
             return {
@@ -372,6 +524,7 @@ class ConsoleState:
         try:
             result = self.airsim.select_camera(camera)
             self.video_stream.reset()
+            self.video_stream.set_camera(camera)
             self.log(f"Camera selected: {camera}", "AIRSIM")
             return {
                 "ok": True,
@@ -522,6 +675,15 @@ class ConsoleState:
         return self.flight_stop(message="Mission stopped.")
 
     def _run_agentic_mission(self, text: str, mission: Any, draft: dict[str, Any]) -> dict[str, Any]:
+        if not self.agent_loop.llm:
+            self.task_status = "error"
+            self.log("Agentic mission failed: no LLM client available. Set AEROMIND_LLM_API_KEY environment variable.", "ERROR")
+            return {
+                **self.snapshot(),
+                "error": "AGENT_NO_LLM",
+                "message": "无法启动智能任务：未配置 LLM API 密钥。请设置环境变量 AEROMIND_LLM_API_KEY。",
+            }
+
         self.task_status = "agentic_running"
         self.log(f"Agentic mission started: {text}", "AGENT")
         self.log(f"Agentic mode: LLM will decide each tool call dynamically", "AGENT")
@@ -640,12 +802,13 @@ class ConsoleState:
                     "safety": {"accepted": True, "reason": "Agent loop will validate each tool call at execution time."},
                 },
                 "route": [],
-                "map": {"search_area": None, "route": [], "home": {"x": 0.0, "y": 0.0}},
+                "map": {"search_area": None, "route": [], "home": self.airsim.home_position},
                 "preflight": {
-                    "overall": "ready" if self.airsim.is_connected() else "caution",
+                    "overall": "ready" if (self.airsim.is_connected() and self.agent_loop.llm) else "caution",
                     "checks": [
                         {"key": "airsim_connection", "label": "AirSim 连接", "status": "ok" if self.airsim.is_connected() else "warn", "detail": "AirSim 已连接" if self.airsim.is_connected() else "AirSim 离线，Agent 启动后将自动等待重连。"},
                         {"key": "agentic_mode", "label": "Agent 模式", "status": "ok", "detail": f"LLM 将动态决策工具调用。可用工具: {', '.join(tool_names)}"},
+                        {"key": "llm_available", "label": "LLM 接口", "status": "ok" if self.agent_loop.llm else "error", "detail": "LLM API 已配置" if self.agent_loop.llm else "未设置 AEROMIND_LLM_API_KEY，无法启动智能任务"},
                     ],
                 },
                 "preview": {
@@ -927,7 +1090,7 @@ class ConsoleState:
             area = mission.area.to_api()
         uavs = self._get_all_uav_telemetry() if self.airsim.is_connected() else []
         return {
-            "home": {"x": 0.0, "y": 0.0},
+            "home": self.airsim.home_position,
             "uav": {"x": 0.0, "y": 0.0, "z": 0.0},
             "uavs": uavs,
             "trail": [],
@@ -1092,14 +1255,19 @@ class ConsoleState:
 
     def _update_trail(self, x: float, y: float, z: float) -> None:
         point = {"x": x, "y": y, "z": z}
-        if not self.trail:
-            self.trail.append(point)
-            return
-        last = self.trail[-1]
-        distance_sq = (last["x"] - x) ** 2 + (last["y"] - y) ** 2 + (last["z"] - z) ** 2
-        if distance_sq >= 0.25:
-            self.trail.append(point)
-            self.trail = self.trail[-300:]
+        with self._trail_lock:
+            if not self.trail:
+                self.trail.append(point)
+                return
+            last = self.trail[-1]
+            distance_sq = (last["x"] - x) ** 2 + (last["y"] - y) ** 2 + (last["z"] - z) ** 2
+            if distance_sq >= 0.25:
+                self.trail.append(point)
+                self.trail = self.trail[-300:]
+
+    def _trail_snapshot(self, limit: int = 240) -> list[dict[str, float]]:
+        with self._trail_lock:
+            return list(self.trail[-limit:])
 
     def _set_mission_map(self, mission: Any) -> None:
         self.route = []
@@ -1153,13 +1321,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
-        public_paths = {"/", "/index.html", "/static/", "/video/front", "/camera/latest"}
-        if any(path.startswith(p) for p in public_paths):
+        # Exact-match paths must not use startswith — "/" would match EVERYTHING.
+        if path == "/" or path == "/index.html":
+            self._handle_public_get(path)
+            return
+        if path.startswith(("/static/", "/video/front", "/camera/latest")):
             self._handle_public_get(path)
             return
 
         if path == "/ws":
             self._handle_ws()
+            return
+
+        # Fallback: any other non-API path → serve as static file.
+        # This catches /styles.css, /app.js, /js/map.js etc. that are
+        # referenced at root level in index.html.
+        if not path.startswith("/api/"):
+            self._handle_public_get(path)
             return
 
         protected_paths = {
@@ -1170,7 +1348,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/vehicle/options": self.console.vehicle_options,
             "/api/logs": self.console.logs,
             "/api/tools": self.console.list_tools,
-            "/api/detect/latest": lambda: {"vision": self.console.latest_detection, "detector": self.console.detector.status()},
+            "/api/detect/latest": lambda: {"vision": self.console.latest_detection, "detector": self.console.detector.status(), "target_reports": self.console.agent_tools.target_reports()},
         }
 
         handler = protected_paths.get(path)
@@ -1212,11 +1390,18 @@ class Handler(BaseHTTPRequestHandler):
         try:
             while True:
                 try:
+                    # Read pre-computed JSON payloads from the background
+                    # cache publisher.  Lock is held for microseconds (a
+                    # dict lookup + string reference copy).  ZERO AirSim RPC
+                    # or blocking operations on the WebSocket thread.
                     if tick % 5 == 0:
-                        payload = json.dumps({"type": "state", "data": self.console.snapshot()}, ensure_ascii=False)
+                        with self.console._ws_cache_lock:
+                            payload = self.console._ws_cache.get("state")
                     else:
-                        payload = json.dumps({"type": "telemetry", "data": self.console.telemetry_snapshot()}, ensure_ascii=False)
-                    ws_send_text(self.wfile, payload)
+                        with self.console._ws_cache_lock:
+                            payload = self.console._ws_cache.get("telemetry")
+                    if payload is not None:
+                        ws_send_text(self.wfile, payload)
                 except Exception:
                     logger.warning("WebSocket push failed, closing", exc_info=True)
                     try:
@@ -1385,6 +1570,7 @@ def run() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        server.console.shutdown()
         server.console.video_stream.stop()
         server.console.airsim.stop_reconnect_worker()
         server.console.detector.shutdown(wait=False)
