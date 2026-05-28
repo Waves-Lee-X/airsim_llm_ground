@@ -5,7 +5,6 @@ import heapq
 import math
 from typing import TYPE_CHECKING
 
-from core.occupancy_grid import OccupancyGrid
 from core.path_planner import Waypoint
 
 if TYPE_CHECKING:
@@ -33,8 +32,14 @@ def plan_local_path_on_slice(
     goal: Waypoint,
     grid_slice: "Grid2DSlice",
     max_waypoints: int = 18,
+    unknown_cell_cost: float = 0.5,
 ) -> AvoidancePlan:
-    """Run A* on a 2D slice extracted from the 3D temporal voxel grid."""
+    """Run A* on a 2D slice extracted from the 3D temporal voxel grid.
+
+    Unknown cells are not blocked but incur a configurable movement cost
+    penalty (default 0.5 extra), so the planner prefers known-free routes
+    without blindly avoiding unknown areas.
+    """
     start_cell = grid_slice.world_to_cell(start.x, start.y)
     goal_cell = grid_slice.world_to_cell(goal.x, goal.y)
     if start_cell is None or goal_cell is None:
@@ -45,7 +50,7 @@ def plan_local_path_on_slice(
     if grid_slice.is_blocked(start_cell) or grid_slice.is_blocked(goal_cell):
         return AvoidancePlan(False, [], "no free start or goal cell in slice", grid_slice.to_api())
 
-    cells = _astar(grid_slice, start_cell, goal_cell)
+    cells = _astar(grid_slice, start_cell, goal_cell, unknown_cell_cost=unknown_cell_cost)
     if not cells:
         return AvoidancePlan(False, [], "A* could not find a free path on temporal slice", grid_slice.to_api())
 
@@ -61,55 +66,18 @@ def plan_local_path_on_slice(
     return AvoidancePlan(True, waypoints, f"A* on temporal slice: {len(waypoints)} waypoints", grid_slice.to_api())
 
 
-def plan_local_path(
-    start: Waypoint,
-    goal: Waypoint,
-    obstacle_points: list[tuple[float, float]],
-    grid_size_m: float = 70.0,
-    resolution_m: float = 1.5,
-    inflation_m: float = 3.5,
-    max_waypoints: int = 18,
-    bounds: tuple[float, float, float, float] | None = None,
-) -> AvoidancePlan:
-    center_x = (start.x + goal.x) / 2.0
-    center_y = (start.y + goal.y) / 2.0
-    span = max(abs(start.x - goal.x), abs(start.y - goal.y), grid_size_m)
-    grid = OccupancyGrid(
-        center_x=center_x,
-        center_y=center_y,
-        size_m=max(grid_size_m, span + 24.0),
-        resolution_m=resolution_m,
-        inflation_m=inflation_m,
-    )
-    grid.add_world_points(obstacle_points)
-    if bounds is not None:
-        grid.block_outside_world_bounds(*bounds)
-    start_cell = grid.world_to_cell(start.x, start.y)
-    goal_cell = grid.world_to_cell(goal.x, goal.y)
-    if start_cell is None or goal_cell is None:
-        return AvoidancePlan(False, [], "start or goal outside local grid", grid.to_api())
-    start_cell = grid.nearest_free(start_cell) or start_cell
-    goal_cell = grid.nearest_free(goal_cell) or goal_cell
-    if grid.is_blocked(start_cell) or grid.is_blocked(goal_cell):
-        return AvoidancePlan(False, [], "no free start or goal cell", grid.to_api())
-    cells = _astar(grid, start_cell, goal_cell)
-    if not cells:
-        return AvoidancePlan(False, [], "A* could not find a free path", grid.to_api())
-    sampled = _sample_cells(cells, max_waypoints=max_waypoints)
-    waypoints = [Waypoint(grid.cell_to_world(cell).x, grid.cell_to_world(cell).y, goal.z) for cell in sampled]
-    if not waypoints or _distance_2d(waypoints[-1], goal) > resolution_m * 2.0:
-        waypoints.append(goal)
-    api_grid = grid.to_api()
-    if bounds is not None:
-        api_grid["bounds"] = {"x_min": bounds[0], "x_max": bounds[1], "y_min": bounds[2], "y_max": bounds[3]}
-    return AvoidancePlan(True, waypoints, f"A* path generated with {len(waypoints)} waypoints", api_grid)
-
-
 def _astar(
-    grid: OccupancyGrid,
+    grid_slice: "Grid2DSlice",
     start: tuple[int, int],
     goal: tuple[int, int],
+    unknown_cell_cost: float = 0.5,
 ) -> list[tuple[int, int]]:
+    """A* on a Grid2DSlice with configurable unknown-cell cost.
+
+    Blocked cells are impassable.  Unknown cells are traversable but
+    incur an extra *unknown_cell_cost* penalty per step so the planner
+    prefers known-free routes.
+    """
     open_heap: list[tuple[float, tuple[int, int]]] = [(0.0, start)]
     came_from: dict[tuple[int, int], tuple[int, int]] = {}
     g_score: dict[tuple[int, int], float] = {start: 0.0}
@@ -122,10 +90,13 @@ def _astar(
         visited.add(current)
         if current == goal:
             return _reconstruct(came_from, current)
-        for neighbor, cost in _neighbors(current):
-            if not grid.in_bounds(neighbor) or grid.is_blocked(neighbor):
+        for neighbor, base_cost in _neighbors(current):
+            if not grid_slice.in_bounds(neighbor) or grid_slice.is_blocked(neighbor):
                 continue
-            tentative = g_score[current] + cost
+            step_cost = base_cost
+            if grid_slice.is_unknown(neighbor):
+                step_cost += unknown_cell_cost
+            tentative = g_score[current] + step_cost
             if tentative < g_score.get(neighbor, float("inf")):
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative

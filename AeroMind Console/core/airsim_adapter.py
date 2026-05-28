@@ -1917,6 +1917,59 @@ class AirSimAdapter:
         self.last_success_at = self._engine.last_success_at
         return result
 
+    def recover_from_collision_with_direction(
+        self,
+        climb_m: float = 8.0,
+        retreat_x: float = 0.0,
+        retreat_y: float = 0.0,
+    ) -> dict[str, Any]:
+        """Recover from collision by climbing and retreating to a safe direction.
+
+        Unlike the generic recover_from_collision which backs off along -X,
+        this method retreats to a caller-chosen (retreat_x, retreat_y) position
+        determined by the temporal grid (e.g. the clearest direction).
+        """
+        self._stop_position_hold()
+        vehicle = self.vehicle_name
+        climb = abs(float(climb_m))
+        rx = float(retreat_x)
+        ry = float(retreat_y)
+
+        def _do(c: Any, a: Any) -> dict[str, Any]:
+            self._engine._cancel_last_task(c, vehicle)
+            state = c.getMultirotorState(vehicle_name=vehicle)
+            position = state.kinematics_estimated.position
+            safe_z = float(position.z_val) - climb
+            c.enableApiControl(True, vehicle_name=vehicle)
+            c.moveToZAsync(z=safe_z, velocity=1.5, vehicle_name=vehicle)
+            time.sleep(0.8)
+            c.moveToPositionAsync(x=rx, y=ry, z=safe_z, velocity=1.5, vehicle_name=vehicle)
+            time.sleep(min(3.0, max(1.2, math.hypot(rx - float(position.x_val), ry - float(position.y_val)) / 4.0)))
+            recovery_mode = "motion"
+            try:
+                collision_info = c.simGetCollisionInfo(vehicle_name=vehicle)
+                has_collided = bool(getattr(collision_info, "has_collided", False))
+            except Exception:
+                has_collided = False
+            state_after = c.getMultirotorState(vehicle_name=vehicle)
+            moved_pos = state_after.kinematics_estimated.position
+            moved_distance = math.sqrt(
+                (float(moved_pos.x_val) - float(position.x_val)) ** 2
+                + (float(moved_pos.y_val) - float(position.y_val)) ** 2
+                + (float(moved_pos.z_val) - float(position.z_val)) ** 2
+            )
+            if has_collided or moved_distance < 1.0:
+                pose = a.Pose(a.Vector3r(rx, ry, safe_z), a.to_quaternion(0.0, 0.0, 0.0))
+                c.simSetVehiclePose(pose, ignore_collision=True, vehicle_name=vehicle)
+                recovery_mode = "relocate"
+                time.sleep(0.2)
+            stopped_at = self._engine._hard_stop(c, a, vehicle)
+            return {"x": rx, "y": ry, "z": safe_z, "mode": recovery_mode, "stopped_at": stopped_at}
+
+        result = self._exec_rpc(_do)
+        self.last_success_at = self._engine.last_success_at
+        return result
+
     def collision_status(self) -> CollisionStatus:
         if not self._engine.connected:
             return CollisionStatus()

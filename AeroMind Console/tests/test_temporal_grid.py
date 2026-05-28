@@ -13,7 +13,7 @@ class TestTemporalVoxelGrid:
         defaults = dict(
             center_x=0.0, center_y=0.0, center_z=-10.0,
             size_xy_m=40.0, size_z_m=20.0, resolution_m=1.0,
-            hit_confirm=2, miss_confirm=3, inflation_m=0.0,
+            hit_confirm=2, free_confirm=3, inflation_m=0.0,
         )
         defaults.update(kw)
         return TemporalVoxelGrid(**defaults)
@@ -67,8 +67,8 @@ class TestTemporalVoxelGrid:
 
     # ── ray casts ──────────────────────────────────────────────
 
-    def test_ray_cast_confirms_hit_and_miss(self):
-        g = self._grid(hit_confirm=2, miss_confirm=2)
+    def test_ray_cast_confirms_hit_and_free(self):
+        g = self._grid(hit_confirm=2, free_confirm=2)
         origin = (0.0, 0.0, -10.0)
         endpoints = [(10.0, 0.0, -10.0)]
         for _ in range(3):
@@ -194,7 +194,7 @@ class TestTemporalVoxelGrid:
         g.clear()
         assert g._total_points == 0
         assert g.hit_counts.sum() == 0
-        assert g.miss_counts.sum() == 0
+        assert g.free_counts.sum() == 0
 
     # ── stats ──────────────────────────────────────────────────
 

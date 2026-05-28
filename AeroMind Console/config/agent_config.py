@@ -25,7 +25,7 @@ class NavigationConfig:
     default_altitude_m: float = 8.0
     default_speed_mps: float = 2.0
     default_lookahead_m: float = 3.0
-    default_replan_interval_s: float = 1.0
+    default_replan_interval_s: float = 0.5
     default_control_dt_s: float = 0.2
     default_obstacle_distance_m: float = 8.0
     default_avoidance_offset_m: float = 6.0
@@ -44,12 +44,19 @@ class NavigationConfig:
     density_factor_multiplier: float = 2.5
     speed_min_mps: float = 0.3
 
-    # ── Temporal grid / A* planning ──
-    grid_half_height: float = 8.0
-    alt_slice_half_height: float = 2.0
-    alt_offset_m: float = 4.0
-    max_waypoints: int = 24
-    max_alt_waypoints: int = 12
+    # ── OctoMap / 3D planning ──
+    octomap_resolution_m: float = 0.5
+    octomap_prob_hit: float = 0.7
+    octomap_prob_miss: float = 0.4
+    octomap_clamping_threshold: float = 0.97
+    octomap_decay_factor: float = 0.95
+    octomap_decay_interval_s: float = 5.0
+    octomap_size_xy_m: float = 160.0
+    octomap_size_z_m: float = 40.0
+    planning_3d_resolution_m: float = 1.0
+    planning_3d_max_waypoints: int = 30
+    planning_3d_unknown_cost: float = 0.5
+    planning_3d_timeout_s: float = 0.8
 
     # ── Safety bounds ──
     x_bound_m: float = 120.0
@@ -58,14 +65,20 @@ class NavigationConfig:
     max_altitude_m: float = 30.0
     min_speed_mps: float = 0.5
     max_speed_mps: float = 4.0
+    max_vertical_speed_mps: float = 1.5
 
     # ── Recovery ──
     recovery_climb_m: float = 8.0
     recovery_backoff_m: float = 10.0
+    collision_recovery_retries: int = 2
 
     # ── Timeouts ──
     mission_prepare_timeout_s: float = 5.0
     takeoff_timeout_s: float = 30.0
+    warmup_duration_s: float = 3.0
+
+    # ── Replanning ──
+    replan_interval_s: float = 0.5
 
     # ── Health check ──
     heartbeat_interval_s: float = 2.0

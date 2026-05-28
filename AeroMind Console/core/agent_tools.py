@@ -14,11 +14,10 @@ logger = logging.getLogger(__name__)
 
 from config import nav_config
 from core.airsim_adapter import AirSimAdapter, DistanceSensorsStatus
-from core.obstacle_avoidance import plan_local_path, plan_local_path_on_slice, AvoidancePlan
 from core.path_planner import lawnmower_path
 from core.path_planner import Waypoint
-from core.temporal_grid import TemporalVoxelGrid
-from core.depth_camera import DepthCamera
+from core.octomap_adapter import OctoMapBridge
+from core.path_planner_3d import plan_path_3d
 from core.structured_log import log_event, log_mission_event
 from core import preflight
 from core import replay
@@ -88,8 +87,7 @@ class AgentToolRuntime:
         self.adapter = adapter
         self.executor = executor
         self.detector = detector or VisionDetector()
-        self._temporal_grid: TemporalVoxelGrid | None = None
-        self._depth_camera: DepthCamera | None = None
+        self._octomap: OctoMapBridge | None = None
         self._grid_needs_reset = False
         self._obstacle_density = 0.0
         self._mission_lock = threading.RLock()
@@ -405,10 +403,11 @@ class AgentToolRuntime:
             float(args.get("z", -8.0)),
         )
         speed_mps = float(args.get("speed_mps", 1.5))
-        replan_interval_s = max(0.3, float(args.get("replan_interval_s", 1.0)))
-        control_dt_s = max(0.1, float(args.get("control_dt_s", 0.2)))
-        lookahead_m = max(1.0, float(args.get("lookahead_m", 3.0)))
+        replan_interval_s = max(0.3, float(args.get("replan_interval_s", nav_config.replan_interval_s)))
+        control_dt_s = max(0.1, float(args.get("control_dt_s", nav_config.default_control_dt_s)))
+        lookahead_m = max(1.0, float(args.get("lookahead_m", nav_config.default_lookahead_m)))
         timeout_s = max(5.0, float(args.get("timeout_s", 120.0)))
+        use_planned_avoidance = bool(args.get("use_planned_avoidance", True))
         self._prepare_new_mission()
         if not self._ensure_airborne(abs(goal.z)):
             return ToolResult(False, "autonomous_nav", "Unable to take off before autonomous navigation")
@@ -428,7 +427,7 @@ class AgentToolRuntime:
         )
         thread = threading.Thread(
             target=self._run_autonomous_nav,
-            args=(goal, speed_mps, replan_interval_s, control_dt_s, lookahead_m, timeout_s, collision_baseline),
+            args=(goal, speed_mps, replan_interval_s, control_dt_s, lookahead_m, timeout_s, collision_baseline, use_planned_avoidance),
             name="aeromind-autonomous-nav",
             daemon=True,
         )
@@ -446,6 +445,7 @@ class AgentToolRuntime:
                 "control_dt_s": control_dt_s,
                 "lookahead_m": lookahead_m,
                 "timeout_s": timeout_s,
+                "use_planned_avoidance": use_planned_avoidance,
                 "route": [goal.to_api()],
             },
         )
@@ -526,9 +526,7 @@ class AgentToolRuntime:
         spacing_m = float(args.get("spacing_m", 10.0))
         speed_mps = float(args.get("speed_mps", 2.0))
         avoidance = bool(args.get("avoidance", True))
-        planned_avoidance = bool(args.get("planned_avoidance", True))
-        obstacle_distance_m = float(args.get("obstacle_distance_m", 8.0))
-        avoidance_offset_m = float(args.get("avoidance_offset_m", 6.0))
+        use_planned_avoidance = bool(args.get("use_planned_avoidance", True))
         scan_margin_m = float(args.get("scan_margin_m", 4.0))
         pre_scan = bool(args.get("pre_scan", False))
         pre_scan_stop_on_high_risk = bool(args.get("pre_scan_stop_on_high_risk", True))
@@ -564,9 +562,7 @@ class AgentToolRuntime:
                 speed_mps,
                 collision_baseline,
                 avoidance,
-                planned_avoidance,
-                obstacle_distance_m,
-                avoidance_offset_m,
+                use_planned_avoidance,
                 effective_area,
                 pre_scan,
                 pre_scan_stop_on_high_risk,
@@ -593,8 +589,7 @@ class AgentToolRuntime:
                 "speed_mps": speed_mps,
                 "avoidance": avoidance,
                 "planned_avoidance": planned_avoidance,
-                "obstacle_distance_m": obstacle_distance_m,
-                "avoidance_offset_m": avoidance_offset_m,
+                "use_planned_avoidance": use_planned_avoidance,
                 "route": [point.to_api() for point in route],
                 "total_waypoints": len(route),
             },
@@ -1189,6 +1184,7 @@ class AgentToolRuntime:
         current_waypoint_index: int,
         total_waypoints: int,
         use_distance_safety: bool = True,
+        use_planned_avoidance: bool = True,
         effective_area: MissionArea | None = None,
         planner_phase: str = "closed_loop_replan",
         on_tick: Callable[[Waypoint, float, float], bool] | None = None,
@@ -1196,74 +1192,38 @@ class AgentToolRuntime:
         goal = Waypoint(float(goal.x), float(goal.y), -abs(float(goal.z)))
         started_at = time.time()
         last_replan_at = 0.0
+        last_decay_at = time.time()
         plan_waypoints: list[Waypoint] = []
         engine = self.adapter._engine
 
-        # Disable position-hold for the entire nav loop; we manage velocity
-        # via engine nav-control mode.  Restored on exit.
         self.adapter._stop_position_hold()
 
-        # -- seed tick: read telemetry (no velocity yet) --------------------
+        # -- seed tick: read telemetry ----------------------------------------
         nav = self.adapter.nav_telemetry()
         tel: Any = nav["telemetry"]
-        self._ensure_temporal_grid(float(tel.x), float(tel.y), float(tel.z))
-        # Force-recenter grid at drone position so this waypoint's A*
-        # always starts with the grid centered on the drone (goal may be
-        # up to 50 m away, which fits within the 100 m grid).
-        if self._temporal_grid is not None:
-            self._temporal_grid.recenter(float(tel.x), float(tel.y), float(goal.z))
 
-        # -- start engine nav-control loop (zero queue overhead) -------------
-        engine.start_nav_control()
-
-        # -- LiDAR warmup: collect 2-3 scans before first A* replan ---------
-        # A single LiDAR scan can produce sparse noise that clusters into
-        # false obstacles after inflation (hit_confirm=3 + inflation_m=1.5).
-        # Waiting for multiple scans gives the temporal grid enough evidence
-        # to distinguish real obstacles from single-scan artifacts.
-        warmup_scans = 0
-        warmup_deadline = time.time() + 3.0
-        last_lidar_pos = None
-        while warmup_scans < 3 and time.time() < warmup_deadline:
-            time.sleep(0.85)  # engine captures LiDAR every ~0.8 s
-            prev_pos = last_lidar_pos
-            raw_lidar, lidar_pos = self.adapter.get_shared_lidar()
-            last_lidar_pos = lidar_pos
-            if raw_lidar and lidar_pos != prev_pos:
-                self._update_temporal_grid()
-                warmup_scans += 1
+        if use_planned_avoidance:
+            self._ensure_octomap(float(tel.x), float(tel.y), float(goal.z))
+            engine.start_nav_control()
+            self._warmup_lidar()
+        else:
+            engine.start_nav_control()
 
         current = Waypoint(float(tel.x), float(tel.y), float(goal.z))
-        target = goal
-        raw_vx, raw_vy, raw_vz = 0.0, 0.0, 0.0
         vx_smooth, vy_smooth, vz_smooth = 0.0, 0.0, 0.0
-        ema_alpha = 0.65  # smoothing factor: higher = more responsive
+        ema_alpha = 0.65
 
         try:
             while not self._active_mission.stop_event.is_set():
-                # -- read telemetry from shared cache (no RPC!) ---------------
-                cache = self.adapter.get_nav_cache()
-                cache_age = time.time() - cache.get("updated_at", 0.0)
+                tel, current, cache = self._read_nav_telemetry(current, goal)
 
-                # Health check: if engine nav mode died or cache is stale,
-                # restart nav control and fall back to direct RPC for this tick.
-                if cache_age > 1.0 or not engine._nav_active:
-                    if not engine._nav_active:
-                        logger.warning("Engine nav control stopped; restarting")
-                        engine.start_nav_control()
-                    # Fallback: direct RPC to refresh the cache
-                    nav = self.adapter.nav_telemetry()
-                    tel = nav["telemetry"]
-                else:
-                    tel = cache["telemetry"]
+                # -- time decay of octomap log-odds ---------------------------------
+                now = time.time()
+                if use_planned_avoidance and self._octomap is not None and now - last_decay_at >= nav_config.octomap_decay_interval_s:
+                    self._octomap.decay_map()
+                    last_decay_at = now
 
-                current = Waypoint(float(tel.x), float(tel.y), float(goal.z))
-
-                # -- safety checks with pre-fetched collision & distances -----
-                # When A* has valid waypoints, relax the distance safety
-                # bubble — A* is already routing around known obstacles.
-                # The sensors become a last-resort failsafe (1.0 m / 0.6 m)
-                # instead of a primary navigation gate.
+                # -- safety checks ----------------------------------------------
                 _et = 1.0 if plan_waypoints else None
                 _st = 0.6 if plan_waypoints else None
                 result = self._check_flight_safety(
@@ -1281,32 +1241,36 @@ class AgentToolRuntime:
                     _emergency_threshold_m=_et,
                     _side_emergency_threshold_m=_st,
                 )
+                if result == "recovered":
+                    collision_baseline = self.adapter.collision_status().time_stamp
+                    continue
                 if result is not None:
-                    return result  # True=reached, False=blocked/timeout/collision
+                    return result
 
-                # -- replan (batched lidar read every replan_interval_s) ------
-                now = time.time()
-                if now - last_replan_at >= replan_interval_s or not plan_waypoints:
-                    plan_waypoints = self._replan_to_goal(
-                        current=current, goal=goal,
-                        planner_phase=planner_phase,
-                        blocked_message=blocked_message,
-                    )
-                    if plan_waypoints is None:
-                        return False
-                    last_replan_at = now
+                # -- replan (or direct-to-goal) ---------------------------------
+                if use_planned_avoidance:
+                    if now - last_replan_at >= replan_interval_s or not plan_waypoints:
+                        plan_waypoints = self._replan_to_goal(
+                            current=current, goal=goal,
+                            planner_phase=planner_phase,
+                            blocked_message=blocked_message,
+                        )
+                        if plan_waypoints is None:
+                            return False
+                        last_replan_at = now
+                else:
+                    plan_waypoints = [goal]
 
-                # -- compute velocity, apply EMA smoothing --------------------
+                # -- velocity computation ---------------------------------------
                 target = self._lookahead_target(current, plan_waypoints, lookahead_m) or goal
-                raw_vx, raw_vy, raw_vz = self._compute_velocity(
+                vx, vy, vz = self._compute_velocity(
                     telemetry=tel, target=target, goal_z=float(goal.z),
                     speed_mps=speed_mps, control_dt_s=control_dt_s,
                 )
-                vx_smooth = ema_alpha * raw_vx + (1 - ema_alpha) * vx_smooth
-                vy_smooth = ema_alpha * raw_vy + (1 - ema_alpha) * vy_smooth
-                vz_smooth = ema_alpha * raw_vz + (1 - ema_alpha) * vz_smooth
+                vx_smooth = ema_alpha * vx + (1 - ema_alpha) * vx_smooth
+                vy_smooth = ema_alpha * vy + (1 - ema_alpha) * vy_smooth
+                vz_smooth = ema_alpha * vz + (1 - ema_alpha) * vz_smooth
 
-                # -- set velocity for engine tick (shared memory, no RPC) -----
                 engine.set_nav_velocity(vx_smooth, vy_smooth, vz_smooth, max(control_dt_s, 0.6))
 
                 self._set_progress(
@@ -1322,6 +1286,38 @@ class AgentToolRuntime:
         finally:
             engine.stop_nav_control()
             self._hold_current_position_quietly()
+
+    def _warmup_lidar(self) -> None:
+        """Time-driven LiDAR warmup: populate OctoMap with initial scans.
+
+        Multiple scans give the OctoMap enough observations to distinguish
+        real obstacles from single-scan noise.
+        """
+        deadline = time.time() + nav_config.warmup_duration_s
+        while time.time() < deadline:
+            time.sleep(0.5)
+            self._update_octomap()
+
+    def _read_nav_telemetry(self, current: Waypoint, goal: Waypoint) -> tuple[Any, Waypoint, dict[str, Any]]:
+        """Read telemetry from shared nav cache (fast) or fall back to RPC.
+
+        Returns (telemetry, current_waypoint, cache_dict).
+        """
+        cache = self.adapter.get_nav_cache()
+        cache_age = time.time() - cache.get("updated_at", 0.0)
+        engine = self.adapter._engine
+
+        if cache_age > 1.0 or not engine._nav_active:
+            if not engine._nav_active:
+                logger.warning("Engine nav control stopped; restarting")
+                engine.start_nav_control()
+            nav = self.adapter.nav_telemetry()
+            tel = nav["telemetry"]
+        else:
+            tel = cache["telemetry"]
+
+        current = Waypoint(float(tel.x), float(tel.y), float(goal.z))
+        return tel, current, cache
 
     @staticmethod
     def _compute_velocity(
@@ -1341,7 +1337,7 @@ class AgentToolRuntime:
         speed = min(float(speed_mps), max(0.4, horizontal_distance / max(control_dt_s, 0.1)))
         vx = dx / horizontal_distance * speed
         vy = dy / horizontal_distance * speed
-        vz = max(-1.0, min(1.0, dz / max(control_dt_s * 4.0, 0.4)))
+        vz = max(-nav_config.max_vertical_speed_mps, min(nav_config.max_vertical_speed_mps, dz / max(control_dt_s * 4.0, 0.4)))
         return vx, vy, vz
 
     def _check_flight_safety(
@@ -1401,6 +1397,15 @@ class AgentToolRuntime:
         collision = _prefetched_collision if _prefetched_collision is not None else self.adapter.collision_status()
         if collision.has_collided and collision.time_stamp > collision_baseline:
             recovery = self._try_recovery()
+            if recovery is not None and getattr(self, '_recovery_retries_remaining', 0) > 0:
+                self._recovery_retries_remaining -= 1
+                self._set_progress(
+                    status="recovering",
+                    collision=collision.to_api(),
+                    recovery=recovery,
+                    message=f"{mission_label} collision recovered; retrying ({self._recovery_retries_remaining} retries left).",
+                )
+                return "recovered"
             self._active_mission.stop_event.set()
             self._set_progress(
                 status="recovered" if recovery is not None else "collision",
@@ -1472,91 +1477,35 @@ class AgentToolRuntime:
         planner_phase: str,
         blocked_message: str,
     ) -> list[Waypoint] | None:
-        """Replan path from current position to goal. Returns waypoints or None if blocked."""
-        self._update_temporal_grid()
-        grid_slice = self._get_2d_slice_for_planning(z_center=float(goal.z), half_height=nav_config.grid_half_height)
-        if grid_slice is not None:
-            plan = plan_local_path_on_slice(
-                start=current, goal=goal, grid_slice=grid_slice, max_waypoints=nav_config.max_waypoints,
-            )
-            grid_info = grid_slice.to_api()
-        else:
-            plan = AvoidancePlan(False, [], "temporal grid not available", {})
-            grid_info = {}
+        """Replan 3D path from current position to goal via OctoMap."""
+        self._update_octomap()
+        if self._octomap is None:
+            self._hold_current_position_quietly()
+            self._set_progress(status="blocked", message=f"{blocked_message}: OctoMap not available")
+            return None
 
-        # If the plan failed because start/goal is outside the grid slice,
-        # force-recenter the grid at the midpoint so both fit within bounds.
-        if not plan.ok and "outside grid slice" in plan.reason and self._temporal_grid is not None:
-            mid_x = (float(current.x) + float(goal.x)) / 2.0
-            mid_y = (float(current.y) + float(goal.y)) / 2.0
-            self._temporal_grid.recenter(mid_x, mid_y, float(goal.z))
-            grid_slice = self._get_2d_slice_for_planning(z_center=float(goal.z), half_height=nav_config.grid_half_height)
-            if grid_slice is not None:
-                plan = plan_local_path_on_slice(
-                    start=current, goal=goal, grid_slice=grid_slice, max_waypoints=nav_config.max_waypoints,
-                )
-                grid_info = grid_slice.to_api()
+        waypoints, diag = plan_path_3d(
+            start=current,
+            goal=goal,
+            octomap=self._octomap,
+            resolution=nav_config.planning_3d_resolution_m,
+            max_waypoints=nav_config.planning_3d_max_waypoints,
+            unknown_cost=nav_config.planning_3d_unknown_cost,
+            timeout_s=nav_config.planning_3d_timeout_s,
+        )
 
         self._set_progress(
-            planner=plan.to_api() | {"phase": planner_phase, "grid": grid_info},
-            message=plan.reason,
+            planner={"ok": diag.get("ok", False), "phase": planner_phase, "3d_planner": diag},
+            message=f"3D A*: {'found' if waypoints else 'no path'} ({diag.get('expansions', 0)} expansions, {diag.get('time_ms', 0)}ms)",
         )
-        if not plan.ok:
-            alt_goal, alt_reason = self._try_alt_replan(current, goal)
-            if alt_goal is not None:
-                self._set_progress(
-                    planner=plan.to_api() | {"phase": planner_phase, "replanned": True,
-                                             "reason": f"altitude adjusted: {alt_reason}"},
-                    message=f"Replanned at alternative altitude: {alt_reason}",
-                )
-                return [alt_goal]
-            alt_info = self._check_alt_slices(current, goal)
+
+        if not waypoints:
             self._hold_current_position_quietly()
-            self._set_progress(status="blocked", message=f"{blocked_message}: {plan.reason}{alt_info}")
+            self._set_progress(status="blocked", message=f"{blocked_message}: no 3D path found")
             return None
-        if grid_slice is not None and hasattr(grid_slice, 'blocked') and grid_slice.width > 0:
-            total_cells = grid_slice.width * grid_slice.height
-            self._obstacle_density = len(getattr(grid_slice, 'blocked', set())) / max(1, total_cells)
-        else:
-            self._obstacle_density = 0.0
-        return plan.waypoints or [goal]
 
-    def _try_alt_replan(self, current: Waypoint, goal: Waypoint) -> tuple[Waypoint | None, str]:
-        """If the current altitude slice is blocked but an upper/lower slice is
-        free, return an adjusted goal at the viable altitude.  Prefers climbing
-        (upper slice) over descending for safety."""
-        if self._temporal_grid is None:
-            return None, ""
-        for offset, label in [(-nav_config.alt_offset_m, "climb"), (nav_config.alt_offset_m, "descend")]:
-            alt_slice = self._temporal_grid.extract_2d_slice(
-                z_center=float(goal.z) + offset, half_height=nav_config.alt_slice_half_height,
-                treat_unknown_as="free",
-            )
-            alt_plan = plan_local_path_on_slice(current, goal, alt_slice, max_waypoints=nav_config.max_alt_waypoints)
-            if alt_plan.ok:
-                alt_z = float(goal.z) + offset
-                return Waypoint(float(goal.x), float(goal.y), alt_z), f"{label} {abs(offset):.0f}m to z={alt_z:.1f}"
-        return None, ""
-
-    def _check_alt_slices(self, current: Waypoint, goal: Waypoint) -> str:
-        """Check upper/lower altitude slices for alternative paths. Returns info string."""
-        if self._temporal_grid is None:
-            return ""
-        upper_slice = self._temporal_grid.extract_2d_slice(
-            z_center=float(goal.z) - nav_config.alt_offset_m, half_height=nav_config.alt_slice_half_height, treat_unknown_as="free",
-        )
-        lower_slice = self._temporal_grid.extract_2d_slice(
-            z_center=float(goal.z) + nav_config.alt_offset_m, half_height=nav_config.alt_slice_half_height, treat_unknown_as="free",
-        )
-        upper_free = (plan_local_path_on_slice(current, goal, upper_slice, max_waypoints=nav_config.max_alt_waypoints)).ok
-        lower_free = (plan_local_path_on_slice(current, goal, lower_slice, max_waypoints=nav_config.max_alt_waypoints)).ok
-        if upper_free and lower_free:
-            return " (upper +4m and lower -4m slices are free — consider altitude change)"
-        elif upper_free:
-            return " (upper +4m slice is free — consider climbing)"
-        elif lower_free:
-            return " (lower -4m slice is free — consider descending)"
-        return ""
+        self._obstacle_density = self._octomap.occupied_count / max(1, self._octomap.cols * self._octomap.rows * self._octomap.layers)
+        return waypoints
 
     def _run_autonomous_nav(
         self,
@@ -1567,6 +1516,7 @@ class AgentToolRuntime:
         lookahead_m: float,
         timeout_s: float,
         collision_baseline: int,
+        use_planned_avoidance: bool = True,
     ) -> None:
         try:
             reached = self._closed_loop_drive_to_goal(
@@ -1584,6 +1534,7 @@ class AgentToolRuntime:
                 current_waypoint_index=1,
                 total_waypoints=1,
                 use_distance_safety=True,
+                use_planned_avoidance=use_planned_avoidance,
                 planner_phase="closed_loop_replan",
             )
             if reached:
@@ -1609,9 +1560,7 @@ class AgentToolRuntime:
         speed_mps: float,
         collision_baseline: int,
         avoidance: bool,
-        planned_avoidance: bool,
-        obstacle_distance_m: float,
-        avoidance_offset_m: float,
+        use_planned_avoidance: bool,
         effective_area: MissionArea,
         pre_scan: bool,
         pre_scan_stop_on_high_risk: bool,
@@ -1626,9 +1575,7 @@ class AgentToolRuntime:
             self._fly_search_route(
                 target=target, route=route, speed_mps=speed_mps,
                 collision_baseline=collision_baseline,
-                avoidance=avoidance, planned_avoidance=planned_avoidance,
-                obstacle_distance_m=obstacle_distance_m,
-                avoidance_offset_m=avoidance_offset_m,
+                avoidance=avoidance, use_planned_avoidance=use_planned_avoidance,
                 effective_area=effective_area,
             )
         except Exception as exc:
@@ -1722,18 +1669,10 @@ class AgentToolRuntime:
         speed_mps: float,
         collision_baseline: int,
         avoidance: bool,
-        planned_avoidance: bool,
-        obstacle_distance_m: float,
-        avoidance_offset_m: float,
+        use_planned_avoidance: bool,
         effective_area: MissionArea,
     ) -> None:
-        """Execute the search route waypoint by waypoint with closed-loop LiDAR A*.
-
-        Each waypoint is flown via _closed_loop_drive_to_goal which provides:
-        - Continuous LiDAR → temporal grid → A* replanning (dynamic avoidance)
-        - EMA-smoothed velocity control via engine nav mode (no blocking RPC)
-        - Cached collision / distance safety checks (no extra RPC round-trips)
-        """
+        """Execute the search route via closed-loop LiDAR A* per waypoint."""
         total = len(route)
         for index, waypoint in enumerate(route, start=1):
             if self._active_mission.stop_event.is_set():
@@ -1747,9 +1686,9 @@ class AgentToolRuntime:
             reached = self._closed_loop_drive_to_goal(
                 goal=goal,
                 speed_mps=speed_mps,
-                replan_interval_s=1.2 if planned_avoidance else 1.8,
-                control_dt_s=0.25,
-                lookahead_m=max(2.5, avoidance_offset_m),
+                replan_interval_s=nav_config.replan_interval_s,
+                control_dt_s=nav_config.default_control_dt_s,
+                lookahead_m=nav_config.default_lookahead_m,
                 timeout_s=waypoint_timeout,
                 collision_baseline=collision_baseline,
                 mission_label=f"Search [{target}]",
@@ -1759,6 +1698,7 @@ class AgentToolRuntime:
                 current_waypoint_index=index,
                 total_waypoints=total,
                 use_distance_safety=avoidance,
+                use_planned_avoidance=use_planned_avoidance,
                 effective_area=effective_area,
                 planner_phase="search_closed_loop_replan",
             )
@@ -1988,35 +1928,6 @@ class AgentToolRuntime:
                         ),
                     )
                     return False
-            if avoidance and reactive_avoidance and avoidance_attempts < 3:
-                obstacle = self.adapter.obstacle_status(lookahead_m=obstacle_distance_m)
-                self._set_progress(obstacle=obstacle.to_api())
-                if obstacle.available and obstacle.blocked:
-                    if getattr(obstacle, "risk_level", "") == "critical":
-                        recovery = self._try_recovery()
-                        self._active_mission.stop_event.set()
-                        self._set_progress(
-                            status="recovered" if recovery is not None else "blocked",
-                            recovery=recovery,
-                            message="Critical wall-like obstacle detected; recovery attempted and search stopped.",
-                        )
-                        return False
-                    avoidance_attempts += 1
-                    if not self._avoid_obstacle(waypoint, obstacle, speed_mps, avoidance_offset_m, avoidance_attempts, collision_baseline):
-                        return False
-                    started_at = time.time()
-                    timeout_s = max(12.0, self._distance_to_waypoint(waypoint) / max(0.5, speed_mps) + 8.0)
-                    try:
-                        self.executor.goto_local(
-                            waypoint.x,
-                            waypoint.y,
-                            waypoint.z,
-                            speed_mps=speed_mps,
-                            face_target=True,
-                        )
-                    except Exception as exc:
-                        self._set_progress(status="failed", message=f"Resume waypoint command failed: {exc}")
-                        return False
             distance = self._distance_to_waypoint(waypoint)
             self._set_progress(distance_to_waypoint_m=round(distance, 2))
             if distance <= 2.0:
@@ -2048,120 +1959,6 @@ class AgentToolRuntime:
             + (float(telemetry.y) - float(waypoint.y)) ** 2
             + (float(telemetry.z) - float(waypoint.z)) ** 2
         )
-
-    def _replan_blocked_waypoint(
-        self, start: Waypoint, target: Waypoint, grid_slice: Any,
-    ) -> list[Waypoint] | None:
-        """Try to find an alternative waypoint when the original is blocked."""
-        goal_cell = grid_slice.world_to_cell(target.x, target.y)
-        if goal_cell is not None:
-            free_goal = grid_slice.nearest_free(goal_cell, max_radius=16)
-            if free_goal is not None and free_goal != goal_cell:
-                wx, wy = grid_slice.cell_to_world(free_goal)
-                alt_target = Waypoint(wx, wy, target.z)
-                plan = plan_local_path_on_slice(start, alt_target, grid_slice, max_waypoints=14)
-                if plan.ok:
-                    self._set_progress(
-                        planner=plan.to_api() | {"replanned": True, "reason": f"waypoint shifted to nearest free cell"},
-                        message=f"Replanned: waypoint ({target.x:.1f},{target.y:.1f}) shifted to free cell ({wx:.1f},{wy:.1f}).",
-                    )
-                    return plan.waypoints
-
-        if self._temporal_grid is not None:
-            for alt_offset in (-4.0, 4.0):
-                alt_z = float(target.z) + alt_offset
-                alt_slice = self._temporal_grid.extract_2d_slice(
-                    z_center=alt_z, half_height=2.0, treat_unknown_as="free",
-                )
-                alt_plan = plan_local_path_on_slice(start, target, alt_slice, max_waypoints=12)
-                if alt_plan.ok:
-                    alt_target = Waypoint(target.x, target.y, alt_z)
-                    alt_plan_full = plan_local_path_on_slice(start, alt_target, alt_slice, max_waypoints=14)
-                    if alt_plan_full.ok:
-                        self._set_progress(
-                            planner=alt_plan_full.to_api() | {"replanned": True, "reason": f"altitude adjusted by {alt_offset:+.0f}m"},
-                            message=f"Replanned: waypoint altitude shifted {alt_offset:+.0f}m to z={alt_z:.1f} for obstacle clearance.",
-                        )
-                        return alt_plan_full.waypoints
-
-        return None
-
-    def _planned_sub_waypoints(self, goal: Any, enabled: bool, effective_area: MissionArea | None = None) -> list[Waypoint]:
-        if not enabled:
-            return [goal]
-        telemetry = self.adapter.telemetry()
-        start = Waypoint(float(telemetry.x), float(telemetry.y), float(goal.z))
-        target = Waypoint(float(goal.x), float(goal.y), float(goal.z))
-        self._update_temporal_grid()
-        grid_slice = self._get_2d_slice_for_planning(z_center=float(goal.z), half_height=8.0)
-
-        if grid_slice is None:
-            distances = self.adapter.distance_sensors_status(
-                emergency_threshold_m=2.8,
-                side_emergency_threshold_m=1.8,
-            )
-            if distances.available and not distances.emergency:
-                self._set_progress(
-                    planner={
-                        "ok": True,
-                        "reason": "temporal grid not available; direct segment allowed by distance safety bubble",
-                        "fallback": "direct_safe_segment",
-                    },
-                    distance_sensors=distances.to_api(),
-                    message="Planner fallback: temporal grid unavailable; flying direct segment with distance safety bubble.",
-                )
-                return [target]
-            obstacle = self.adapter.obstacle_status(lookahead_m=10.0)
-            if not obstacle.blocked or obstacle.risk_level in {"unknown", "low", "medium"}:
-                self._set_progress(
-                    planner={
-                        "ok": True,
-                        "reason": "temporal grid unavailable; cautious direct segment fallback enabled",
-                        "fallback": "direct_cautious_segment",
-                    },
-                    obstacle=obstacle.to_api(),
-                    distance_sensors=distances.to_api(),
-                    message="Planner fallback: temporal grid unavailable; continuing with cautious direct segment.",
-                )
-                return [target]
-            self._set_progress(
-                status="blocked",
-                planner={"ok": False, "reason": "temporal grid unavailable and distance safety bubble is unsafe"},
-                distance_sensors=distances.to_api(),
-                message="Planned avoidance needs temporal grid or safe distance readings; search stopped to avoid blind flight.",
-            )
-            self._active_mission.stop_event.set()
-            return []
-
-        plan = plan_local_path_on_slice(
-            start=start,
-            goal=target,
-            grid_slice=grid_slice,
-            max_waypoints=14,
-        )
-        self._set_progress(planner=plan.to_api())
-        if not plan.ok:
-            replanned = self._replan_blocked_waypoint(start, target, grid_slice)
-            if replanned is not None:
-                return replanned
-            obstacle = self.adapter.obstacle_status(lookahead_m=12.0)
-            if obstacle.blocked and obstacle.risk_level in {"high", "critical"}:
-                recovery = self._try_recovery()
-                self._active_mission.stop_event.set()
-                self._set_progress(
-                    status="recovered" if recovery is not None else "blocked",
-                    obstacle=obstacle.to_api(),
-                    recovery=recovery,
-                    message="Planner found no safe path and no alternative waypoint near obstacle; recovery attempted.",
-                )
-                return []
-            self._set_progress(
-                planner=plan.to_api() | {"fallback": "skip_blocked_waypoint"},
-                obstacle=obstacle.to_api(),
-                message=f"A* planner failed to reach waypoint ({target.x:.1f}, {target.y:.1f}); skipping blocked waypoint.",
-            )
-            return []
-        return plan.waypoints
 
     def _preflight_area_assessment(self, area: MissionArea, route: list[Any]) -> dict[str, Any]:
         self._set_progress(
@@ -2260,73 +2057,10 @@ class AgentToolRuntime:
     def _inset_area(area: MissionArea, margin_m: float) -> MissionArea:
         return preflight.inset_area(area, margin_m)
 
-    def _avoid_obstacle(
-        self,
-        waypoint: Any,
-        obstacle: Any,
-        speed_mps: float,
-        offset_m: float,
-        attempt: int,
-        collision_baseline: int,
-    ) -> bool:
-        telemetry = self.adapter.telemetry()
-        side = str(getattr(obstacle, "recommended_side", "left") or "left")
-        side_sign = -1.0 if side == "left" else 1.0
-        bypass_x = float(telemetry.x) + min(4.0, max(1.5, float(offset_m) * 0.5))
-        bypass_y = float(telemetry.y) + side_sign * max(2.0, float(offset_m))
-        bypass_z = float(waypoint.z)
-        with self._mission_lock:
-            count = int(self._mission_progress.get("avoidance_count") or 0) + 1
-        self._set_progress(
-            status="avoiding",
-            avoidance_count=count,
-            obstacle=obstacle.to_api(),
-            message=f"Obstacle ahead; bypassing {side} via temporary waypoint {attempt}.",
-        )
-        try:
-            self.executor.goto_local(bypass_x, bypass_y, bypass_z, speed_mps=max(1.0, min(speed_mps, 2.0)))
-        except Exception as exc:
-            self._set_progress(status="failed", message=f"Avoidance command failed: {exc}")
-            return False
-
-        started_at = time.time()
-        timeout_s = max(8.0, self._distance_to_xyz(bypass_x, bypass_y, bypass_z) / max(0.5, speed_mps) + 5.0)
-        while time.time() - started_at <= timeout_s:
-            if self._active_mission.stop_event.is_set():
-                self._set_progress(status="stopped", message="Search area stopped during avoidance.")
-                return False
-            collision = self.adapter.collision_status()
-            if collision.has_collided and collision.time_stamp > collision_baseline:
-                recovery = self._try_recovery()
-                self._set_progress(
-                    status="recovered" if recovery is not None else "collision",
-                    collision=collision.to_api(),
-                    recovery=recovery,
-                    message="Collision detected during avoidance; recovery attempted.",
-                )
-                return False
-            distance = self._distance_to_xyz(bypass_x, bypass_y, bypass_z)
-            self._set_progress(distance_to_waypoint_m=round(distance, 2))
-            if distance <= 2.0:
-                self._set_progress(status="running", message="Avoidance waypoint reached; resuming route.")
-                return True
-            time.sleep(0.5)
-        recovery = self._try_recovery()
-        self._set_progress(status="recovered" if recovery is not None else "timeout", recovery=recovery, message="Avoidance waypoint timeout; recovery attempted.")
-        return False
-
-    def _distance_to_xyz(self, x: float, y: float, z: float) -> float:
-        telemetry = self.adapter.telemetry()
-        return math.sqrt(
-            (float(telemetry.x) - float(x)) ** 2
-            + (float(telemetry.y) - float(y)) ** 2
-            + (float(telemetry.z) - float(z)) ** 2
-        )
-
     def _try_recovery(self) -> dict[str, Any] | None:
         try:
             safe_heading_deg = None
-            if self._temporal_grid is not None:
+            if self._octomap is not None:
                 telemetry = self.adapter.telemetry()
                 drone_x, drone_y, drone_z = float(telemetry.x), float(telemetry.y), float(telemetry.z)
                 check_distance = 6.0
@@ -2336,19 +2070,26 @@ class AgentToolRuntime:
                     rad = math.radians(angle_deg)
                     check_x = drone_x + math.cos(rad) * check_distance
                     check_y = drone_y + math.sin(rad) * check_distance
-                    if self._temporal_grid.is_path_blocked(check_x, check_y, drone_z, half_height=6.0):
+                    # Check occupancy along the path
+                    path_blocked = False
+                    for step in range(1, 6):
+                        t = step / 5.0
+                        sx = drone_x + (check_x - drone_x) * t
+                        sy = drone_y + (check_y - drone_y) * t
+                        if self._octomap.is_occupied(sx, sy, drone_z):
+                            path_blocked = True
+                            break
+                    if path_blocked:
                         continue
-                    idx = self._temporal_grid._world_to_voxel(check_x, check_y, drone_z)
-                    if idx is not None:
-                        col, row, _layer = idx
-                        blocked_in_dir = 0
-                        for dc in range(-2, 3):
-                            for dr in range(-2, 3):
-                                if self._temporal_grid.is_confirmed_occupied(col + dc, row + dr, 0):
-                                    blocked_in_dir += 1
-                        if blocked_in_dir < best_blocked:
-                            best_blocked = blocked_in_dir
-                            best_dir = float(angle_deg)
+                    # Count occupied voxels near the check point
+                    blocked_in_dir = 0
+                    for dx in (-2.0, -1.0, 0.0, 1.0, 2.0):
+                        for dy in (-2.0, -1.0, 0.0, 1.0, 2.0):
+                            if self._octomap.is_occupied(check_x + dx, check_y + dy, drone_z):
+                                blocked_in_dir += 1
+                    if blocked_in_dir < best_blocked:
+                        best_blocked = blocked_in_dir
+                        best_dir = float(angle_deg)
                 if best_blocked < 999999:
                     safe_heading_deg = best_dir
 
@@ -2383,44 +2124,38 @@ class AgentToolRuntime:
                 self._set_progress(message=f"hard_stop hover fallback also failed: {hover_err}")
             return None
 
-    def _reset_temporal_grid(self, x: float, y: float, z: float) -> None:
-        """Discard old grid and create a fresh one at (x, y, z).
-
-        Called at mission start so stale obstacle data from previous flights
-        never pollutes the current mission's map or A* planning.
-        """
-        self._temporal_grid = TemporalVoxelGrid(
-            center_x=x, center_y=y, center_z=z,
-            size_xy_m=100.0, size_z_m=24.0, resolution_m=0.5,
-            hit_confirm=4, miss_confirm=5, inflation_m=1.0,
+    def _reset_octomap(self, x: float, y: float, z: float) -> None:
+        """Discard old map and create a fresh OctoMap at (x, y, z)."""
+        self._octomap = OctoMapBridge(
+            resolution=nav_config.octomap_resolution_m,
+            prob_hit=nav_config.octomap_prob_hit,
+            prob_miss=nav_config.octomap_prob_miss,
+            clamping_threshold=nav_config.octomap_clamping_threshold,
+            decay_factor=nav_config.octomap_decay_factor,
+            size_xy_m=nav_config.octomap_size_xy_m,
+            size_z_m=nav_config.octomap_size_z_m,
         )
-        self._depth_camera = DepthCamera(
-            camera_name=self.adapter.active_camera_name or "front_center",
-            max_range_m=40.0, sample_step=8, max_points_per_frame=2000,
-        )
+        self._octomap.recenter(x, y, z)
         self._obstacle_density = 0.0
 
-    def _ensure_temporal_grid(self, x: float, y: float, z: float) -> TemporalVoxelGrid:
+    def _ensure_octomap(self, x: float, y: float, z: float) -> OctoMapBridge:
         if self._grid_needs_reset:
-            self._reset_temporal_grid(x, y, z)
+            self._reset_octomap(x, y, z)
             self._grid_needs_reset = False
-            return self._temporal_grid
-        if self._temporal_grid is not None:
-            if self._temporal_grid.should_recenter(x, y, z):
-                self._temporal_grid.recenter(x, y, z)
-            return self._temporal_grid
-        self._reset_temporal_grid(x, y, z)
-        return self._temporal_grid
+            return self._octomap
+        if self._octomap is not None:
+            if self._octomap.should_recenter(x, y, z):
+                self._octomap.recenter(x, y, z)
+            return self._octomap
+        self._reset_octomap(x, y, z)
+        return self._octomap
 
-    def _update_temporal_grid(self) -> None:
-        if self._temporal_grid is None:
+    def _update_octomap(self) -> None:
+        if self._octomap is None:
             return
 
         engine = self.adapter._engine
         if engine._nav_active:
-            # Nav mode: read LiDAR from the shared cache that the engine
-            # refreshes during _nav_tick_impl.  No _exec_rpc → no queue
-            # round-trip → nav loop stays unblocked.
             raw_lidar, (px, py, pz) = self.adapter.get_shared_lidar()
             if not raw_lidar:
                 return
@@ -2432,10 +2167,10 @@ class AgentToolRuntime:
             )
 
         if raw_lidar:
-            self._temporal_grid.add_points_3d(raw_lidar)
-            # Write 2D projection + sampled 3D raw points to shared nav-cache
+            # Insert LiDAR points with ray-casting from drone position
+            self._octomap.insert_point_cloud(raw_lidar, sensor_origin=(px, py, pz))
+            # Write 2D projection + sampled 3D points to shared nav-cache
             lidar_2d: list[tuple[float, float]] = [(x, y) for (x, y, _z) in raw_lidar]
-            # Sample ~500 3D points for frontend FPV depth view
             sample_n = min(500, len(raw_lidar))
             if len(raw_lidar) > sample_n:
                 step = len(raw_lidar) // sample_n
@@ -2444,76 +2179,26 @@ class AgentToolRuntime:
                 lidar_3d_sample = [{"x": round(p[0], 2), "y": round(p[1], 2), "z": round(p[2], 2)} for p in raw_lidar]
             self.adapter.update_nav_cache({"lidar_points": lidar_2d, "raw_lidar_3d": lidar_3d_sample, "drone_pos": (px, py, pz)})
 
-        if self._temporal_grid.should_recenter(px, py, pz):
-            self._temporal_grid.recenter(px, py, pz)
+        if self._octomap.should_recenter(px, py, pz):
+            self._octomap.recenter(px, py, pz)
 
-        # Extract confirmed occupied cells at flight altitude for frontend 2D/3D viz
-        if self._temporal_grid is not None and px != 0 and py != 0:
-            occ_cells = self._extract_occupancy_cells(pz)
-            voxels_3d = self._extract_3d_voxels(pz)
-            self.adapter.update_nav_cache({"occupancy_grid": occ_cells, "voxel_grid_3d": voxels_3d})
+        # Extract 3D occupied voxels for frontend visualization
+        if self._octomap is not None and px != 0 and py != 0:
+            voxels_3d = self._extract_octomap_voxels(pz)
+            self.adapter.update_nav_cache({"voxel_grid_3d": voxels_3d})
 
-        if self._depth_camera is not None and not engine._nav_active:
-            cloud = self._depth_camera.capture(self.adapter)
-            if cloud.ok and cloud.sampled_point_count > 0:
-                self._temporal_grid.add_ray_casts(
-                    origin=cloud.camera_position,
-                    endpoints=cloud.points_world,
-                )
-
-    def _get_2d_slice_for_planning(self, z_center: float, half_height: float = 8.0):
-        if self._temporal_grid is None:
-            return None
-        return self._temporal_grid.extract_2d_slice(
-            z_center=z_center, half_height=half_height, treat_unknown_as="free",
-        )
-
-    def _extract_3d_voxels(self, z_center: float, max_voxels: int = 1500) -> list[dict[str, float]]:
-        """Extract confirmed-occupied 3D voxels for frontend 3D rendering.
-
-        Uses numpy to find occupied cells efficiently (avoids Python-looping
-        240k+ voxels on every LiDAR update tick).
-        """
-        if self._temporal_grid is None:
+    def _extract_octomap_voxels(self, z_center: float, max_voxels: int = 1500) -> list[dict[str, float]]:
+        """Extract occupied voxels for frontend 3D rendering."""
+        if self._octomap is None:
             return []
-        tg = self._temporal_grid
-        occ_mask = tg.hit_counts >= tg.hit_confirm
-        occ_indices = np.argwhere(occ_mask)
-        if occ_indices.size == 0:
-            return []
-        if occ_indices.shape[0] > max_voxels * 2:
-            rng = np.random.default_rng(seed=int(time.time() * 100) % (2**31))
-            occ_indices = occ_indices[rng.choice(occ_indices.shape[0], size=max_voxels * 2, replace=False)]
-        half_z = tg.size_z_m / 2.0
-        voxels: list[dict[str, float]] = []
-        for col, row, layer in occ_indices:
-            col, row, layer = int(col), int(row), int(layer)
-            wx = tg.origin_x + (col + 0.5) * tg.resolution_m
-            wy = tg.origin_y + (row + 0.5) * tg.resolution_m
-            wz = tg.origin_z + (layer + 0.5) * tg.resolution_m
-            if abs(wz - z_center) > half_z:
-                continue
-            voxels.append({"x": round(wx, 2), "y": round(wy, 2), "z": round(wz, 2)})
-            if len(voxels) >= max_voxels:
-                break
-        return voxels
-
-    def _extract_occupancy_cells(self, z_center: float, max_cells: int = 800) -> list[dict[str, float]]:
-        """Extract confirmed-occupied 2D cells near *z_center* for frontend rendering."""
-        if self._temporal_grid is None:
-            return []
-        half = 4.0  # obstacles within ±4m of flight altitude
-        slice_2d = self._temporal_grid.extract_2d_slice(
-            z_center=z_center, half_height=half, treat_unknown_as="free",
-        )
-        cells: list[dict[str, float]] = []
-        half_m = slice_2d.resolution_m / 2.0
-        for col, row in slice_2d.blocked:
-            wx, wy = slice_2d.cell_to_world((col, row))
-            cells.append({"x": round(wx, 2), "y": round(wy, 2), "r": round(half_m, 2)})
-            if len(cells) >= max_cells:
-                break
-        return cells
+        half_z = self._octomap.size_z_m / 2.0
+        z_min = z_center - half_z
+        z_max = z_center + half_z
+        voxels = self._octomap.get_occupied_voxels(z_range=(z_min, z_max))
+        if len(voxels) > max_voxels:
+            step = len(voxels) // max_voxels
+            voxels = voxels[::step][:max_voxels]
+        return [{"x": v[0], "y": v[1], "z": v[2]} for v in voxels]
 
     def _prepare_new_mission(self, timeout: float | None = None) -> threading.Event:
         if timeout is None:
@@ -2531,6 +2216,7 @@ class AgentToolRuntime:
         stop_event = threading.Event()
         self._active_mission = ActiveMission(stop_event=stop_event, name="pending")
         self._grid_needs_reset = True
+        self._recovery_retries_remaining = nav_config.collision_recovery_retries
         return stop_event
 
     def _set_progress(self, **updates: Any) -> None:
