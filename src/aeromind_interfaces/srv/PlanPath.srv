@@ -1,0 +1,7 @@
+# 路径规划服务
+geometry_msgs/Pose start    # 起点位姿
+geometry_msgs/Pose goal     # 终点位姿
+---
+aeromind_interfaces/Path path    # 规划结果
+bool success                      # 是否成功
+string message                    # 附加消息

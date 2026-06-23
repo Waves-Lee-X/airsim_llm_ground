@@ -1,0 +1,5 @@
+# 解锁/加锁服务
+bool arm        # true=解锁, false=加锁
+---
+bool success    # 是否成功
+string message  # 附加消息

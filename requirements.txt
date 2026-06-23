@@ -1,4 +1,4 @@
-airsim
+airsim; platform_system == "Windows"
 numpy
 PySide6
 PySide6-Addons

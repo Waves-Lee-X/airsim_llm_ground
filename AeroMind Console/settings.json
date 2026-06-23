@@ -6,6 +6,11 @@
   "RpcPort": 41451,
   "ViewMode": "FlyWithMe",
   "ClockSpeed": 1.0,
+  "OriginGeopoint": {
+    "Latitude": 47.641468,
+    "Longitude": -122.140165,
+    "Altitude": 0.0
+  },
   "CameraDefaults": {
     "CaptureSettings": [
       {
@@ -31,9 +36,10 @@
   },
   "Vehicles": {
     "Drone1": {
-      "VehicleType": "SimpleFlight",
+      "VehicleType": "PX4Multirotor",
       "AutoCreate": true,
-      "UseMavLink": true,
+      "UseSerial": false,
+      "SerialPort": "*",
       "EnableCollisionPassthrough": false,
       "EnableTrace": true,
       "AllowAPIAlways": true,
@@ -41,11 +47,10 @@
       "Y": 0,
       "Z": 0,
       "Yaw": 0,
-      "MavLink": {
-        "UDPPort": 14550,
-        "SimCompID": 42,
-        "SimSysID": 1
-      },
+      "SitlIp": "192.168.18.156",
+      "SitlPort": 4560,
+      "ControlIp": "192.168.16.1",
+      "LocalHostIp": "192.168.16.1",
       "Cameras": {
         "front_center": {
           "X": 0.5,
@@ -153,7 +158,9 @@
         },
         "BarometerSensor1": {
           "SensorType": 1,
-          "Enabled": true
+          "Enabled": true,
+          "Pressure": 101325.0,
+          "QNH": 101325.0
         },
         "MagnetometerSensor1": {
           "SensorType": 4,

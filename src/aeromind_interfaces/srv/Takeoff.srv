@@ -1,0 +1,5 @@
+# 起飞服务
+float32 altitude    # 目标高度 (m)
+---
+bool success        # 是否成功
+string message      # 附加消息

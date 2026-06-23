@@ -13,6 +13,11 @@ venv/
 .vscode/
 .idea/
 
+# ROS 2 build artifacts
+build/
+install/
+log/
+
 # Logs
 logs/
 *.log

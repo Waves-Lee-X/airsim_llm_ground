@@ -1,0 +1,6 @@
+# 任务执行服务（LLM Agent 入口）
+string task_description    # 自然语言任务描述
+---
+bool success               # 是否成功
+string result              # 执行结果摘要
+string message             # 附加消息 / 错误信息
