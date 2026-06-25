@@ -60,17 +60,11 @@ def create_camera_info(width: int, height: int, fov_degrees: float,
 def airsim_image_to_ros(airsim_img, img_type: int, frame_id: str = "") -> Image:
     """AirSim ImageResponse → sensor_msgs/Image
 
-    AirSim 的 image_data_uint8 返回已解码的原始像素字节（BGRA/RGBA），
-    不需要 cv2 二次解码。
+    RGB 图像请求使用 compress=False，返回原始 RGBA/RGB 像素。
+    DepthPerspective 请求使用 pixels_as_float=True，返回 float32 深度数组。
     """
     if isinstance(airsim_img, str):
         return Image()
-
-    data = airsim_img.image_data_uint8
-    if isinstance(data, (bytes, bytearray)):
-        raw = np.frombuffer(data, dtype=np.uint8)
-    else:
-        raw = np.asarray(data, dtype=np.uint8)
 
     h = airsim_img.height
     w = airsim_img.width
@@ -83,13 +77,35 @@ def airsim_image_to_ros(airsim_img, img_type: int, frame_id: str = "") -> Image:
     img.is_bigendian = False
 
     if img_type == 2:  # DepthPerspective → 32FC1 (4 bytes per pixel)
-        img.data = raw[:pixel_count * 4].tobytes()
+        depth = np.asarray(airsim_img.image_data_float, dtype=np.float32)
+        if depth.size < pixel_count:
+            raise ValueError(
+                f"Depth image data too short: {depth.size} < {pixel_count}"
+            )
+        img.data = depth[:pixel_count].tobytes()
         img.encoding = "32FC1"
         img.step = w * 4
-    else:  # Scene / Segmentation → BGRA (4 channels)
-        img.data = raw[:pixel_count * 4].tobytes()
-        img.encoding = "bgra8"
-        img.step = w * 4
+    else:
+        data = airsim_img.image_data_uint8
+        if isinstance(data, (bytes, bytearray)):
+            raw = np.frombuffer(data, dtype=np.uint8)
+        else:
+            raw = np.asarray(data, dtype=np.uint8)
+
+        rgba_size = pixel_count * 4
+        rgb_size = pixel_count * 3
+        if raw.size >= rgba_size:
+            img.data = raw[:rgba_size].tobytes()
+            img.encoding = "rgba8"
+            img.step = w * 4
+        elif raw.size >= rgb_size:
+            img.data = raw[:rgb_size].tobytes()
+            img.encoding = "rgb8"
+            img.step = w * 3
+        else:
+            raise ValueError(
+                f"RGB image data too short: {raw.size} bytes for {w}x{h}"
+            )
 
     return img
 
@@ -145,12 +161,14 @@ class CameraBridge:
         # 为每个相机配置创建发布者
         self._img_publishers = {}   # topic → Image publisher
         self._info_pubs = {}        # camera_info topic → CameraInfo publisher
+        self._parent_info_pubs = {} # parent camera_info topic → CameraInfo publisher
         self._info_data = {}        # camera_info topic → (CameraInfo_msg, w, h, fov)
 
         for cam_name, topic_postfix, fov, w, h, img_type in self._camera_configs:
             topic = f"/sensor/camera/{topic_postfix}"
             info_topic = f"{topic}/camera_info"
-            frame_id = f"camera_{cam_name}"
+            parent_info_topic = f"{topic.rsplit('/', 1)[0]}/camera_info"
+            frame_id = f"camera_{cam_name}_optical"
 
             if topic not in self._img_publishers:
                 self._img_publishers[topic] = node.create_publisher(
@@ -162,6 +180,10 @@ class CameraBridge:
                 )
                 self._info_data[info_topic] = (
                     create_camera_info(w, h, fov, frame_id), w, h, fov
+                )
+            if parent_info_topic not in self._parent_info_pubs:
+                self._parent_info_pubs[parent_info_topic] = node.create_publisher(
+                    CameraInfo, parent_info_topic, 10
                 )
 
         # LiDAR 发布者
@@ -186,18 +208,34 @@ class CameraBridge:
         camera_frames = set()
         for _, topic_postfix, _, _, _, _ in self._camera_configs:
             cam_name = topic_postfix.split("/")[-1] if "/" in topic_postfix else topic_postfix
-            frame_id = f"camera_{cam_name}"
-            if frame_id not in camera_frames:
-                camera_frames.add(frame_id)
+            body_frame_id = f"camera_{cam_name}_body"
+            optical_frame_id = f"camera_{cam_name}_optical"
+            if cam_name not in camera_frames:
+                camera_frames.add(cam_name)
+
                 t = TransformStamped()
                 t.header.stamp = now
                 t.header.frame_id = "odom"
-                t.child_frame_id = frame_id
+                t.child_frame_id = body_frame_id
                 t.transform.translation.x = 0.0
                 t.transform.translation.y = 0.0
                 t.transform.translation.z = 0.0
                 t.transform.rotation.w = 1.0
                 transforms.append(t)
+
+                optical_t = TransformStamped()
+                optical_t.header.stamp = now
+                optical_t.header.frame_id = body_frame_id
+                optical_t.child_frame_id = optical_frame_id
+                optical_t.transform.translation.x = 0.0
+                optical_t.transform.translation.y = 0.0
+                optical_t.transform.translation.z = 0.0
+                # Match AirSim ROS ENU camera optical frame: Z forward, X right, Y down.
+                optical_t.transform.rotation.x = -0.7071068
+                optical_t.transform.rotation.y = 0.0
+                optical_t.transform.rotation.z = 0.0
+                optical_t.transform.rotation.w = 0.7071068
+                transforms.append(optical_t)
 
         # LiDAR 帧
         t = TransformStamped()
@@ -224,24 +262,38 @@ class CameraBridge:
             try:
                 topic = f"/sensor/camera/{topic_postfix}"
                 info_topic = f"{topic}/camera_info"
+                parent_info_topic = f"{topic.rsplit('/', 1)[0]}/camera_info"
 
-                # 请求单张图像
+                pixels_as_float = (img_type == self.IMAGE_TYPE_DEPTH)
+                # compress=False 才会返回 ROS Image 需要的原始像素/深度数组。
                 responses = self._client.simGetImages([
-                    airsim.ImageRequest(cam_name, img_type, pixels_as_float=False)
+                    airsim.ImageRequest(
+                        cam_name,
+                        img_type,
+                        pixels_as_float=pixels_as_float,
+                        compress=False,
+                    )
                 ])
                 if responses and len(responses) > 0:
                     img_msg = airsim_image_to_ros(
                         responses[0], img_type,
-                        frame_id=f"camera_{cam_name}"
+                        frame_id=f"camera_{cam_name}_optical"
                     )
                     img_msg.header.stamp = now
                     self._img_publishers[topic].publish(img_msg)
 
                     # 发布 camera_info
                     if info_topic in self._info_data and info_topic in self._info_pubs:
-                        info_msg, _, _, _ = self._info_data[info_topic]
+                        info_msg = create_camera_info(
+                            img_msg.width,
+                            img_msg.height,
+                            fov,
+                            frame_id=f"camera_{cam_name}_optical",
+                        )
                         info_msg.header.stamp = now
                         self._info_pubs[info_topic].publish(info_msg)
+                        if parent_info_topic in self._parent_info_pubs:
+                            self._parent_info_pubs[parent_info_topic].publish(info_msg)
             except Exception as e:
                 self._logger.warn(f"相机 {cam_name} 获取失败: {e}")
 

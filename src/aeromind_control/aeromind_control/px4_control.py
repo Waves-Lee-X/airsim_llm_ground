@@ -8,17 +8,13 @@ px4_control.py — PX4 飞控命令构造与 Offboard 控制逻辑
   - 路径跟随：逐航点发布 TrajectorySetpoint
 
 PX4 Offboard 控制流程：
-  1. 发布 VehicleCommand (ARM)
-  2. 发布 VehicleCommand (DO_SET_MODE → OFFBOARD)
-  3. 持续发布 OffboardControlMode（>2Hz，否则 PX4 会自动退出 Offboard）
-  4. 发布 TrajectorySetpoint 进行位置/速度控制
-  5. 发布相应 VehicleCommand (TAKEOFF / LAND)
+  1. 先发布若干帧 OffboardControlMode + TrajectorySetpoint
+  2. 发布 VehicleCommand (ARM)
+  3. 发布 VehicleCommand (DO_SET_MODE → OFFBOARD)
+  4. 持续发布 OffboardControlMode + TrajectorySetpoint（>2Hz）
 """
 
 import time
-import math
-
-from geometry_msgs.msg import PoseStamped, Point
 
 # px4_msgs 可选导入
 try:
@@ -160,8 +156,37 @@ class PX4Controller:
         self._offboard_timer = node.create_timer(0.1, self._offboard_heartbeat)
         self._offboard_active = False
         self._offboard_mode = "position"  # "position" | "velocity"
+        self._last_trajectory_setpoint = None
 
         self._logger.info("PX4 控制器已初始化")
+
+    def _timestamp_us(self) -> int:
+        """返回 PX4 消息使用的微秒时间戳"""
+        return int(self._node.get_clock().now().nanoseconds / 1000)
+
+    def _publish_vehicle_command(self, cmd):
+        cmd.timestamp = self._timestamp_us()
+        self._vehicle_cmd_pub.publish(cmd)
+
+    def _publish_offboard_control_mode(self):
+        mode = OffboardControlMode()
+        mode.timestamp = self._timestamp_us()
+        if self._offboard_mode == "position":
+            mode.position = True
+            mode.velocity = False
+        else:
+            mode.position = False
+            mode.velocity = True
+        mode.acceleration = False
+        mode.attitude = False
+        mode.body_rate = False
+        self._offboard_mode_pub.publish(mode)
+
+    def _publish_last_trajectory_setpoint(self):
+        if self._last_trajectory_setpoint is None:
+            return
+        self._last_trajectory_setpoint.timestamp = self._timestamp_us()
+        self._trajectory_pub.publish(self._last_trajectory_setpoint)
 
     # ============================================================
     # 基础飞控命令
@@ -172,7 +197,7 @@ class PX4Controller:
         if not HAS_PX4_MSGS:
             return False
         cmd = _make_arm_command(True)
-        self._vehicle_cmd_pub.publish(cmd)
+        self._publish_vehicle_command(cmd)
         self._logger.info("PX4: 解锁指令已发送")
         return True
 
@@ -182,7 +207,7 @@ class PX4Controller:
             return False
         self._offboard_active = False
         cmd = _make_arm_command(False)
-        self._vehicle_cmd_pub.publish(cmd)
+        self._publish_vehicle_command(cmd)
         self._logger.info("PX4: 加锁指令已发送")
         return True
 
@@ -190,9 +215,9 @@ class PX4Controller:
         """切换到 Offboard 模式并启动心跳"""
         if not HAS_PX4_MSGS:
             return False
-        cmd = _make_offboard_mode_command()
-        self._vehicle_cmd_pub.publish(cmd)
         self._offboard_active = True
+        cmd = _make_offboard_mode_command()
+        self._publish_vehicle_command(cmd)
         self._logger.info("PX4: Offboard 模式已激活")
         return True
 
@@ -205,8 +230,36 @@ class PX4Controller:
         if not HAS_PX4_MSGS:
             return False
         cmd = _make_takeoff_command(altitude)
-        self._vehicle_cmd_pub.publish(cmd)
+        self._publish_vehicle_command(cmd)
         self._logger.info(f"PX4: 起飞指令已发送 (高度={altitude}m)")
+        return True
+
+    def offboard_takeoff(self, altitude: float, x: float = 0.0, y: float = 0.0) -> bool:
+        """使用 Offboard 位置控制起飞到指定本地高度。
+
+        Args:
+            altitude: 目标高度 (ROS ENU, m, 正值向上)
+            x, y: 起飞时保持的本地水平位置 (ROS ENU, m)
+        """
+        if not HAS_PX4_MSGS:
+            return False
+
+        self._offboard_mode = "position"
+        self._last_trajectory_setpoint = _position_to_trajectory_setpoint(x, y, altitude)
+
+        # PX4 要求切 Offboard 前已经收到若干帧 setpoint。
+        for _ in range(10):
+            self._publish_offboard_control_mode()
+            self._publish_last_trajectory_setpoint()
+            time.sleep(0.1)
+
+        self.arm()
+        time.sleep(0.2)
+        self.set_offboard_mode()
+        self._offboard_active = True
+        self._logger.info(
+            f"PX4: Offboard 起飞目标已设置 (x={x:.2f}, y={y:.2f}, 高度={altitude:.2f}m)"
+        )
         return True
 
     def land(self) -> bool:
@@ -214,7 +267,7 @@ class PX4Controller:
         if not HAS_PX4_MSGS:
             return False
         cmd = _make_land_command()
-        self._vehicle_cmd_pub.publish(cmd)
+        self._publish_vehicle_command(cmd)
         self._offboard_active = False
         self._logger.info("PX4: 降落指令已发送")
         return True
@@ -234,6 +287,8 @@ class PX4Controller:
             return
         self._offboard_mode = "position"
         sp = _position_to_trajectory_setpoint(x, y, z, yaw)
+        sp.timestamp = self._timestamp_us()
+        self._last_trajectory_setpoint = sp
         self._trajectory_pub.publish(sp)
 
     def follow_path(self, waypoints: list, velocity: float = 5.0, timeout_per_wp: float = 30.0):
@@ -268,22 +323,12 @@ class PX4Controller:
     # ============================================================
 
     def _offboard_heartbeat(self):
-        """Offboard 模式心跳：持续发布控制模式以维持 Offboard"""
+        """Offboard 模式心跳：持续发布控制模式和目标点以维持 Offboard"""
         if not self._offboard_active or not HAS_PX4_MSGS:
             return
 
-        mode = OffboardControlMode()
-        mode.timestamp = 0
-        if self._offboard_mode == "position":
-            mode.position = True
-            mode.velocity = False
-        else:
-            mode.position = False
-            mode.velocity = True
-        mode.acceleration = False
-        mode.attitude = False
-        mode.body_rate = False
-        self._offboard_mode_pub.publish(mode)
+        self._publish_offboard_control_mode()
+        self._publish_last_trajectory_setpoint()
 
     @property
     def available(self) -> bool:

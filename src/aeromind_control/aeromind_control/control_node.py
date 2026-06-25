@@ -193,20 +193,11 @@ class ControlNode(Node):
             return response
 
         try:
-            # Step 1: 解锁
-            if not self._armed:
-                self._px4_ctrl.arm()
-                time.sleep(1.0)
-
-            # Step 2: 直接发送 NAV_TAKEOFF 指令
-            # PX4 收到后会自动进入 AUTO_TAKEOFF 模式并爬升到目标高度
-            # 注意: NAV_TAKEOFF 在 POSCTL/ALTCTL 等模式下工作,
-            # 不要在 Offboard 模式下使用
-            self._px4_ctrl.takeoff(altitude)
-
+            # 使用 Offboard 位置控制起飞：PX4 收到连续 setpoint 后解锁并切 OFFBOARD。
+            self._px4_ctrl.offboard_takeoff(altitude)
             self._armed = True
             response.success = True
-            response.message = f"PX4 起飞指令已发送，目标高度={altitude}m"
+            response.message = f"PX4 Offboard 起飞已启动，目标高度={altitude}m"
         except Exception as e:
             response.success = False
             response.message = f"PX4 起飞失败: {e}"

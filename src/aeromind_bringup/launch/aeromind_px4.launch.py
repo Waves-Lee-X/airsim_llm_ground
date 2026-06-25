@@ -12,11 +12,43 @@ aeromind_px4.launch.py — AeroMind PX4 模式启动文件
 """
 
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+
+def _get_windows_ip():
+    """自动获取 Windows 宿主机 IP（WSL2 默认网关）"""
+    import socket
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if "via" in parts:
+                idx = parts.index("via")
+                ip = parts[idx + 1]
+                socket.inet_aton(ip)
+                return ip
+    except Exception:
+        pass
+    return "192.168.1.100"
 
 
 def generate_launch_description():
     """生成 PX4 模式 LaunchDescription"""
+
+    default_ip = _get_windows_ip()
+    airsim_ip_arg = DeclareLaunchArgument(
+        "airsim_ip",
+        default_value=default_ip,
+        description="AirSim 宿主机 IP 地址（默认自动检测 WSL 网关）",
+    )
+    airsim_ip = LaunchConfiguration("airsim_ip")
 
     # AirSim/PX4 桥接节点（PX4 模式）
     bridge_node = Node(
@@ -24,7 +56,7 @@ def generate_launch_description():
         executable="airsim_bridge_node",
         name="airsim_bridge_node",
         output="screen",
-        parameters=[{"mode": "px4"}],
+        parameters=[{"mode": "px4"}, {"airsim_ip": airsim_ip}],
     )
 
     # 感知节点
@@ -70,6 +102,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        airsim_ip_arg,
         bridge_node,
         perception_node,
         planning_node,

@@ -5,9 +5,9 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /TF1/Frames1
         - /Camera1
         - /PointCloud21
+        - /TF1/Frames1
       Splitter Ratio: 0.5
     Tree Height: 365
   - Class: rviz_common/Selection
@@ -60,7 +60,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /sensor/camera/rgb/front_center/compressed
+        Value: /sensor/camera/rgb/front_center
       Value: true
       Visibility:
         Grid: true
@@ -107,11 +107,35 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
+        camera_bottom_center:
+          Value: true
+        camera_front_center:
+          Value: true
+        camera_front_left:
+          Value: true
+        camera_front_right:
+          Value: true
+        lidar:
+          Value: true
+        odom:
+          Value: true
       Marker Scale: 1
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
+      Tree:
+        odom:
+          camera_bottom_center:
+            {}
+          camera_front_center:
+            {}
+          camera_front_left:
+            {}
+          camera_front_right:
+            {}
+          lidar:
+            {}
       Update Interval: 0
       Value: true
   Enabled: true
@@ -198,5 +222,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1113
-  X: 721
-  Y: 505
+  X: 689
+  Y: 473

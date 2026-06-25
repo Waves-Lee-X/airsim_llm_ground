@@ -102,7 +102,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: odom
+    Fixed Frame: camera_front_center_body
     Frame Rate: 30
   Name: root
   Tools:

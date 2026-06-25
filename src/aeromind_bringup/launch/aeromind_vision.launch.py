@@ -34,18 +34,6 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     """生成 Vision LaunchDescription"""
 
-    # === RGB 图压缩转发 ===
-    rgb_relay = Node(
-        package="image_transport",
-        executable="republish",
-        name="rgb_relay",
-        arguments=["raw", "compressed"],
-        remappings=[
-            ("in", "/sensor/camera/rgb/front_center"),
-            ("out/compressed", "/sensor/camera/rgb/front_center/compressed"),
-        ],
-    )
-
     # === RViz2：深度点云 ===
     pkg_share = get_package_share_directory("aeromind_bringup")
     depth_rviz_path = os.path.join(pkg_share, "launch", "depth_cloud.rviz")
@@ -67,7 +55,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        rgb_relay,
         depth_rviz_node,
         image_lidar_rviz_node,
     ])

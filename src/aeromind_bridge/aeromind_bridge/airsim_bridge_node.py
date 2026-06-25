@@ -241,6 +241,9 @@ class AirSimBridgeNode(Node):
         self._latest_sensor_combined = None
         self._latest_local_pos = None
         self._latest_vehicle_status = None
+        self._px4_offboard_active = False
+        self._latest_cmd_vel_mode = None
+        self._latest_cmd_vel_setpoint = None
 
         # 导入消息类型
         from px4_msgs.msg import (  # type: ignore
@@ -302,8 +305,28 @@ class AirSimBridgeNode(Node):
         self._px4_vehicle_cmd_pub = self.create_publisher(
             VCmd, "/fmu/in/vehicle_command", 10
         )
+        self._px4_cmd_vel_timer = self.create_timer(0.1, self._px4_cmd_vel_timer_callback)
 
         self.get_logger().info("PX4 模式已初始化，等待 uXRCE-DDS 话题数据...")
+
+    def _px4_timestamp_us(self) -> int:
+        return int(self.get_clock().now().nanoseconds / 1000)
+
+    def _publish_px4_vehicle_cmd(self, cmd):
+        cmd.timestamp = self._px4_timestamp_us()
+        self._px4_vehicle_cmd_pub.publish(cmd)
+
+    def _publish_px4_cmd_vel_setpoint(self):
+        if self._latest_cmd_vel_mode is None or self._latest_cmd_vel_setpoint is None:
+            return
+        self._latest_cmd_vel_mode.timestamp = self._px4_timestamp_us()
+        self._latest_cmd_vel_setpoint.timestamp = self._px4_timestamp_us()
+        self._px4_offboard_mode_pub.publish(self._latest_cmd_vel_mode)
+        self._px4_trajectory_pub.publish(self._latest_cmd_vel_setpoint)
+
+    def _px4_cmd_vel_timer_callback(self):
+        if self._px4_offboard_active:
+            self._publish_px4_cmd_vel_setpoint()
 
     def _px4_attitude_callback(self, msg):
         self._latest_attitude = msg
@@ -395,22 +418,45 @@ class AirSimBridgeNode(Node):
             if status.arming_state == 1:  # 未解锁
                 if msg.linear.z > 1.0 or msg.linear.y > 1.0:  # 上升(ENU +Z)或前进(ENU +Y)
                     self.get_logger().info("自动解锁 + 切换 Offboard 模式")
-                    self._px4_vehicle_cmd_pub.publish(
-                        self._make_arm_cmd(True)
-                    )
-                    self._px4_vehicle_cmd_pub.publish(
-                        self._make_offboard_cmd()
-                    )
+                    self._prepare_cmd_vel_offboard(msg)
+                    self._publish_px4_vehicle_cmd(self._make_arm_cmd(True))
+                    time.sleep(0.2)
+                    self._publish_px4_vehicle_cmd(self._make_offboard_cmd())
+                    self._px4_offboard_active = True
                     return  # 等下一帧再发速度
                 return  # 未解锁且无上升指令，不发
+            if status.nav_state != 14 and self._has_motion_command(msg):
+                self.get_logger().info("切换 Offboard 模式用于键盘控制")
+                self._prepare_cmd_vel_offboard(msg)
+                self._publish_px4_vehicle_cmd(self._make_offboard_cmd())
+                self._px4_offboard_active = True
+                return
 
         try:
             mode = cmd_vel_to_offboard_control(msg)
             sp = cmd_vel_to_trajectory_setpoint(msg)
-            self._px4_offboard_mode_pub.publish(mode)
-            self._px4_trajectory_pub.publish(sp)
+            self._latest_cmd_vel_mode = mode
+            self._latest_cmd_vel_setpoint = sp
+            self._px4_offboard_active = True
+            self._publish_px4_cmd_vel_setpoint()
         except Exception as e:
             self.get_logger().warn(f"PX4 速度指令发送失败: {e}")
+
+    @staticmethod
+    def _has_motion_command(msg: Twist) -> bool:
+        return (
+            abs(msg.linear.x) > 0.01
+            or abs(msg.linear.y) > 0.01
+            or abs(msg.linear.z) > 0.01
+            or abs(msg.angular.z) > 0.01
+        )
+
+    def _prepare_cmd_vel_offboard(self, msg: Twist):
+        self._latest_cmd_vel_mode = cmd_vel_to_offboard_control(msg)
+        self._latest_cmd_vel_setpoint = cmd_vel_to_trajectory_setpoint(msg)
+        for _ in range(10):
+            self._publish_px4_cmd_vel_setpoint()
+            time.sleep(0.1)
 
     @staticmethod
     def _make_arm_cmd(arm: bool):
