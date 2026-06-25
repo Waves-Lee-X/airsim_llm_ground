@@ -42,7 +42,9 @@ class ControlNode(Node):
 
         # 声明参数
         self.declare_parameter("px4_mode", "airsim")
+        self.declare_parameter("airsim_ip", "192.168.1.100")
         self._px4_mode = self.get_parameter("px4_mode").value
+        self._airsim_ip = self.get_parameter("airsim_ip").value
         self.get_logger().info(f"控制模式: {self._px4_mode}")
 
         # 创建服务
@@ -87,7 +89,7 @@ class ControlNode(Node):
             self.get_logger().error("airsim 包未安装！请执行 pip install airsim")
             return
         try:
-            self._client = airsim.MultirotorClient()
+            self._client = airsim.MultirotorClient(ip=self._airsim_ip)
             self._client.confirmConnection()
             self.get_logger().info("已连接到 AirSim")
         except Exception as e:
@@ -132,7 +134,7 @@ class ControlNode(Node):
 
     def _px4_status_callback(self, msg):
         """PX4 状态更新：同步 armed 和发布 drone_state"""
-        self._armed = (msg.arming_state == 3)
+        self._armed = (msg.arming_state == 2)
 
         state = DroneState()
         state.armed = self._armed
@@ -196,15 +198,10 @@ class ControlNode(Node):
                 self._px4_ctrl.arm()
                 time.sleep(1.0)
 
-            # Step 2: 切换到 Offboard 模式
-            self._px4_ctrl.set_offboard_mode()
-            time.sleep(0.5)
-
-            # Step 3: 设置当前位置悬停（不漂移）
-            self._px4_ctrl.set_position(0.0, 0.0, -10.0)  # ENU, z 向上
-            time.sleep(0.5)
-
-            # Step 4: 发送起飞指令
+            # Step 2: 直接发送 NAV_TAKEOFF 指令
+            # PX4 收到后会自动进入 AUTO_TAKEOFF 模式并爬升到目标高度
+            # 注意: NAV_TAKEOFF 在 POSCTL/ALTCTL 等模式下工作,
+            # 不要在 Offboard 模式下使用
             self._px4_ctrl.takeoff(altitude)
 
             self._armed = True

@@ -10,6 +10,8 @@ AirSim 模式功能：
   - 定时发布 /sensor/odometry（10Hz）
   - 定时发布 /sensor/imu（10Hz）
   - 定时发布 /control/drone_state（10Hz）
+  - 定时发布相机图像 /sensor/camera/*（1Hz）
+  - 定时发布 LiDAR 点云 /sensor/lidar/points（1Hz）
   - 订阅 /control/cmd_vel → 转发给 AirSim
 
 PX4 模式功能：
@@ -33,6 +35,7 @@ from std_msgs.msg import Header
 
 # 自定义消息
 from aeromind_interfaces.msg import DroneState
+from aeromind_bridge.camera_bridge import CameraBridge
 
 # PX4 转换工具
 from aeromind_bridge.px4_bridge import (
@@ -81,11 +84,13 @@ class AirSimBridgeNode(Node):
         )
 
         # 根据模式初始化
-        self._client = None  # AirSim 客户端
+        self._client = None  # AirSim 客户端（sensor 数据用）
         if self._mode == "airsim":
             self._init_airsim()
         else:
             self._init_px4()
+            # PX4 模式下也连接 AirSim 以获取相机/LiDAR
+            self._init_airsim_camera_only()
 
         self.get_logger().info("桥接节点初始化完成")
 
@@ -110,8 +115,28 @@ class AirSimBridgeNode(Node):
         # 定时器：10Hz 读取传感器
         self._airsim_timer = self.create_timer(0.1, self._airsim_timer_callback)
 
+        # 定时器：1Hz 发布相机图像和 LiDAR
+        self._camera_bridge = CameraBridge(self, self._client)
+        self._camera_timer = self.create_timer(1.0, self._camera_timer_callback)
+
         # 缓存 IMU 所需的最新状态
         self._latest_airsim_state = None
+
+    def _init_airsim_camera_only(self):
+        """PX4 模式下仅连接 AirSim 获取相机/LiDAR（不接飞控）"""
+        if not HAS_AIRSIM:
+            return
+        try:
+            self._client = airsim.MultirotorClient(ip=self._airsim_ip)
+            self._client.confirmConnection()
+            self.get_logger().info(f"已连接 AirSim 相机/LiDAR ({self._airsim_ip})")
+        except Exception as e:
+            self.get_logger().warn(f"AirSim 相机连接失败（不影响 PX4 飞控）: {e}")
+            self._client = None
+            return
+
+        self._camera_bridge = CameraBridge(self, self._client)
+        self._camera_timer = self.create_timer(1.0, self._camera_timer_callback)
 
     def _airsim_timer_callback(self):
         """AirSim 定时器：读取状态并发布 ROS 消息"""
@@ -187,6 +212,11 @@ class AirSimBridgeNode(Node):
         drone_state.ekf_healthy = True
         self._state_pub.publish(drone_state)
 
+    def _camera_timer_callback(self):
+        """1Hz 定时器：发布相机图像和 LiDAR 点云"""
+        if self._camera_bridge is not None:
+            self._camera_bridge.publish_all()
+
     # ============================================================
     # PX4 模式
     # ============================================================
@@ -210,6 +240,7 @@ class AirSimBridgeNode(Node):
         self._latest_attitude = None
         self._latest_sensor_combined = None
         self._latest_local_pos = None
+        self._latest_vehicle_status = None
 
         # 导入消息类型
         from px4_msgs.msg import (  # type: ignore
@@ -261,12 +292,15 @@ class AirSimBridgeNode(Node):
         self._px4_timer = self.create_timer(0.1, self._px4_timer_callback)
 
         # PX4 模式下的 cmd_vel 发布者
-        from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint
+        from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand as VCmd
         self._px4_offboard_mode_pub = self.create_publisher(
             OffboardControlMode, "/fmu/in/offboard_control_mode", 10
         )
         self._px4_trajectory_pub = self.create_publisher(
             TrajectorySetpoint, "/fmu/in/trajectory_setpoint", 10
+        )
+        self._px4_vehicle_cmd_pub = self.create_publisher(
+            VCmd, "/fmu/in/vehicle_command", 10
         )
 
         self.get_logger().info("PX4 模式已初始化，等待 uXRCE-DDS 话题数据...")
@@ -281,7 +315,8 @@ class AirSimBridgeNode(Node):
         self._latest_local_pos = msg
 
     def _px4_status_callback(self, msg):
-        """PX4 VehicleStatus → /control/drone_state"""
+        """PX4 VehicleStatus → /control/drone_state + 缓存状态"""
+        self._latest_vehicle_status = msg  # 缓存用于 cmd_vel 自动 arm
         try:
             state = vehicle_status_to_drone_state(msg)
             self._state_pub.publish(state)
@@ -317,17 +352,23 @@ class AirSimBridgeNode(Node):
     def _cmd_vel_callback(self, msg: Twist):
         """速度指令：转发到对应后端"""
         if self._mode == "airsim":
+            self.get_logger().info(
+                f"cmd_vel: vx={msg.linear.x:.1f} vy={msg.linear.y:.1f} "
+                f"vz={msg.linear.z:.1f} yaw={msg.angular.z:.1f}"
+            )
             self._cmd_vel_to_airsim(msg)
         else:
             self._cmd_vel_to_px4(msg)
 
     def _cmd_vel_to_airsim(self, msg: Twist):
-        """速度指令 → AirSim moveByVelocityAsync"""
+        """速度指令 → AirSim moveByVelocityAsync (ENU → NED 转换)"""
         if self._client is None:
             return
         try:
+            # AirSim API 使用 NED 坐标系，ROS Twist 使用 ENU
+            # ENU (x=东, y=北, z=上) → NED (x=北, y=东, z=下)
             self._client.moveByVelocityAsync(
-                msg.linear.x, msg.linear.y, msg.linear.z,
+                msg.linear.y, msg.linear.x, -msg.linear.z,
                 duration=0.1,
                 drivetrain=airsim.DrivetrainType.MaxDegreeOfFreedom,
                 yaw_mode=airsim.YawMode(
@@ -338,9 +379,31 @@ class AirSimBridgeNode(Node):
             self.get_logger().warn(f"AirSim 速度指令发送失败: {e}")
 
     def _cmd_vel_to_px4(self, msg: Twist):
-        """速度指令 → PX4 OffboardControlMode + TrajectorySetpoint"""
+        """速度指令 → PX4 OffboardControlMode + TrajectorySetpoint
+
+        模仿 lesson3 move_velocity.py 逻辑：
+        - 未解锁 + 上升指令 → 自动 arm + offboard
+        - 已 offboard → 发布速度设定点
+        """
         if not HAS_PX4_MSGS:
             return
+
+        # 检查是否需要自动 arm
+        status = getattr(self, '_latest_vehicle_status', None)
+        if status is not None:
+            # arming_state: 1=DISARMED, 2=ARMED; nav_state: 14=OFFBOARD
+            if status.arming_state == 1:  # 未解锁
+                if msg.linear.z > 1.0 or msg.linear.y > 1.0:  # 上升(ENU +Z)或前进(ENU +Y)
+                    self.get_logger().info("自动解锁 + 切换 Offboard 模式")
+                    self._px4_vehicle_cmd_pub.publish(
+                        self._make_arm_cmd(True)
+                    )
+                    self._px4_vehicle_cmd_pub.publish(
+                        self._make_offboard_cmd()
+                    )
+                    return  # 等下一帧再发速度
+                return  # 未解锁且无上升指令，不发
+
         try:
             mode = cmd_vel_to_offboard_control(msg)
             sp = cmd_vel_to_trajectory_setpoint(msg)
@@ -348,6 +411,37 @@ class AirSimBridgeNode(Node):
             self._px4_trajectory_pub.publish(sp)
         except Exception as e:
             self.get_logger().warn(f"PX4 速度指令发送失败: {e}")
+
+    @staticmethod
+    def _make_arm_cmd(arm: bool):
+        """构造解锁 VehicleCommand"""
+        from px4_msgs.msg import VehicleCommand as VCmd
+        cmd = VCmd()
+        cmd.timestamp = 0
+        cmd.param1 = 1.0 if arm else 0.0
+        cmd.command = 400  # VEHICLE_CMD_COMPONENT_ARM_DISARM
+        cmd.target_system = 1
+        cmd.target_component = 1
+        cmd.source_system = 1
+        cmd.source_component = 1
+        cmd.from_external = True
+        return cmd
+
+    @staticmethod
+    def _make_offboard_cmd():
+        """构造切换 Offboard 模式 VehicleCommand"""
+        from px4_msgs.msg import VehicleCommand as VCmd
+        cmd = VCmd()
+        cmd.timestamp = 0
+        cmd.param1 = 1.0
+        cmd.param2 = 6.0
+        cmd.command = 176  # VEHICLE_CMD_DO_SET_MODE
+        cmd.target_system = 1
+        cmd.target_component = 1
+        cmd.source_system = 1
+        cmd.source_component = 1
+        cmd.from_external = True
+        return cmd
 
     # ============================================================
     # 空消息（AirSim 未连接时的降级输出）

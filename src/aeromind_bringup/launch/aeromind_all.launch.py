@@ -20,18 +20,20 @@ from launch_ros.actions import Node
 
 
 def _get_windows_ip():
-    """从 /etc/resolv.conf 自动获取 Windows 宿主机 IP（WSL2）"""
+    """自动获取 Windows 宿主机 IP（WSL2 默认网关）"""
+    import subprocess
     try:
-        with open("/etc/resolv.conf", "r") as f:
-            for line in f:
-                if line.startswith("nameserver"):
-                    ip = line.split()[1]
-                    # 验证是合法 IPv4
-                    try:
-                        socket.inet_aton(ip)
-                        return ip
-                    except socket.error:
-                        continue
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if "via" in parts:
+                idx = parts.index("via")
+                ip = parts[idx + 1]
+                socket.inet_aton(ip)
+                return ip
     except Exception:
         pass
     return "192.168.1.100"
@@ -76,6 +78,7 @@ def generate_launch_description():
         executable="control_node",
         name="control_node",
         output="screen",
+        parameters=[{"airsim_ip": airsim_ip}],
     )
 
     agent_node = Node(

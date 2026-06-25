@@ -56,18 +56,17 @@ except ImportError:
 
 
 # ============================================================
-# PX4 arming_state → 描述字符串
+# PX4 arming_state → 描述字符串 (VehicleStatus v4)
 # ============================================================
+# 注意: 新版 PX4 VehicleStatus 中 arming_state 含义:
+#   1=DISARMED, 2=ARMED
+# 旧版旧定义(1=INIT,2=STANDBY,3=ARMED)已废弃
 ARMING_STATE_MAP = {
-    1: "INIT",
-    2: "STANDBY",
-    3: "ARMED",
-    4: "ARMED_ERROR",
-    5: "STANDBY_ERROR",
-    6: "REBOOT",
+    1: "DISARMED",
+    2: "ARMED",
 }
 
-# PX4 nav_state → 描述字符串
+# PX4 nav_state → 描述字符串 (对齐 PX4 v1.14+ 官方定义)
 NAV_STATE_MAP = {
     0:  "MANUAL",
     1:  "ALTCTL",
@@ -75,18 +74,18 @@ NAV_STATE_MAP = {
     3:  "AUTO_MISSION",
     4:  "AUTO_LOITER",
     5:  "AUTO_RTL",
-    6:  "ACRO",
-    7:  "UNUSED",
-    8:  "AUTO_LAND",
-    9:  "AUTO_RTGS",
-    10: "AUTO_READY",
-    11: "AUTO_TAKEOFF",
-    12: "UNUSED2",
-    13: "UNUSED3",
+    6:  "POSITION_SLOW",
+    10: "ACRO",
+    12: "DESCEND",
+    13: "TERMINATION",
     14: "OFFBOARD",
-    15: "UNUSED4",
-    16: "UNUSED5",
-    17: "AUTO_VTOL_TAKEOFF",
+    15: "STAB",
+    17: "AUTO_TAKEOFF",
+    18: "AUTO_LAND",
+    19: "AUTO_FOLLOW_TARGET",
+    20: "AUTO_PRECLAND",
+    21: "ORBIT",
+    22: "AUTO_VTOL_TAKEOFF",
 }
 
 # PX4 VehicleCommand 命令码
@@ -292,11 +291,11 @@ def build_imu_from_px4(
 def vehicle_status_to_drone_state(px4_msg) -> DroneState:
     """px4_msgs/VehicleStatus → aeromind_interfaces/DroneState"""
     state = DroneState()
-    state.armed = (px4_msg.arming_state == 3)  # 3 = ARMED
+    state.armed = (px4_msg.arming_state == 2)  # 2 = ARMED (PX4 v1.14+)
     state.mode = NAV_STATE_MAP.get(px4_msg.nav_state, f"UNKNOWN({px4_msg.nav_state})")
     state.battery = 0.0   # VehicleStatus 不含电池信息
     state.gps_fix = 2     # 默认值，GPS 信息需从 SensorGps 话题获取
-    state.ekf_healthy = True  # VehicleStatus 不含 EKF 信息
+    state.ekf_healthy = (px4_msg.pre_flight_checks_pass if hasattr(px4_msg, 'pre_flight_checks_pass') else True)
     return state
 
 

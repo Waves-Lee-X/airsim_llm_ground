@@ -52,6 +52,15 @@ def generate_launch_description():
         parameters=[{"px4_mode": "px4"}],
     )
 
+    # 键盘遥控节点（需要独立终端运行，不在此启动）
+    # 使用: ros2 run aeromind_teleop teleop_node
+    # teleop_node = Node(
+    #     package="aeromind_teleop",
+    #     executable="teleop_node",
+    #     name="teleop_node",
+    #     output="screen",
+    # )
+
     # Agent 节点
     agent_node = Node(
         package="aeromind_agent",

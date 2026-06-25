@@ -85,17 +85,19 @@ Planning ◀──────────────────────�
                                             全部模块可消费
 ```
 
-### 3.2 包列表（7 个）
+### 3.2 包列表（9 个）
 
 | 包名 | 类型 | 职责 | 负责人/状态 |
 |------|------|------|------------|
 | `aeromind_interfaces` | ament_cmake | 4 msg + 5 srv 定义 | **公共依赖，所有人** |
+| `px4_msgs` | ament_cmake | PX4 官方消息定义（200+ msg） | 公共依赖 |
 | `aeromind_bridge` | ament_python | AirSim/PX4 ↔ ROS 2 传感器与控制桥接 | 组员 A |
 | `aeromind_perception` | ament_python | YOLO 检测 + OctoMap 建图（占位） | 组员 B |
 | `aeromind_planning` | ament_python | 路径规划服务（直线插值→A*） | 组员 C |
 | `aeromind_control` | ament_python | 飞行控制服务（arm/takeoff/land/路径跟随） | 组员 D |
 | `aeromind_agent` | ament_python | LLM 任务调度（服务链编排） | 组员 E |
-| `aeromind_bringup` | ament_cmake | 启动文件汇总 | 公共 |
+| `aeromind_teleop` | ament_python | 键盘遥控（位置/速度双模式） | 辅助工具 |
+| `aeromind_bringup` | ament_cmake | 启动文件汇总 + RViz 配置 | 公共 |
 
 ---
 
@@ -130,7 +132,7 @@ cd ~/aeromind_ws
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
 
-# === 4. 安装 MicroXRCE-DDS Agent（PX4 ↔ ROS 2 协议桥） ===
+# === 4. 安装 ros（PX4 ↔ ROS 2 协议桥） ===
 sudo snap install micro-xrce-dds-agent
 
 # === 5. 克隆并编译 PX4（首次约 30 分钟） ===
@@ -147,7 +149,7 @@ make px4_sitl_default   # 仅编译，不启动仿真
 # 验证 ROS 2 工作空间
 cd ~/aeromind_ws && source install/setup.bash
 ros2 pkg list | grep aeromind
-# 应输出 7 个 aeromind_* 包
+# 应输出 8 个 aeromind_* 包
 
 # 验证 PX4 build
 cd ~/PX4-Autopilot && ls build/px4_sitl_default/bin/px4
@@ -469,9 +471,73 @@ rm -f ~/PX4-Autopilot/build/px4_sitl_default/rootfs/parameters_backup.bson
 - 接入 LLM API 做自然语言 → JSON 任务解析
 - 加 `ros2 service call` 测试每个环节
 
+### 7.7 aeromind_teleop — 键盘遥控
+
+- **节点**: `teleop_node`
+- **参数**: `mode`（`velocity` / `position`，默认 `velocity`）
+- **发布**:
+  - `/control/cmd_vel` (geometry_msgs/Twist) — 速度或位置增量指令
+
+**速度模式**（默认）：WASD 累积速度、松手渐变归零（`keyboard_velocity.py` 逻辑）。
+**位置模式**：每次按键发送单次位移增量（`keyboard_position.py` 逻辑）。
+
+| 按键 | 功能 |
+|------|------|
+| W/S | 前进/后退 |
+| A/D | 左移/右移 |
+| I/K | 上升/下降 |
+| J/L | 左转/右转 |
+| H | 停止（速度归零/悬停） |
+| ESC | 退出 |
+
+```bash
+# 速度模式（默认）
+ros2 run aeromind_teleop teleop_node
+
+# 位置模式
+ros2 run aeromind_teleop teleop_node --ros-args -p mode:=position
+```
+
+### 7.8 工具模块
+
+| 模块 | 位置 | 功能 |
+|------|------|------|
+| `vehicle_status_decoder.py` | `aeromind_bridge/` | PX4 VehicleStatus 完整中文解析器（解锁/模式/故障/飞行器类型），支持 `summary()` 和 `detailed()` 输出 |
+| `geodesic_utils.py` | `aeromind_planning/` | WGS84 测地线工具：GPS↔ENU 坐标转换、Haversine 距离、方位角 |
+
+用法：
+
+```python
+from aeromind_bridge.vehicle_status_decoder import VehicleStatusDecoder
+from aeromind_planning.geodesic_utils import geodetic_to_enu, distance_between
+
+decoder = VehicleStatusDecoder()
+print(decoder.summary(vehicle_status_msg))
+
+east, north, up = geodetic_to_enu(lat, lon, alt, ref_lat, ref_lon, ref_alt)
+dist = distance_between(lat1, lon1, lat2, lon2)
+```
+
 ---
 
-## 8. 多人协作开发规范
+## 8. 可视化（相机 + RViz）
+
+需要先启动主系统（PX4 SITL + ROS 2 节点），然后另开终端：
+
+```bash
+ros2 launch aeromind_bringup aeromind_vision.launch.py
+```
+
+启动内容：
+- 深度相机 / 图像相机 `camera_info` 话题转发（`topic_tools relay`）
+- 深度点云 RViz2 窗口（`depth_cloud.rviz`）
+- 图像+激光雷达 RViz2 窗口（`image_lidar.rviz`）
+
+> RViz 配置文件来自 hw_insight lesson3，存放在 `aeromind_bringup/launch/`。
+
+---
+
+## 9. 多人协作开发规范
 
 ### 8.1 分支策略
 
@@ -518,7 +584,7 @@ ros2 service call /planning/plan_path aeromind_interfaces/srv/PlanPath "{...}"
 
 ---
 
-## 9. 故障排查
+## 10. 故障排查
 
 | 现象 | 可能原因 | 解决 |
 |------|---------|------|
@@ -533,7 +599,7 @@ ros2 service call /planning/plan_path aeromind_interfaces/srv/PlanPath "{...}"
 
 ---
 
-## 10. 目录结构
+## 11. 目录结构
 
 ```
 aeromind_ws/
@@ -555,20 +621,26 @@ aeromind_ws/
 │   │   │   ├── control_node.py
 │   │   │   └── px4_control.py   # PX4 Offboard 控制器
 │   ├── aeromind_agent/          # LLM Agent 节点（ament_python，组员 E）
+│   ├── aeromind_teleop/         # 键盘遥控节点（ament_python）
 │   ├── aeromind_bringup/        # 启动文件（ament_cmake）
 │   │   └── launch/
-│   │       ├── aeromind_all.launch.py   # AirSim 直连模式
-│   │       └── aeromind_px4.launch.py   # PX4 模式
+│   │       ├── aeromind_all.launch.py     # AirSim 直连模式
+│   │       ├── aeromind_px4.launch.py     # PX4 模式
+│   │       ├── aeromind_vision.launch.py  # 相机 + RViz 可视化
+│   │       ├── depth_cloud.rviz           # 深度点云 RViz 配置
+│   │       └── image_lidar.rviz           # 图像+激光雷达 RViz 配置
 │   └── px4_msgs/                # PX4 消息定义（从 GitHub 克隆）
 ├── doc/
-│   └── PX4_AirSim_配置说明.md    # AirSim + PX4 详细配置文档
+│   ├── PX4_AirSim_配置说明.md    # AirSim + PX4 详细配置文档
+│   ├── WSL2_代理配置.md          # WSL2 代理/VPN 配置
+│   └── airsim_settings.json     # AirSim 完整配置备份
 ├── AeroMind Console/            # 旧项目代码（不动，参考用）
 ├── ground_station_qt_airsim/    # 旧项目地面站（不动）
 ├── README.md
 └── .gitignore
 ```
 
-## 11. 相关文档
+## 12. 相关文档
 
 - [PX4 + AirSim 配置详细说明](doc/PX4_AirSim_配置说明.md) — 网络配置、AirSim settings.json、PX4 参数详解
 - [PX4 User Guide](https://docs.px4.io/main/en/)
