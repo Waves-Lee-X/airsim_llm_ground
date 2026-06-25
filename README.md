@@ -9,10 +9,9 @@
 AeroMind 是一个**多模块协作**的无人机自主飞行平台。上层由 LLM Agent 接收自然语言任务，调用路径规划生成航点，通过飞行控制模块驱动无人机执行。底层对接 PX4 飞控，仿真阶段可选 AirSim（视觉+激光雷达）或 PX4 自带 Gazebo/SIH。
 
 **当前状态**：
-- ROS 2 模块框架完成（9 个包，全部编译通过）
+- ROS 2 模块框架完成（7 个包，全部编译通过）
 - PX4 SITL 连接打通，Gazebo 和 SIH 两种仿真模式可用
-- ROS 2 arm → Offboard takeoff → 键盘/路径控制 → land 链路可用
-- AirSim 相机/LiDAR 可视化已接入，RGB 相机和深度点云 RViz 使用独立配置
+- ROS 2 arm → takeoff → 路径跟随 → land 全链路可实现
 - 感知模块（YOLO + OctoMap）和 LLM 推理待接入
 
 ---
@@ -34,6 +33,13 @@ AeroMind 是一个**多模块协作**的无人机自主飞行平台。上层由 
 ┌──────────────────────────────────────────────────────────────────┐
 │                       AeroMind System                            │
 │                                                                  │
+│   ┌─────────────┐                                                │
+│   │ aeromind_   │   HTTP/Web UI                                  │
+│   │ web         │◀──────────────────── Browser                   │
+│   │ 控制台       │                                                │
+│   └──────┬──────┘                                                │
+│          │ ROS topic/service                                     │
+│          ▼                                                       │
 │   ┌─────────────┐     ┌──────────────┐     ┌────────────┐       │
 │   │ aeromind_    │     │ aeromind_    │     │ aeromind_  │       │
 │   │ agent        │────▶│ planning     │────▶│ control    │       │
@@ -89,19 +95,19 @@ Planning ◀──────────────────────�
                                             全部模块可消费
 ```
 
-### 3.2 包列表（9 个）
+### 3.2 包列表（10 个）
 
 | 包名 | 类型 | 职责 | 负责团队 |
 |------|------|------|------------|
 | `aeromind_interfaces` | ament_cmake | 4 msg + 5 srv 定义 | A. 平台与接口 |
 | `px4_msgs` | ament_cmake | PX4 官方消息定义（200+ msg） | 公共依赖 |
-| `aeromind_bridge` | ament_python | AirSim/PX4 ↔ ROS 2 传感器与控制桥接 | B. Bridge |
-| `aeromind_control` | ament_python | 飞行控制服务（arm/takeoff/land/路径跟随） | C. Control |
-| `aeromind_teleop` | ament_python | 键盘遥控（位置/速度双模式） | C. Control |
-| `aeromind_perception` | ament_python | YOLO 检测 + OctoMap 建图（占位） | D. Perception |
-| `aeromind_planning` | ament_python | 路径规划服务（直线插值→A*） | E. Planning |
-| `aeromind_agent` | ament_python | LLM 任务调度（服务链编排） | F. Agent |
-| `aeromind_bringup` | ament_cmake | 启动文件汇总 + RViz 配置 | A. 平台与接口 |
+| `aeromind_bridge` | ament_python | AirSim/PX4 ↔ ROS 2 传感器与控制桥接 | 组员 A |
+| `aeromind_perception` | ament_python | YOLO 检测 + OctoMap 建图（占位） | 组员 B |
+| `aeromind_planning` | ament_python | 路径规划服务（直线插值→A*） | 组员 C |
+| `aeromind_control` | ament_python | 飞行控制服务（arm/takeoff/land/路径跟随） | 组员 D |
+| `aeromind_agent` | ament_python | LLM 任务调度（服务链编排） | 组员 E |
+| `aeromind_teleop` | ament_python | 键盘遥控（位置/速度双模式） | 辅助工具 |
+| `aeromind_bringup` | ament_cmake | 启动文件汇总 + RViz 配置 | 公共 |
 
 ---
 
@@ -153,7 +159,7 @@ make px4_sitl_default   # 仅编译，不启动仿真
 # 验证 ROS 2 工作空间
 cd ~/aeromind_ws && source install/setup.bash
 ros2 pkg list | grep aeromind
-# 应输出 8 个 aeromind_* 包
+# 应输出 9 个 aeromind_* 包
 
 # 验证 PX4 build
 cd ~/PX4-Autopilot && ls build/px4_sitl_default/bin/px4
@@ -251,6 +257,74 @@ ros2 service call /control/land aeromind_interfaces/srv/Land "{}"
 ros2 topic echo /control/drone_state
 ```
 
+起飞后可用下面命令确认状态。正常情况下 `mode` 应进入 `OFFBOARD`：
+
+```bash
+ros2 topic echo /control/drone_state
+```
+
+### 5.6 Web 控制台
+
+Web 控制台用于把常用 ROS topic/service 集成到浏览器界面，适合演示、联调和后续自然语言控制扩展。第一版不依赖额外 Web 框架，后端由 `aeromind_web` 节点提供 HTTP API，前端静态页面直接安装在 ROS package 中。
+
+先启动 PX4/AirSim 主系统：
+
+```bash
+# 终端 1-3: 按 5.1/5.2/5.3 任一模式启动
+ros2 launch aeromind_bringup aeromind_px4.launch.py
+```
+
+再启动 Web 控制台：
+
+```bash
+cd ~/aeromind_ws && source install/setup.bash
+ros2 launch aeromind_bringup aeromind_web.launch.py
+```
+
+浏览器打开：
+
+```text
+http://localhost:8080
+```
+
+如果端口被占用，可以换端口：
+
+```bash
+ros2 launch aeromind_bringup aeromind_web.launch.py port:=8081
+```
+
+WSL2 中如果从 Windows 浏览器访问失败，可查看 WSL IP 后使用 `http://<WSL_IP>:8080`：
+
+```bash
+hostname -I
+```
+
+当前 Web 控制台功能：
+
+| 区域 | 功能 | ROS 接口 |
+|------|------|----------|
+| 飞行状态 | 解锁、模式、电池、GPS、EKF、里程计 | `/control/drone_state`, `/sensor/odometry` |
+| 前视 RGB 相机 | RGB 相机画面 | `/sensor/camera/rgb/front_center` |
+| 深度相机 | 分辨率、编码、中心深度、最近/最远有效深度 | `/sensor/camera/depth/front_center` |
+| LiDAR 点云 | 点云数量、坐标系、抽样俯视图 | `/sensor/lidar/points` |
+| 飞行控制 | 解锁、加锁、起飞、降落 | `/control/arm`, `/control/takeoff`, `/control/land` |
+| 虚拟控制 | 前后左右、升降、偏航、悬停 | `/control/cmd_vel` |
+| 自然语言控制 | 自然语言任务输入 | `/agent/execute_task` |
+| 事件日志 | 服务返回、错误提示、执行日志 | Web 后端汇总 |
+
+Web 后端 HTTP API：
+
+| API | 方法 | 说明 |
+|-----|------|------|
+| `/api/status` | GET | 获取状态、里程计、检测结果、服务就绪状态 |
+| `/api/camera` | GET | 获取最新 RGB 图像帧 |
+| `/api/pointcloud` | GET | 获取 LiDAR 点云抽样点和元数据 |
+| `/api/control/arm` | POST | 解锁/加锁，body: `{"arm": true}` |
+| `/api/control/takeoff` | POST | 起飞，body: `{"altitude": 10}` |
+| `/api/control/land` | POST | 降落 |
+| `/api/cmd_vel` | POST | 发布虚拟控制速度 |
+| `/api/agent/task` | POST | 提交自然语言任务 |
+
 ---
 
 ## 6. PX4 仿真参数速查
@@ -325,41 +399,13 @@ rm -f ~/PX4-Autopilot/build/px4_sitl_default/rootfs/parameters_backup.bson
 
 ---
 
-## 7. 团队任务分工与集成方案
+## 7. 模块开发指南（分发给各组员）
 
-本项目按“模块独立开发、接口统一集成”的方式协作。每个组员只负责自己的包和对外接口，Web 控制台只通过 ROS topic/service/action 消费能力，不直接修改 PX4 底层话题。
+### 7.1 公共基础：aeromind_interfaces
 
-### 7.1 协作原则
+**所有组员必须先读**。定义了模块间通信的全部消息和服务。
 
-| 原则 | 说明 |
-|------|------|
-| 接口先行 | 所有跨模块通信都通过 `aeromind_interfaces` 或标准 ROS 消息完成 |
-| 模块自治 | 每个组员可以独立启动、测试、替换自己的节点 |
-| UI 不碰底层 | Web 控制台只调用 `/control/*`、`/planning/*`、`/agent/*`，不直接发布 `/fmu/in/*` |
-| 可观测优先 | 每个模块都要有清晰的 topic/service、日志和故障提示 |
-| 小步集成 | 新功能先用命令行验证，再接入 Agent，最后接入 Web 控制台 |
-
-接口变更规则：修改 `.msg` 或 `.srv` 前必须通知全员；接口合并后所有人执行 `colcon build --symlink-install`。
-
-### 7.2 总体分工
-
-| 组别 | 负责包/目录 | 核心目标 | 对外交付 |
-|------|-------------|----------|----------|
-| A. 平台与接口组 | `aeromind_interfaces`, `aeromind_bringup` | 维护通信协议、启动文件、RViz 配置 | 稳定 msg/srv、统一 launch、联调文档 |
-| B. Bridge 组 | `aeromind_bridge` | 打通 PX4/AirSim 与 ROS 2 | 传感器话题、飞控状态、相机/LiDAR 数据 |
-| C. Control 组 | `aeromind_control`, `aeromind_teleop` | 提供安全可靠的飞行动作 | arm/takeoff/land/hover/path follow/键盘控制 |
-| D. Perception 组 | `aeromind_perception` | 目标检测与环境感知 | detection、obstacle map、可视化叠加数据 |
-| E. Planning 组 | `aeromind_planning` | 路径规划与避障 | plan_path 服务、路径 topic、路径质量指标 |
-| F. Agent 组 | `aeromind_agent` | 自然语言任务解析与编排 | execute_task 服务、结构化任务、执行状态 |
-| G. Web Console 组 | 后续新增 `aeromind_web` 或 `web_console/` | 集成控制台界面 | 状态面板、视频流、地图、自然语言输入、操作日志 |
-
-### 7.3 A 组：平台与接口
-
-**职责**：维护所有模块共同依赖的接口、启动入口和集成说明。
-
-**当前接口**：
-
-| 接口名 | 类型 | 用途 |
+| 接口名 | 类型 | 字段 |
 |--------|------|------|
 | `DroneState.msg` | msg | 飞控状态：armed、mode、battery、gps、ekf |
 | `Detection.msg` | msg | 目标检测结果 |
@@ -503,50 +549,38 @@ rm -f ~/PX4-Autopilot/build/px4_sitl_default/rootfs/parameters_backup.bson
 |------|------|------|
 | `/agent/execute_task` | `ExecuteTask` | Web 控制台的自然语言入口 |
 
-**建议输出结构**：
+**调用链**（当前占位实现）：
+1. `execute_task` → 解析任务
+2. → 调用 `/planning/plan_path`（硬编码 start/goal）
+3. → 调用 `/control/takeoff`
+4. → 返回结果
 
-```json
-{
-  "intent": "takeoff",
-  "args": {"altitude": 10.0},
-  "steps": ["arm", "takeoff"],
-  "risk_level": "low"
-}
-```
+**参数**：
+- `llm_api_url`：LLM 服务地址（默认 `http://localhost:11434/v1`，适配 Ollama）
+- `llm_model`：模型名（默认 `llama3`）
 
-**近期任务**：
-- 接入 LLM，将自然语言解析为结构化 JSON
-- 加入任务确认机制：高风险任务先返回确认，不直接执行
-- 输出任务执行进度，供 Web 控制台展示
+**待实现**：
+- 接入 LLM（Ollama / OpenAI API）解析自然语言为结构化任务
+- 工具调用链：planning → control → perception 的编排
+- 多任务调度：任务队列 + 优先级
+- 任务执行状态反馈
 
-**验收标准**：
-- “起飞到 10 米”能调用 `/control/takeoff`
-- “飞到前方 20 米”能调用 Planning + Control
-- 失败时返回明确原因，而不是只返回 false
+**开发建议**：
+- 先用硬编码测试调用链，确认 planning → control 链路正常
+- 接入 LLM API 做自然语言 → JSON 任务解析
+- 加 `ros2 service call` 测试每个环节
 
-### 7.9 G 组：Web Console
+### 7.7 aeromind_teleop — 键盘遥控
 
-**职责**：做一个浏览器访问的无人机控制台，集成状态、视频、地图、控制按钮和自然语言输入。
+- **节点**: `teleop_node`
+- **参数**: `mode`（`velocity` / `position`，默认 `velocity`）
+- **发布**:
+  - `/control/cmd_vel` (geometry_msgs/Twist) — 速度或位置增量指令
 
-**建议技术路线**：
+**速度模式**（默认）：WASD 累积速度、松手渐变归零（`keyboard_velocity.py` 逻辑）。
+**位置模式**：每次按键发送单次位移增量（`keyboard_position.py` 逻辑）。
 
-| 层 | 推荐方案 | 说明 |
-|----|----------|------|
-| 前端 | React / Vue / 原生 Vite | 做仪表盘、视频、地图、任务面板 |
-| ROS 网关 | `rosbridge_suite` 或自研 FastAPI + rclpy | 把 ROS topic/service 转成 WebSocket/HTTP |
-| 视频 | WebSocket JPEG/MJPEG 或 `rosbridge` 图像订阅 | 先做低帧率稳定显示，后续再优化 |
-| 地图/点云 | 先做 2D 路径和状态，点云后续接 Three.js | 避免第一版过重 |
-
-**第一版功能范围**：
-- 顶部状态栏：armed、mode、battery、gps、ekf
-- 主画面：RGB 相机
-- 控制区：Arm、Takeoff、Land、Hover、Emergency Stop
-- 自然语言输入框：调用 `/agent/execute_task`
-- 日志区：显示 service 返回值、PX4 ack、错误提示
-
-**只允许调用的接口**：
-
-| 功能 | 接口 |
+| 按键 | 功能 |
 |------|------|
 | 状态显示 | `/control/drone_state`, `/sensor/odometry` |
 | RGB 视频 | `/sensor/camera/rgb/front_center` |
@@ -677,19 +711,7 @@ ros2 run aeromind_planning planning_node
 ros2 service call /planning/plan_path aeromind_interfaces/srv/PlanPath "{...}"
 ```
 
-Web 控制台开发建议：
-
-```
-# 第一阶段只连 mock 数据或已稳定 topic
-/control/drone_state
-/sensor/camera/rgb/front_center
-/control/arm
-/control/takeoff
-/control/land
-/agent/execute_task
-```
-
-### 9.5 Git 忽略
+### 8.5 Git 忽略
 
 `build/`、`install/`、`log/` 已在 `.gitignore` 中。不要在仓库里提交编译产物。
 `parameters.bson` 这类 PX4 本地文件也不需要提交。
@@ -716,9 +738,6 @@ Web 控制台开发建议：
 | RGB 有画面但 DepthCloud 空 | 深度图、深度 camera_info 或 optical TF 缺失 | 检查 `/sensor/camera/depth/front_center`、`/sensor/camera/depth/camera_info`、`tf2_echo camera_front_center_body camera_front_center_optical` |
 | colcon build 失败 | 缺依赖或接口变了 | `rm -rf build/ install/ && colcon build --symlink-install` |
 | Gazebo 窗口空白 | WSL2 无 GPU 加速 | 等几分钟或用 SIH 模式替代 |
-| teleop 键盘无响应 | 非 TTY 环境（如 launch 中启动） | teleop 必须在独立终端用 `ros2 run` 运行 |
-| RViz 无点云/图像 | bridge 未启动或未连 AirSim | 先启动主系统 launch；确认 bridge 日志无相机连接错误 |
-| WSL 提示 localhost 代理未镜像 | Windows/WSL 代理提示 | 与 ROS 2 相机/飞控无直接关系，可先忽略 |
 
 ---
 
@@ -744,13 +763,14 @@ aeromind_ws/
 │   │   ├── aeromind_control/
 │   │   │   ├── control_node.py
 │   │   │   └── px4_control.py   # PX4 Offboard 控制器
-│   ├── aeromind_agent/          # LLM Agent 节点（Agent 组）
-│   ├── aeromind_teleop/         # 键盘遥控节点（Control 组）
-│   ├── aeromind_bringup/        # 启动文件（平台与接口组）
+│   ├── aeromind_agent/          # LLM Agent 节点（ament_python，组员 E）
+│   ├── aeromind_teleop/         # 键盘遥控节点（ament_python）
+│   ├── aeromind_bringup/        # 启动文件（ament_cmake）
 │   │   └── launch/
 │   │       ├── aeromind_all.launch.py     # AirSim 直连模式
 │   │       ├── aeromind_px4.launch.py     # PX4 模式
 │   │       ├── aeromind_vision.launch.py  # 相机 + RViz 可视化
+│   │       ├── aeromind_web.launch.py     # Web 控制台
 │   │       ├── depth_cloud.rviz           # 深度点云 RViz 配置
 │   │       └── image_lidar.rviz           # 图像+激光雷达 RViz 配置
 │   └── px4_msgs/                # PX4 消息定义（从 GitHub 克隆）

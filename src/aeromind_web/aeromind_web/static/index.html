@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AeroMind 无人机控制台</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>AeroMind 无人机控制台</h1>
+          <p id="systemLine">正在等待 ROS 连接</p>
+        </div>
+        <div class="status-strip">
+          <span id="armedBadge" class="badge">未解锁</span>
+          <span id="modeBadge" class="badge neutral">未知模式</span>
+          <span id="ekfBadge" class="badge neutral">EKF</span>
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="panel camera-panel">
+          <div class="panel-header">
+            <h2>前视 RGB 相机</h2>
+            <span id="cameraMeta">暂无画面</span>
+          </div>
+          <div class="camera-stage">
+            <canvas id="cameraCanvas" width="1280" height="720"></canvas>
+            <div id="cameraEmpty" class="empty">等待 /sensor/camera/rgb/front_center</div>
+          </div>
+        </section>
+
+        <section class="panel status-panel">
+          <div class="panel-header">
+            <h2>飞行状态</h2>
+            <span id="serviceBadge">服务状态</span>
+          </div>
+          <div class="metric-grid">
+            <div class="metric"><span>解锁</span><strong id="armedValue">--</strong></div>
+            <div class="metric"><span>模式</span><strong id="modeValue">--</strong></div>
+            <div class="metric"><span>电池</span><strong id="batteryValue">--</strong></div>
+            <div class="metric"><span>GPS</span><strong id="gpsValue">--</strong></div>
+            <div class="metric"><span>EKF</span><strong id="ekfValue">--</strong></div>
+            <div class="metric"><span>坐标系</span><strong id="frameValue">--</strong></div>
+          </div>
+        </section>
+
+        <section class="panel control-panel">
+          <div class="panel-header">
+            <h2>飞行控制</h2>
+            <input id="altitudeInput" type="number" min="1" max="50" step="1" value="10" />
+          </div>
+          <div class="button-row">
+            <button id="armBtn" class="primary">解锁</button>
+            <button id="disarmBtn">加锁</button>
+            <button id="takeoffBtn" class="primary">起飞</button>
+            <button id="landBtn" class="danger">降落</button>
+          </div>
+          <div class="nudge-grid">
+            <button data-cmd="forward">前进</button>
+            <button data-cmd="up">上升</button>
+            <button data-cmd="left">左移</button>
+            <button data-cmd="stop" class="danger">悬停</button>
+            <button data-cmd="right">右移</button>
+            <button data-cmd="yaw-left">左转</button>
+            <button data-cmd="back">后退</button>
+            <button data-cmd="down">下降</button>
+            <button data-cmd="yaw-right">右转</button>
+          </div>
+        </section>
+
+        <section class="panel depth-panel">
+          <div class="panel-header">
+            <h2>深度相机</h2>
+            <span id="depthMeta">暂无数据</span>
+          </div>
+          <div class="sensor-grid">
+            <div><span>中心深度</span><strong id="depthCenter">--</strong></div>
+            <div><span>最近距离</span><strong id="depthMin">--</strong></div>
+            <div><span>最远距离</span><strong id="depthMax">--</strong></div>
+            <div><span>有效采样</span><strong id="depthSamples">--</strong></div>
+          </div>
+        </section>
+
+        <section class="panel pointcloud-panel">
+          <div class="panel-header">
+            <h2>LiDAR 点云俯视图</h2>
+            <span id="pointcloudMeta">暂无数据</span>
+          </div>
+          <div class="pointcloud-stage">
+            <canvas id="pointcloudCanvas" width="520" height="300"></canvas>
+            <div id="pointcloudEmpty" class="empty">等待 /sensor/lidar/points</div>
+          </div>
+        </section>
+
+        <section class="panel task-panel">
+          <div class="panel-header">
+            <h2>自然语言控制</h2>
+            <span id="agentBadge">Agent</span>
+          </div>
+          <form id="taskForm" class="task-form">
+            <input id="taskInput" type="text" autocomplete="off" value="起飞到10米" />
+            <button class="primary" type="submit">执行</button>
+          </form>
+          <pre id="taskResult" class="result-box">暂无任务结果</pre>
+        </section>
+
+        <section class="panel telemetry-panel">
+          <div class="panel-header">
+            <h2>位置与速度</h2>
+            <span>ENU</span>
+          </div>
+          <div class="telemetry-grid">
+            <div><span>X</span><strong id="posX">--</strong></div>
+            <div><span>Y</span><strong id="posY">--</strong></div>
+            <div><span>Z</span><strong id="posZ">--</strong></div>
+            <div><span>Vx</span><strong id="velX">--</strong></div>
+            <div><span>Vy</span><strong id="velY">--</strong></div>
+            <div><span>Vz</span><strong id="velZ">--</strong></div>
+          </div>
+        </section>
+
+        <section class="panel log-panel">
+          <div class="panel-header">
+            <h2>事件日志</h2>
+            <button id="clearLogBtn">清空</button>
+          </div>
+          <div id="eventLog" class="event-log"></div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
