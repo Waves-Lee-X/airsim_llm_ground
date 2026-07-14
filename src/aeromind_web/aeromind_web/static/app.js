@@ -69,6 +69,13 @@ const els = {
   confirmationText: document.getElementById("confirmationText"),
   confirmTaskBtn: document.getElementById("confirmTaskBtn"),
   cancelTaskBtn: document.getElementById("cancelTaskBtn"),
+  controlConfirmationModal: document.getElementById("controlConfirmationModal"),
+  controlConfirmationSummary: document.getElementById("controlConfirmationSummary"),
+  controlConfirmationAction: document.getElementById("controlConfirmationAction"),
+  controlConfirmationId: document.getElementById("controlConfirmationId"),
+  controlConfirmationRisk: document.getElementById("controlConfirmationRisk"),
+  modalConfirmTaskBtn: document.getElementById("modalConfirmTaskBtn"),
+  modalCancelTaskBtn: document.getElementById("modalCancelTaskBtn"),
   chatHistory: document.getElementById("chatHistory"),
   llmOutput: document.getElementById("llmOutput"),
   planSteps: document.getElementById("planSteps"),
@@ -464,6 +471,8 @@ function renderConfirmation() {
   if (!pendingConfirmation) {
     els.confirmationPanel.classList.add("hidden");
     els.confirmationText.textContent = "暂无待确认任务";
+    els.controlConfirmationModal.classList.add("hidden");
+    els.controlConfirmationModal.setAttribute("aria-hidden", "true");
     renderChat();
     return;
   }
@@ -479,6 +488,12 @@ function renderConfirmation() {
     `风险: ${pendingConfirmation.risk_level || "--"}`,
     args,
   ].filter(Boolean).join("\n");
+  els.controlConfirmationSummary.textContent = pendingConfirmation.summary || "确认执行该控制任务";
+  els.controlConfirmationAction.textContent = pendingConfirmation.action || pendingConfirmation.intent || "--";
+  els.controlConfirmationId.textContent = pendingConfirmation.id || pendingConfirmation.token || "--";
+  els.controlConfirmationRisk.textContent = String(pendingConfirmation.risk_level || "--").toUpperCase();
+  els.controlConfirmationModal.classList.remove("hidden");
+  els.controlConfirmationModal.setAttribute("aria-hidden", "false");
   renderChat();
 }
 
@@ -2064,6 +2079,14 @@ els.confirmTaskBtn.addEventListener("click", () => {
 });
 
 els.cancelTaskBtn.addEventListener("click", () => {
+  confirmPendingTask("cancel");
+});
+
+els.modalConfirmTaskBtn.addEventListener("click", () => {
+  confirmPendingTask("confirm");
+});
+
+els.modalCancelTaskBtn.addEventListener("click", () => {
   confirmPendingTask("cancel");
 });
 

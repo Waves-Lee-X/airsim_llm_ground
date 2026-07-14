@@ -1069,6 +1069,102 @@ select:focus {
   padding: 8px;
 }
 
+.control-confirmation-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(2 8 23 / 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.control-confirmation-modal.hidden {
+  display: none;
+}
+
+.control-confirmation-dialog {
+  width: min(480px, 100%);
+  overflow: hidden;
+  border: 1px solid rgb(245 158 11 / 0.55);
+  border-radius: 8px;
+  background: #101722;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 0.52);
+}
+
+.control-confirmation-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.control-confirmation-header span,
+.control-confirmation-meta dt,
+.control-confirmation-dialog p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.control-confirmation-header h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.risk-badge {
+  border: 1px solid rgb(245 158 11 / 0.45);
+  border-radius: 4px;
+  padding: 4px 7px;
+  color: #fbbf24;
+  font-size: 11px;
+}
+
+.control-confirmation-summary {
+  padding: 20px 20px 10px;
+  color: #f8fafc;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.control-confirmation-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 20px 12px;
+}
+
+.control-confirmation-meta div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.control-confirmation-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #dbeafe;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.control-confirmation-dialog p {
+  margin: 0;
+  padding: 0 20px 18px;
+}
+
+.control-confirmation-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: rgb(255 255 255 / 0.02);
+}
+
 .chat-form {
   display: grid;
   gap: 8px;

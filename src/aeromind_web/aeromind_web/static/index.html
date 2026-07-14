@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>无人机任务控制台</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260714-confirm" />
   </head>
   <body>
     <div class="station-shell">
@@ -273,6 +273,27 @@
         </div>
       </section>
     </div>
+    <div id="controlConfirmationModal" class="control-confirmation-modal hidden" aria-hidden="true">
+      <div class="control-confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="controlConfirmationTitle">
+        <div class="control-confirmation-header">
+          <div>
+            <span>飞行控制请求</span>
+            <h2 id="controlConfirmationTitle">等待操作员确认</h2>
+          </div>
+          <strong id="controlConfirmationRisk" class="risk-badge">HIGH</strong>
+        </div>
+        <div id="controlConfirmationSummary" class="control-confirmation-summary">确认执行该控制任务</div>
+        <dl class="control-confirmation-meta">
+          <div><dt>动作</dt><dd id="controlConfirmationAction">--</dd></div>
+          <div><dt>确认编号</dt><dd id="controlConfirmationId">--</dd></div>
+        </dl>
+        <p>确认后将立即交给 ROS Agent 执行，并持续验证飞控遥测。</p>
+        <div class="control-confirmation-actions">
+          <button id="modalCancelTaskBtn" type="button">取消</button>
+          <button id="modalConfirmTaskBtn" class="primary" type="button">确认执行</button>
+        </div>
+      </div>
+    </div>
     <div id="cameraViewer" class="camera-viewer hidden" aria-hidden="true">
       <div class="camera-viewer-bar">
         <div>
@@ -291,6 +312,6 @@
         <canvas id="cameraViewerCanvas"></canvas>
       </div>
     </div>
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260714-confirm"></script>
   </body>
 </html>
