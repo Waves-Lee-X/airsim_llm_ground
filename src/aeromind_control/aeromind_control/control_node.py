@@ -35,6 +35,29 @@ except ImportError:
 from aeromind_control.px4_control import PX4Controller, HAS_PX4_MSGS
 
 
+PROTECTED_FLIGHT_MODES = {"TAKEOFF", "LAND", "RETURN_HOME"}
+
+
+def autonomy_trajectory_action(
+    control_mode: str,
+    planner_mode: str,
+    collision_free: bool,
+    has_points: bool,
+) -> str:
+    """Return how an autonomy trajectory may affect the active flight mode."""
+    if control_mode in PROTECTED_FLIGHT_MODES:
+        return "ignore_flight_mode"
+    if planner_mode == "hover_no_goal":
+        return "ignore_no_goal"
+    if not collision_free:
+        return "ignore_inactive" if control_mode in ("IDLE", "READY") else "hold_unsafe"
+    if planner_mode in ("goal_reached", "safe_hover", "blocked_hold"):
+        return "hold"
+    if not has_points:
+        return "ignore_empty"
+    return "execute"
+
+
 class ControlNode(Node):
     """飞行控制节点"""
 
@@ -98,6 +121,7 @@ class ControlNode(Node):
         self._last_autonomy_velocity = (0.0, 0.0, 0.0)
         self._last_autonomy_velocity_time = time.monotonic()
         self._control_mode = "IDLE"
+        self._takeoff_target_altitude = None
 
         # 根据模式初始化后端
         self._client = None      # AirSim 客户端
@@ -182,6 +206,15 @@ class ControlNode(Node):
 
     def _odom_callback(self, msg: Odometry):
         self._latest_odom = msg
+        if self._control_mode != "TAKEOFF" or self._takeoff_target_altitude is None:
+            return
+        altitude = float(msg.pose.pose.position.z)
+        tolerance = max(0.3, min(1.0, self._takeoff_target_altitude * 0.1))
+        if altitude >= self._takeoff_target_altitude - tolerance:
+            self._control_mode = "READY"
+            self.get_logger().info(
+                f"起飞高度已确认: {altitude:.2f}m，允许接收后续自主轨迹"
+            )
 
     # ============================================================
     # 起飞服务
@@ -191,6 +224,7 @@ class ControlNode(Node):
         altitude = request.altitude
         self.get_logger().info(f"收到起飞请求: 目标高度={altitude}m")
         self._control_mode = "TAKEOFF"
+        self._takeoff_target_altitude = float(altitude)
 
         if self._px4_mode == "px4":
             return self._takeoff_px4(altitude, response)
@@ -233,6 +267,8 @@ class ControlNode(Node):
             response.success = True
             response.message = f"PX4 Offboard 起飞已启动，目标高度={altitude}m"
         except Exception as e:
+            self._control_mode = "IDLE"
+            self._takeoff_target_altitude = None
             response.success = False
             response.message = f"PX4 起飞失败: {e}"
 
@@ -406,20 +442,23 @@ class ControlNode(Node):
         """
         if not self._execute_autonomy_trajectory:
             return
-        if self._control_mode in ("LAND", "RETURN_HOME"):
-            return
         if not self._armed:
             self.get_logger().debug("忽略自主轨迹：未解锁")
             return
-        if not msg.collision_free:
+
+        action = autonomy_trajectory_action(
+            self._control_mode,
+            msg.planner_mode,
+            bool(msg.collision_free),
+            bool(msg.points),
+        )
+        if action.startswith("ignore"):
+            return
+        if action == "hold_unsafe":
             self._hold_autonomy("unsafe", f"非安全自主轨迹，切换悬停: {msg.message}")
             return
-        if msg.planner_mode == "hover_no_goal" and self._control_mode in ("TAKEOFF", "LAND"):
-            return
-        if msg.planner_mode in ("hover_no_goal", "goal_reached", "safe_hover", "blocked_hold"):
+        if action == "hold":
             self._hold_autonomy(msg.planner_mode, f"自主轨迹结束/悬停: {msg.planner_mode}")
-            return
-        if not msg.points:
             return
 
         self._last_autonomy_hold_mode = None

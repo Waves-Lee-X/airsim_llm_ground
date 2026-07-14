@@ -24,6 +24,8 @@ import math
 import time
 
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
@@ -77,6 +79,10 @@ class AirSimBridgeNode(Node):
 
         self.get_logger().info(f"桥接节点启动，模式: {self._mode}")
 
+        # AirSim 图像 RPC 可能阻塞一秒以上，必须与飞控遥测分离执行。
+        self._flight_callback_group = MutuallyExclusiveCallbackGroup()
+        self._camera_callback_group = MutuallyExclusiveCallbackGroup()
+
         # 创建发布者（两种模式共用）
         self._odom_pub = self.create_publisher(Odometry, "/sensor/odometry", 10)
         self._imu_pub = self.create_publisher(Imu, "/sensor/imu", 10)
@@ -85,7 +91,11 @@ class AirSimBridgeNode(Node):
 
         # 创建订阅者：接收速度指令（两种模式共用）
         self._cmd_vel_sub = self.create_subscription(
-            Twist, "/control/cmd_vel", self._cmd_vel_callback, 10
+            Twist,
+            "/control/cmd_vel",
+            self._cmd_vel_callback,
+            10,
+            callback_group=self._flight_callback_group,
         )
 
         # 根据模式初始化
@@ -118,11 +128,19 @@ class AirSimBridgeNode(Node):
             self._client = None
 
         # 定时器：10Hz 读取传感器
-        self._airsim_timer = self.create_timer(0.1, self._airsim_timer_callback)
+        self._airsim_timer = self.create_timer(
+            0.1,
+            self._airsim_timer_callback,
+            callback_group=self._flight_callback_group,
+        )
 
         # 定时器：1Hz 发布相机图像和 LiDAR
         self._camera_bridge = CameraBridge(self, self._client)
-        self._camera_timer = self.create_timer(1.0, self._camera_timer_callback)
+        self._camera_timer = self.create_timer(
+            1.0,
+            self._camera_timer_callback,
+            callback_group=self._camera_callback_group,
+        )
 
         # 缓存 IMU 所需的最新状态
         self._latest_airsim_state = None
@@ -141,7 +159,11 @@ class AirSimBridgeNode(Node):
             return
 
         self._camera_bridge = CameraBridge(self, self._client)
-        self._camera_timer = self.create_timer(1.0, self._camera_timer_callback)
+        self._camera_timer = self.create_timer(
+            1.0,
+            self._camera_timer_callback,
+            callback_group=self._camera_callback_group,
+        )
 
     def _airsim_timer_callback(self):
         """AirSim 定时器：读取状态并发布 ROS 消息"""
@@ -271,6 +293,7 @@ class AirSimBridgeNode(Node):
             "/fmu/out/vehicle_attitude",
             self._px4_attitude_callback,
             px4_qos,
+            callback_group=self._flight_callback_group,
         )
 
         # 传感器数据（IMU 数据来源）
@@ -279,6 +302,7 @@ class AirSimBridgeNode(Node):
             "/fmu/out/sensor_combined",
             self._px4_sensor_callback,
             px4_qos,
+            callback_group=self._flight_callback_group,
         )
 
         # 本地位置（里程计数据来源）
@@ -287,6 +311,7 @@ class AirSimBridgeNode(Node):
             "/fmu/out/vehicle_local_position_v1",
             self._px4_local_pos_callback,
             px4_qos,
+            callback_group=self._flight_callback_group,
         )
 
         # 状态（同时订阅 vehicle_status 和 vehicle_status_v4，谁发数据就用谁）
@@ -295,16 +320,22 @@ class AirSimBridgeNode(Node):
             "/fmu/out/vehicle_status",
             self._px4_status_callback,
             px4_qos,
+            callback_group=self._flight_callback_group,
         )
         self._status_v4_sub = self.create_subscription(
             VehicleStatus,
             "/fmu/out/vehicle_status_v4",
             self._px4_status_callback,
             px4_qos,
+            callback_group=self._flight_callback_group,
         )
 
         # 定时器：10Hz 合成并发布 IMU 和 Odometry
-        self._px4_timer = self.create_timer(0.1, self._px4_timer_callback)
+        self._px4_timer = self.create_timer(
+            0.1,
+            self._px4_timer_callback,
+            callback_group=self._flight_callback_group,
+        )
 
         # PX4 模式下的 cmd_vel 发布者
         from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand as VCmd
@@ -317,7 +348,11 @@ class AirSimBridgeNode(Node):
         self._px4_vehicle_cmd_pub = self.create_publisher(
             VCmd, "/fmu/in/vehicle_command", 10
         )
-        self._px4_cmd_vel_timer = self.create_timer(0.1, self._px4_cmd_vel_timer_callback)
+        self._px4_cmd_vel_timer = self.create_timer(
+            0.1,
+            self._px4_cmd_vel_timer_callback,
+            callback_group=self._flight_callback_group,
+        )
 
         self.get_logger().info("PX4 模式已初始化，等待 uXRCE-DDS 话题数据...")
 
@@ -540,11 +575,14 @@ class AirSimBridgeNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = AirSimBridgeNode()
+    executor = MultiThreadedExecutor(num_threads=3)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 
