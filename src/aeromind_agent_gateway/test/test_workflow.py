@@ -112,7 +112,10 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                 "gps_fix": 3,
             },
             "odometry": {"position_m": {"z": 0.0}},
-            "autonomy": {"nearest_obstacle_m": 6.0},
+            "autonomy": {
+                "stamp": time.time(),
+                "nearest_obstacle_m": 6.0,
+            },
             "detections": [
                 {"class_name": "person", "confidence": 0.82}
             ],

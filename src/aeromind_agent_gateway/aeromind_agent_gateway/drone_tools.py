@@ -101,6 +101,27 @@ def create_drone_mcp_server(
         return await request("takeoff", {"altitude": args["altitude"]})
 
     @tool(
+        "request_safe_takeoff",
+        "创建一次确认的安全起飞工作流：先执行确定性安全检查，通过后起飞。",
+        {
+            "type": "object",
+            "properties": {
+                "altitude": {"type": "number", "minimum": 1.0, "maximum": 30.0},
+                "minimum_obstacle_distance": {
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 20.0,
+                },
+                "require_gps": {"type": "boolean"},
+            },
+            "required": ["altitude"],
+            "additionalProperties": False,
+        },
+    )
+    async def request_safe_takeoff(args):
+        return await request("workflow", _safe_takeoff_workflow(args))
+
+    @tool(
         "request_land",
         "创建降落确认请求。用户确认前不会降落。",
         {},
@@ -200,6 +221,7 @@ def create_drone_mcp_server(
             request_arm,
             request_disarm,
             request_takeoff,
+            request_safe_takeoff,
             request_land,
             request_move,
             request_return_home,
@@ -222,6 +244,7 @@ CONTROL_REQUEST_TOOL_NAMES = [
     "mcp__drone__request_arm",
     "mcp__drone__request_disarm",
     "mcp__drone__request_takeoff",
+    "mcp__drone__request_safe_takeoff",
     "mcp__drone__request_land",
     "mcp__drone__request_move",
     "mcp__drone__request_return_home",
@@ -291,6 +314,20 @@ OPENAI_DRONE_TOOLS = [
                     "type": "object",
                     "properties": {
                         "altitude": {"type": "number", "minimum": 1, "maximum": 30}
+                    },
+                    "required": ["altitude"],
+                    "additionalProperties": False,
+                },
+            ),
+            (
+                "request_safe_takeoff",
+                "创建先做确定性安全检查、通过后起飞的一次确认工作流。",
+                {
+                    "type": "object",
+                    "properties": {
+                        "altitude": {"type": "number", "minimum": 1, "maximum": 30},
+                        "minimum_obstacle_distance": {"type": "number", "minimum": 0.5, "maximum": 20},
+                        "require_gps": {"type": "boolean"},
                     },
                     "required": ["altitude"],
                     "additionalProperties": False,
@@ -404,6 +441,10 @@ async def execute_openai_drone_tool(
             },
         )
         return await request_control("workflow", workflow)
+    if name == "request_safe_takeoff":
+        if request_control is None:
+            return {"success": False, "message": "控制请求功能未配置"}
+        return await request_control("workflow", _safe_takeoff_workflow(args))
     if name == "request_workflow":
         if request_control is None:
             return {"success": False, "message": "控制请求功能未配置"}
@@ -426,3 +467,30 @@ async def execute_openai_drone_tool(
         return {"success": False, "message": "控制请求功能未配置"}
     action, action_args = actions[name]
     return await request_control(action, action_args)
+
+
+def _safe_takeoff_workflow(args: dict[str, Any]) -> dict[str, Any]:
+    altitude = float(args.get("altitude", 10.0))
+    minimum = float(args.get("minimum_obstacle_distance", 2.0))
+    require_gps = bool(args.get("require_gps", True))
+    return validate_workflow(
+        {
+            "name": f"安全检查后起飞到 {altitude:.1f} 米",
+            "steps": [
+                {
+                    "id": "safety-check",
+                    "action": "safety_check",
+                    "args": {
+                        "require_gps": require_gps,
+                        "minimum_obstacle_distance": minimum,
+                    },
+                },
+                {
+                    "id": "takeoff",
+                    "action": "takeoff",
+                    "args": {"altitude": altitude},
+                    "depends_on": ["safety-check"],
+                },
+            ],
+        }
+    )

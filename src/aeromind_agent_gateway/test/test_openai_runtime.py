@@ -6,7 +6,10 @@ import unittest
 import httpx
 
 from aeromind_agent_gateway.config import GatewayConfig, OpenAIProviderConfig
-from aeromind_agent_gateway.drone_tools import execute_openai_drone_tool
+from aeromind_agent_gateway.drone_tools import (
+    _safe_takeoff_workflow,
+    execute_openai_drone_tool,
+)
 from aeromind_agent_gateway.openai_runtime import OpenAICompatibleRuntime
 
 
@@ -132,6 +135,35 @@ class OpenAICompatibleRuntimeTest(unittest.IsolatedAsyncioTestCase):
             [step["action"] for step in workflow["steps"]],
             ["takeoff", "move", "move", "move", "move", "land"],
         )
+
+    async def test_safe_takeoff_creates_check_then_takeoff_workflow(self):
+        controls = []
+
+        async def request_control(action, args):
+            controls.append((action, args))
+            return {"success": True, "status": "pending_confirmation"}
+
+        result = await execute_openai_drone_tool(
+            "request_safe_takeoff",
+            {"altitude": 10.0, "minimum_obstacle_distance": 2.0},
+            FakeRosState(),
+            request_control,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(len(controls), 1)
+        self.assertEqual(controls[0][0], "workflow")
+        steps = controls[0][1]["steps"]
+        self.assertEqual(
+            [step["action"] for step in steps], ["safety_check", "takeoff"]
+        )
+        self.assertEqual(steps[1]["depends_on"], ["safety-check"])
+
+    def test_safe_takeoff_defaults_are_validated(self):
+        workflow = _safe_takeoff_workflow({"altitude": 8.0})
+        check = workflow["steps"][0]
+        self.assertEqual(check["args"]["minimum_obstacle_distance"], 2.0)
+        self.assertTrue(check["args"]["require_gps"])
 
 
 if __name__ == "__main__":

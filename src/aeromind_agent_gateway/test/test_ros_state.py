@@ -1,11 +1,13 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from aeromind_agent_gateway.ros_state import (
     _action_task,
     _evaluate_action_completion,
     _extract_ros_mission_id,
     _parse_agent_payload,
+    _record_with_freshness,
 )
 
 
@@ -79,6 +81,15 @@ class RosTaskMappingTest(unittest.TestCase):
         )
         self.assertTrue(result["success"])
         self.assertEqual(result["message"], "复合任务完成")
+
+    @patch("aeromind_agent_gateway.ros_state.time.time", return_value=105.0)
+    def test_record_freshness_is_explicit(self, _time):
+        fresh = _record_with_freshness({"stamp": 104.0}, 2.0)
+        stale = _record_with_freshness({"stamp": 100.0}, 2.0)
+        self.assertEqual(fresh["age_sec"], 1.0)
+        self.assertTrue(fresh["fresh"])
+        self.assertEqual(stale["age_sec"], 5.0)
+        self.assertFalse(stale["fresh"])
 
     @staticmethod
     def _snapshot(

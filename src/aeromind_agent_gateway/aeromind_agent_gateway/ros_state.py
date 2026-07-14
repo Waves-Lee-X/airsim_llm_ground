@@ -39,6 +39,7 @@ class RosStateBridge(Node):
         self._odom: dict[str, Any] | None = None
         self._autonomy: dict[str, Any] | None = None
         self._detections: list[dict[str, Any]] = []
+        self._detections_stamp: float | None = None
         self._mission: dict[str, Any] | None = None
         self._workflow_controls: dict[str, str] = {}
         self._task_client = self.create_client(ExecuteTask, "/agent/execute_task")
@@ -59,13 +60,16 @@ class RosStateBridge(Node):
         self.create_subscription(String, "/agent/mission_status", self._mission_cb, 10)
 
     def _state_cb(self, msg: DroneState):
+        battery = float(msg.battery)
         with self._lock:
             self._state = {
                 "stamp": time.time(),
                 "armed": bool(msg.armed),
                 "mode": msg.mode,
-                "battery": float(msg.battery),
+                "battery": battery if battery > 0.0 else None,
+                "battery_available": battery > 0.0,
                 "gps_fix": int(msg.gps_fix),
+                "gps_usable": int(msg.gps_fix) >= 2,
                 "ekf_healthy": bool(msg.ekf_healthy),
             }
 
@@ -113,6 +117,7 @@ class RosStateBridge(Node):
         ]
         with self._lock:
             self._detections = values
+            self._detections_stamp = time.time()
 
     def _mission_cb(self, msg: String):
         try:
@@ -126,12 +131,20 @@ class RosStateBridge(Node):
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
+            state = _record_with_freshness(self._state, 3.0)
+            odometry = _record_with_freshness(self._odom, 2.0)
+            autonomy = _record_with_freshness(self._autonomy, 2.0)
+            detections_age = _age_seconds(self._detections_stamp)
             return {
-                "available": self._state is not None,
-                "state": dict(self._state) if self._state else None,
-                "odometry": dict(self._odom) if self._odom else None,
-                "autonomy": dict(self._autonomy) if self._autonomy else None,
-                "detections": [dict(item) for item in self._detections],
+                "available": bool(state and state["fresh"]),
+                "state": state,
+                "odometry": odometry,
+                "autonomy": autonomy,
+                "detections": [dict(item) for item in self._detections]
+                if detections_age is not None and detections_age <= 2.0
+                else [],
+                "detections_fresh": detections_age is not None and detections_age <= 2.0,
+                "detections_age_sec": detections_age,
                 "mission": dict(self._mission) if self._mission else None,
             }
 
@@ -148,6 +161,8 @@ class RosStateBridge(Node):
         return {
             "available": bool(snapshot["detections"]),
             "detections": snapshot["detections"],
+            "detections_fresh": snapshot["detections_fresh"],
+            "detections_age_sec": snapshot["detections_age_sec"],
             "autonomy": snapshot["autonomy"],
         }
 
@@ -424,17 +439,21 @@ class RosStateBridge(Node):
         state = snapshot.get("state") or {}
         autonomy = snapshot.get("autonomy") or {}
         issues = []
+        state_fresh = _record_is_current(state, 3.0)
+        autonomy_fresh = _record_is_current(autonomy, 2.0)
         if not snapshot.get("available"):
             issues.append("飞控状态不可用")
-        elif time.time() - float(state.get("stamp", 0.0)) > 3.0:
+        elif not state_fresh:
             issues.append("飞控状态已过期")
         if state and not state.get("ekf_healthy", False):
             issues.append("EKF 状态异常")
         if args.get("require_gps", True) and int(state.get("gps_fix", 0)) < 2:
             issues.append("GPS 定位质量不足")
         minimum = float(args.get("minimum_obstacle_distance", 2.0))
-        obstacle = autonomy.get("nearest_obstacle_m")
-        if obstacle is not None and math.isfinite(float(obstacle)):
+        obstacle = autonomy.get("nearest_obstacle_m") if autonomy_fresh else None
+        if not autonomy_fresh:
+            issues.append("自主避障状态不可用或已过期")
+        elif obstacle is not None and math.isfinite(float(obstacle)):
             if float(obstacle) < minimum:
                 issues.append(f"最近障碍物仅 {float(obstacle):.2f} 米")
         success = not issues
@@ -445,8 +464,11 @@ class RosStateBridge(Node):
             "checks": {
                 "ekf_healthy": state.get("ekf_healthy"),
                 "gps_fix": state.get("gps_fix"),
+                "gps_usable": state.get("gps_usable"),
                 "nearest_obstacle_m": obstacle,
                 "minimum_obstacle_distance": minimum,
+                "state_age_sec": state.get("age_sec"),
+                "autonomy_age_sec": autonomy.get("age_sec"),
             },
         }
 
@@ -701,6 +723,31 @@ def _evaluate_action_completion(
 
 def _record_is_fresh(record: dict[str, Any], started_at: float) -> bool:
     return float(record.get("stamp", 0.0)) >= started_at - 0.5
+
+
+def _age_seconds(stamp: float | None) -> float | None:
+    if stamp is None:
+        return None
+    return round(max(0.0, time.time() - float(stamp)), 3)
+
+
+def _record_with_freshness(
+    record: dict[str, Any] | None, timeout_sec: float
+) -> dict[str, Any] | None:
+    if record is None:
+        return None
+    value = dict(record)
+    age = _age_seconds(value.get("stamp"))
+    value["age_sec"] = age
+    value["fresh"] = age is not None and age <= timeout_sec
+    return value
+
+
+def _record_is_current(record: dict[str, Any], timeout_sec: float) -> bool:
+    if "fresh" in record:
+        return bool(record["fresh"])
+    age = _age_seconds(record.get("stamp"))
+    return age is not None and age <= timeout_sec
 
 
 def _verification_result(
