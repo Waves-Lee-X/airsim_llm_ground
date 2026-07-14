@@ -547,7 +547,19 @@ class AgentNode(Node):
 
     def _parse_task(self, task: str):
         rule_first = self._parse_task_with_rules(task)
-        if rule_first.get("intent") in ("search_target", "mission_sequence", "move_to"):
+        deterministic_intents = {
+            "search_target",
+            "mission_sequence",
+            "move_to",
+            "arm",
+            "disarm",
+            "takeoff",
+            "land",
+            "hover",
+            "return_home",
+            "emergency_stop",
+        }
+        if rule_first.get("intent") in deterministic_intents:
             rule_first["parser"] = "rules"
             return rule_first
 
@@ -663,34 +675,6 @@ class AgentNode(Node):
                 skill="TargetSearchSkill",
             )
 
-        if any(word in compact for word in ("前进", "向前", "后退", "向后", "左移", "右移", "向左", "向右", "左飞", "右飞", "向上", "向下", "飞到", "飞向", "航点", "飞行", "移动")):
-            args = self._extract_move_args(compact)
-            return self._parsed(
-                "move_to",
-                args,
-                self._move_reason(args),
-                risk_level="high",
-                need_confirm=True,
-                skill="PlanningSkill",
-            )
-
-        if any(word in compact for word in ("障碍物", "避障", "前方", "相机", "深度", "点云", "感知", "perception")):
-            return self._parsed(
-                "perception",
-                {},
-                "检查前方环境与障碍物风险",
-                skill="PerceptionSkill",
-            )
-
-        if any(word in compact for word in ("悬停", "停止", "刹停", "hover", "停住")):
-            return self._parsed(
-                "hover",
-                {},
-                "发布零速度进入悬停保持",
-                risk_level="medium",
-                skill="HoverSkill",
-            )
-
         if any(word in compact for word in ("起飞", "升空", "takeoff")):
             altitude = self._extract_altitude(compact)
             if altitude is None:
@@ -717,6 +701,34 @@ class AgentNode(Node):
                 args,
                 reason,
                 skill="TakeoffSkill",
+            )
+
+        if any(word in compact for word in ("前进", "向前", "后退", "向后", "左移", "右移", "向左", "向右", "左飞", "右飞", "向上", "向下", "飞到", "飞向", "航点", "飞行", "移动")):
+            args = self._extract_move_args(compact)
+            return self._parsed(
+                "move_to",
+                args,
+                self._move_reason(args),
+                risk_level="high",
+                need_confirm=True,
+                skill="PlanningSkill",
+            )
+
+        if any(word in compact for word in ("障碍物", "避障", "前方", "相机", "深度", "点云", "感知", "perception")):
+            return self._parsed(
+                "perception",
+                {},
+                "检查前方环境与障碍物风险",
+                skill="PerceptionSkill",
+            )
+
+        if any(word in compact for word in ("悬停", "停止", "刹停", "hover", "停住")):
+            return self._parsed(
+                "hover",
+                {},
+                "发布零速度进入悬停保持",
+                risk_level="medium",
+                skill="HoverSkill",
             )
 
         if any(word in compact for word in ("状态", "情况", "电量", "模式", "查询", "检查")):
@@ -1030,9 +1042,19 @@ class AgentNode(Node):
         compact = re.sub(r"\s+", "", str(text).lower())
         has_takeoff = any(word in compact for word in ("起飞", "升空", "takeoff"))
         # “起飞到10米”中的“飞到”描述的是起飞高度，不是平移目标。
-        # 去掉起飞短语后再判断“飞到/飞向”，避免把单步起飞扩成向前飞行。
-        movement_text = re.sub(r"(?:起飞|升空)(?:到|至)?", "", compact)
-        movement_text = movement_text.replace("takeoff", "")
+        # 去掉完整起飞高度片段后，再提取后续移动方向和距离。
+        number = r"(?:-?\d+(?:\.\d+)?|[零一二两三四五六七八九十]+)"
+        movement_text = re.sub(
+            rf"(?:起飞|升空)(?:到|至|高度)?{number}(?:米|m)?",
+            "",
+            compact,
+        )
+        movement_text = re.sub(
+            rf"takeoff(?:to)?{number}(?:m)?",
+            "",
+            movement_text,
+        )
+        movement_text = re.sub(r"(?:起飞|升空|takeoff)", "", movement_text)
         has_move = any(word in movement_text for word in (
             "前进", "向前", "后退", "向后", "左移", "右移", "向左", "向右", "飞到", "飞向", "移动",
         ))
@@ -1043,8 +1065,8 @@ class AgentNode(Node):
 
         sequence = {
             "takeoff": has_takeoff,
-            "takeoff_altitude": self._extract_altitude(compact) if has_takeoff and not has_move else 10.0,
-            "move": self._extract_move_args(compact) if has_move else None,
+            "takeoff_altitude": self._extract_altitude(compact) if has_takeoff else 10.0,
+            "move": self._extract_move_args(movement_text) if has_move else None,
             "target": self._extract_search_target(text) if has_target else None,
         }
         return self._complete_sequence_args(sequence)
