@@ -9,7 +9,10 @@ import httpx
 from aeromind_agent_gateway.api import create_app
 from aeromind_agent_gateway.config import GatewayConfig, OpenAIProviderConfig
 from aeromind_agent_gateway.events import EventBus
-from aeromind_agent_gateway.session_manager import SessionManager
+from aeromind_agent_gateway.session_manager import (
+    SessionManager,
+    _deterministic_control_fallback,
+)
 from aeromind_agent_gateway.store import SessionStore
 
 
@@ -44,6 +47,20 @@ class FakeMemorySummarizer:
                 }
             ],
         }
+
+
+class FakeNoToolRuntime:
+    async def run_turn(self, _prompt, _emit):
+        return {
+            "text": "已创建确认请求 confirm-fabricated",
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "is_error": False,
+        }
+
+    async def close(self):
+        return None
+
 
 class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -282,6 +299,45 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.sessions.provider_catalog()[1]["configured"])
         with self.assertRaises(ValueError):
             self.sessions._resolve_provider_model(None, "unknown:model")
+
+    def test_square_command_has_deterministic_confirmation_fallback(self):
+        action, workflow = _deterministic_control_fallback(
+            "飞一个边长 10 米的正方形轨迹"
+        )
+        self.assertEqual(action, "workflow")
+        self.assertEqual(workflow["steps"][0]["action"], "takeoff")
+        moves = [
+            step for step in workflow["steps"] if step["action"] == "move"
+        ]
+        self.assertEqual(len(moves), 4)
+        self.assertTrue(all(step["args"]["distance"] == 10.0 for step in moves))
+
+    def test_square_question_does_not_create_control_fallback(self):
+        self.assertIsNone(_deterministic_control_fallback("什么是正方形轨迹？"))
+
+    async def test_square_fallback_creates_real_confirmation_and_event(self):
+        session = self.sessions.ensure_session(
+            "square-fallback", "web-local", "web"
+        )
+        self.sessions._runtimes[session["id"]] = FakeNoToolRuntime()
+        queue = await self.sessions.subscribe_user("web-local")
+
+        await self.sessions._run_chat(
+            session["id"], "飞一个边长 10 米的正方形轨迹", "request-1"
+        )
+
+        pending = self.store.pending_confirmations_for_user(session["user_id"])
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["action"], "workflow")
+        self.assertNotEqual(pending[0]["id"], "confirm-fabricated")
+        events = []
+        while not queue.empty():
+            events.append((await queue.get())["type"])
+        self.assertIn("confirmation.required", events)
+        self.assertIn("control.request.recovered", events)
+        latest = self.store.messages(session["id"], limit=1)[0]
+        self.assertIn(pending[0]["id"], latest["content"])
+        await self.sessions.unsubscribe_user("web-local", queue)
 
 
 if __name__ == "__main__":

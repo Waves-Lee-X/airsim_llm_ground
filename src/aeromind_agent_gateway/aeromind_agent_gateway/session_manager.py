@@ -16,7 +16,7 @@ from .memory import ClaudeMemorySummarizer, MemorySummarizer
 from .openai_runtime import OpenAICompatibleRuntime
 from .ros_state import RosStateBridge
 from .runtime import AgentRuntime
-from .skill_registry import skill_catalog
+from .skill_registry import build_skill, skill_catalog
 from .store import SessionStore
 
 
@@ -259,6 +259,12 @@ class SessionManager:
 
         try:
             turn_started = time.perf_counter()
+            pending_before = {
+                item["id"]
+                for item in self._store.pending_confirmations_for_user(
+                    session["user_id"]
+                )
+            }
             result = await runtime.run_turn(
                 self._prompt_with_vision_context(session_id, content), emit
             )
@@ -271,6 +277,38 @@ class SessionManager:
                 if not result.get("is_error")
                 else result.get("error") or "Claude Agent 执行失败"
             )
+            fallback = _deterministic_control_fallback(content)
+            pending_after = self._store.pending_confirmations_for_user(
+                session["user_id"]
+            )
+            created_by_model = any(
+                item["id"] not in pending_before for item in pending_after
+            )
+            if (
+                fallback is not None
+                and not created_by_model
+                and not result.get("is_error")
+            ):
+                action, args = fallback
+                created = await self._confirmations.create(
+                    session_id=session_id,
+                    user_id=session["user_id"],
+                    action=action,
+                    args=args,
+                )
+                text = (
+                    "模型没有实际调用控制工具，控制网关已启用白名单技能兜底。\n\n"
+                    f"已创建真实确认请求：`{created['confirmation_id']}`\n\n"
+                    f"任务：{created['summary']}\n\n"
+                    "等待确认。请在弹窗中选择“确认执行”或“取消”。"
+                )
+                await self._events.emit(
+                    session_id,
+                    "control.request.recovered",
+                    request_id=request_id,
+                    confirmation_id=created["confirmation_id"],
+                    action=action,
+                )
             assistant_message = self._store.add_message(
                 session_id,
                 "assistant",
@@ -307,7 +345,6 @@ class SessionManager:
                 request_id=request_id,
                 message=f"Agent Runtime 调用失败: {exc}",
             )
-
     def _prompt_with_vision_context(self, session_id: str, content: str) -> str:
         session = self._store.get_session(session_id)
         operator_context = ""
@@ -706,6 +743,32 @@ class SessionManager:
             return_exceptions=True,
         )
         self._runtimes.clear()
+
+
+def _deterministic_control_fallback(
+    content: str,
+) -> tuple[str, dict[str, Any]] | None:
+    compact = re.sub(r"\s+", "", str(content or "").lower())
+    if "正方形" not in compact or not any(
+        word in compact for word in ("飞", "执行", "轨迹任务")
+    ):
+        return None
+    match = re.search(r"(?:边长)?(\d+(?:\.\d+)?)(?:米|m)", compact)
+    if match is None:
+        return None
+    side_length = float(match.group(1))
+    altitude_match = re.search(r"(?:高度|高)(\d+(?:\.\d+)?)(?:米|m)", compact)
+    altitude = float(altitude_match.group(1)) if altitude_match else 10.0
+    workflow = build_skill(
+        "flight.square",
+        {
+            "side_length": side_length,
+            "altitude": altitude,
+            "takeoff_if_needed": True,
+            "land_after": "降落" in compact,
+        },
+    )
+    return "workflow", workflow
 
 
 def _parse_confirmation_command(content: str) -> tuple[str, str | None] | None:
