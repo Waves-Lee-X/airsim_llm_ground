@@ -35,6 +35,7 @@ except ImportError:
 VEHICLE_CMD_COMPONENT_ARM_DISARM = 400
 VEHICLE_CMD_NAV_TAKEOFF = 22
 VEHICLE_CMD_NAV_LAND = 21
+VEHICLE_CMD_NAV_RETURN_TO_LAUNCH = 20
 VEHICLE_CMD_DO_SET_MODE = 176
 PX4_CUSTOM_MAIN_MODE_OFFBOARD = 6
 
@@ -107,6 +108,19 @@ def _make_land_command():
     return cmd
 
 
+def _make_return_home_command():
+    """构造 PX4 原生 RTL VehicleCommand"""
+    cmd = VehicleCommand()
+    cmd.timestamp = 0
+    cmd.command = VEHICLE_CMD_NAV_RETURN_TO_LAUNCH
+    cmd.target_system = 1
+    cmd.target_component = 1
+    cmd.source_system = 1
+    cmd.source_component = 1
+    cmd.from_external = True
+    return cmd
+
+
 def _position_to_trajectory_setpoint(x: float, y: float, z: float, yaw: float = float("nan")):
     """ROS ENU 位置 → PX4 NED TrajectorySetpoint"""
     sp = TrajectorySetpoint()
@@ -118,6 +132,22 @@ def _position_to_trajectory_setpoint(x: float, y: float, z: float, yaw: float = 
     sp.yaw = yaw
     for i in range(3):
         sp.velocity[i] = float("nan")
+        sp.acceleration[i] = float("nan")
+    sp.yawspeed = float("nan")
+    return sp
+
+
+def _velocity_to_trajectory_setpoint(vx: float, vy: float, vz: float, yaw: float = float("nan")):
+    """ROS ENU 速度 → PX4 NED TrajectorySetpoint"""
+    sp = TrajectorySetpoint()
+    sp.timestamp = 0
+    px4_vx, px4_vy, px4_vz = _enu_to_ned(vx, vy, vz)
+    sp.velocity[0] = px4_vx
+    sp.velocity[1] = px4_vy
+    sp.velocity[2] = px4_vz
+    sp.yaw = yaw
+    for i in range(3):
+        sp.position[i] = float("nan")
         sp.acceleration[i] = float("nan")
     sp.yawspeed = float("nan")
     return sp
@@ -272,6 +302,16 @@ class PX4Controller:
         self._logger.info("PX4: 降落指令已发送")
         return True
 
+    def return_home(self) -> bool:
+        """执行 PX4 原生 RTL（Return To Launch）"""
+        if not HAS_PX4_MSGS:
+            return False
+        self._offboard_active = False
+        cmd = _make_return_home_command()
+        self._publish_vehicle_command(cmd)
+        self._logger.info("PX4: RTL 返航指令已发送")
+        return True
+
     # ============================================================
     # 位置控制（路径跟随）
     # ============================================================
@@ -287,6 +327,16 @@ class PX4Controller:
             return
         self._offboard_mode = "position"
         sp = _position_to_trajectory_setpoint(x, y, z, yaw)
+        sp.timestamp = self._timestamp_us()
+        self._last_trajectory_setpoint = sp
+        self._trajectory_pub.publish(sp)
+
+    def set_velocity(self, vx: float, vy: float, vz: float, yaw: float = float("nan")):
+        """设置目标速度（ROS ENU 坐标系，m/s）"""
+        if not HAS_PX4_MSGS:
+            return
+        self._offboard_mode = "velocity"
+        sp = _velocity_to_trajectory_setpoint(vx, vy, vz, yaw)
         sp.timestamp = self._timestamp_us()
         self._last_trajectory_setpoint = sp
         self._trajectory_pub.publish(sp)

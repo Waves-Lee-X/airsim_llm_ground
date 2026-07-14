@@ -12,8 +12,10 @@
   <exec_depend>aeromind_bridge</exec_depend>
   <exec_depend>aeromind_perception</exec_depend>
   <exec_depend>aeromind_planning</exec_depend>
+  <exec_depend>aeromind_autonomy</exec_depend>
   <exec_depend>aeromind_control</exec_depend>
   <exec_depend>aeromind_agent</exec_depend>
+  <exec_depend>aeromind_agent_gateway</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

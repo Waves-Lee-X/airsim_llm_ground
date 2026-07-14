@@ -1,0 +1,178 @@
+{
+  "id": "mission-1783950030221",
+  "status": "active",
+  "message": "任务已创建，等待 MissionManager 执行",
+  "created_at": 1783950030.2219207,
+  "updated_at": 1783950030.2219207,
+  "mission_dir": "/home/waves/aeromind_ws/missions/mission-1783950030221",
+  "mission_json": "/home/waves/aeromind_ws/missions/mission-1783950030221/mission.json",
+  "report_md": "/home/waves/aeromind_ws/missions/mission-1783950030221/report.md",
+  "current_index": 0,
+  "parsed": {
+    "intent": "mission_sequence",
+    "skill": "MissionSequenceSkill",
+    "skill_info": {
+      "name": "MissionSequenceSkill",
+      "label": "复合任务",
+      "intent": "mission_sequence",
+      "type": "soft",
+      "risk_level": "high",
+      "description": "将起飞、相对移动、目标检测等自然语言复合任务拆成多步执行链。",
+      "example_task": "起飞，向左飞20米，并检测人",
+      "tools": [
+        "takeoff_drone",
+        "publish_autonomy_goal",
+        "match_target"
+      ],
+      "enabled": true
+    },
+    "args": {
+      "takeoff": true,
+      "takeoff_altitude": 10.0,
+      "move": {
+        "forward_m": 10.0,
+        "right_m": 0.0,
+        "up_m": 0.0,
+        "takeoff_altitude": 10.0
+      },
+      "target": null,
+      "steps": [
+        {
+          "intent": "takeoff",
+          "label": "起飞到 10.0 米"
+        },
+        {
+          "intent": "move_to",
+          "label": "发布自主避障目标：前方 10.0 米"
+        }
+      ]
+    },
+    "risk_level": "high",
+    "need_confirm": true,
+    "reason": "复合任务：起飞到 10.0 米 → 发布自主避障目标：前方 10.0 米",
+    "parser": "rules",
+    "safety_check": {
+      "ok": true,
+      "message": "安全检查通过",
+      "checks": [
+        {
+          "name": "state_available",
+          "label": "飞控状态可用",
+          "ok": true,
+          "detail": "已收到 /control/drone_state"
+        },
+        {
+          "name": "altitude_range",
+          "label": "目标高度范围",
+          "ok": true,
+          "detail": "10.0 m，允许范围 1-50 m"
+        },
+        {
+          "name": "takeoff_service",
+          "label": "起飞服务就绪",
+          "ok": true,
+          "detail": "/control/takeoff"
+        },
+        {
+          "name": "odometry",
+          "label": "里程计可用",
+          "ok": true,
+          "detail": "已收到 /sensor/odometry"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_drone_state",
+          "target": "/control/drone_state",
+          "status": "success",
+          "args": {},
+          "result": {
+            "armed": false,
+            "mode": "AUTO_LOITER",
+            "battery": 0.0,
+            "gps_fix": 2,
+            "ekf_healthy": true
+          }
+        }
+      ],
+      "progress": [
+        {
+          "name": "safety_state_available",
+          "label": "飞控状态可用: 已收到 /control/drone_state",
+          "status": "done"
+        },
+        {
+          "name": "safety_altitude_range",
+          "label": "目标高度范围: 10.0 m，允许范围 1-50 m",
+          "status": "done"
+        },
+        {
+          "name": "safety_takeoff_service",
+          "label": "起飞服务就绪: /control/takeoff",
+          "status": "done"
+        },
+        {
+          "name": "safety_odometry",
+          "label": "里程计可用: 已收到 /sensor/odometry",
+          "status": "done"
+        }
+      ]
+    },
+    "confirmed": true
+  },
+  "steps": [
+    {
+      "name": "takeoff",
+      "label": "起飞到 10.0 米",
+      "status": "pending",
+      "result": null
+    },
+    {
+      "name": "wait_takeoff_done",
+      "label": "等待高度到达 10.0 米",
+      "status": "pending",
+      "result": null
+    },
+    {
+      "name": "move_to_goal",
+      "label": "发布自主避障目标：前方 10.0 米",
+      "status": "pending",
+      "result": null
+    },
+    {
+      "name": "wait_goal_done",
+      "label": "等待自主目标到达或阻塞",
+      "status": "pending",
+      "result": null
+    },
+    {
+      "name": "mission_report",
+      "label": "生成任务报告",
+      "status": "pending",
+      "result": null
+    }
+  ],
+  "results": {
+    "captures": [
+      {
+        "label": "mission_start",
+        "timestamp": 1783950040.2236884,
+        "success": false,
+        "message": "/perception/capture_image 无响应或调用超时",
+        "source_file": "",
+        "mission_file": ""
+      }
+    ]
+  },
+  "captures": [
+    {
+      "label": "mission_start",
+      "timestamp": 1783950040.2236884,
+      "success": false,
+      "message": "/perception/capture_image 无响应或调用超时",
+      "source_file": "",
+      "mission_file": ""
+    }
+  ],
+  "written_at": 1783950040.2237873
+}

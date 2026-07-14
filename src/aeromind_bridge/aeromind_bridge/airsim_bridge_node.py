@@ -30,8 +30,9 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 # ROS 2 标准消息
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
-from geometry_msgs.msg import Twist, Quaternion, Vector3
+from geometry_msgs.msg import TransformStamped, Twist, Quaternion, Vector3
 from std_msgs.msg import Header
+from tf2_ros import TransformBroadcaster
 
 # 自定义消息
 from aeromind_interfaces.msg import DroneState
@@ -45,6 +46,9 @@ from aeromind_bridge.px4_bridge import (
     vehicle_status_to_drone_state,
     cmd_vel_to_offboard_control,
     cmd_vel_to_trajectory_setpoint,
+    ned_to_enu_position,
+    ned_to_enu_quaternion,
+    ned_to_enu_velocity,
 )
 
 # AirSim API
@@ -77,6 +81,7 @@ class AirSimBridgeNode(Node):
         self._odom_pub = self.create_publisher(Odometry, "/sensor/odometry", 10)
         self._imu_pub = self.create_publisher(Imu, "/sensor/imu", 10)
         self._state_pub = self.create_publisher(DroneState, "/control/drone_state", 10)
+        self._tf_broadcaster = TransformBroadcaster(self)
 
         # 创建订阅者：接收速度指令（两种模式共用）
         self._cmd_vel_sub = self.create_subscription(
@@ -159,27 +164,34 @@ class AirSimBridgeNode(Node):
         odom.child_frame_id = "base_link"
 
         pos = state.kinematics_estimated.position
-        odom.pose.pose.position.x = pos.x_val
-        odom.pose.pose.position.y = pos.y_val
-        odom.pose.pose.position.z = pos.z_val
+        enu_position = ned_to_enu_position(pos.x_val, pos.y_val, pos.z_val)
+        odom.pose.pose.position.x = enu_position[0]
+        odom.pose.pose.position.y = enu_position[1]
+        odom.pose.pose.position.z = enu_position[2]
 
         orient = state.kinematics_estimated.orientation
-        odom.pose.pose.orientation.x = orient.x_val
-        odom.pose.pose.orientation.y = orient.y_val
-        odom.pose.pose.orientation.z = orient.z_val
-        odom.pose.pose.orientation.w = orient.w_val
+        odom.pose.pose.orientation = ned_to_enu_quaternion(
+            Quaternion(
+                x=float(orient.x_val),
+                y=float(orient.y_val),
+                z=float(orient.z_val),
+                w=float(orient.w_val),
+            )
+        )
 
         vel = state.kinematics_estimated.linear_velocity
-        odom.twist.twist.linear.x = vel.x_val
-        odom.twist.twist.linear.y = vel.y_val
-        odom.twist.twist.linear.z = vel.z_val
+        enu_velocity = ned_to_enu_velocity(vel.x_val, vel.y_val, vel.z_val)
+        odom.twist.twist.linear.x = enu_velocity[0]
+        odom.twist.twist.linear.y = enu_velocity[1]
+        odom.twist.twist.linear.z = enu_velocity[2]
 
         ang = state.kinematics_estimated.angular_velocity
-        odom.twist.twist.angular.x = ang.x_val
-        odom.twist.twist.angular.y = ang.y_val
-        odom.twist.twist.angular.z = ang.z_val
+        enu_angular = ned_to_enu_velocity(ang.x_val, ang.y_val, ang.z_val)
+        odom.twist.twist.angular.x = enu_angular[0]
+        odom.twist.twist.angular.y = enu_angular[1]
+        odom.twist.twist.angular.z = enu_angular[2]
 
-        self._odom_pub.publish(odom)
+        self._publish_odometry(odom)
 
     def _publish_airsim_imu(self, now, state):
         imu = Imu()
@@ -364,7 +376,7 @@ class AirSimBridgeNode(Node):
                     self._latest_local_pos,
                     self._latest_attitude,
                 )
-                self._odom_pub.publish(odom)
+                self._publish_odometry(odom)
             except Exception as e:
                 self.get_logger().warn(f"PX4 Odometry 合成失败: {e}")
 
@@ -382,6 +394,17 @@ class AirSimBridgeNode(Node):
             self._cmd_vel_to_airsim(msg)
         else:
             self._cmd_vel_to_px4(msg)
+
+    def _publish_odometry(self, odom: Odometry):
+        self._odom_pub.publish(odom)
+        transform = TransformStamped()
+        transform.header = odom.header
+        transform.child_frame_id = odom.child_frame_id or "base_link"
+        transform.transform.translation.x = float(odom.pose.pose.position.x)
+        transform.transform.translation.y = float(odom.pose.pose.position.y)
+        transform.transform.translation.z = float(odom.pose.pose.position.z)
+        transform.transform.rotation = odom.pose.pose.orientation
+        self._tf_broadcaster.sendTransform(transform)
 
     def _cmd_vel_to_airsim(self, msg: Twist):
         """速度指令 → AirSim moveByVelocityAsync (ENU → NED 转换)"""
@@ -498,7 +521,7 @@ class AirSimBridgeNode(Node):
         odom.header = Header(stamp=now, frame_id="odom")
         odom.child_frame_id = "base_link"
         odom.pose.pose.orientation.w = 1.0
-        self._odom_pub.publish(odom)
+        self._publish_odometry(odom)
 
         imu = Imu()
         imu.header = Header(stamp=now, frame_id="imu_link")

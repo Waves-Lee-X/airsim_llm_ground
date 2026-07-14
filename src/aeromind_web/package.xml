@@ -12,7 +12,9 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>aeromind_interfaces</depend>
+  <depend>aeromind_agent</depend>
 
   <export>
     <build_type>ament_python</build_type>

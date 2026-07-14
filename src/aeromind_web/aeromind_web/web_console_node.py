@@ -8,14 +8,16 @@
 """
 
 import base64
+import hashlib
 import json
 import math
 import mimetypes
 import os
 import struct
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -23,9 +25,154 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Image, PointCloud2
+from std_msgs.msg import Empty, String
 
-from aeromind_interfaces.msg import Detection, DroneState
-from aeromind_interfaces.srv import ArmDrone, ExecuteTask, Land, Takeoff
+from aeromind_interfaces.msg import AutonomyStatus, Detection, DetectionArray, DroneState
+from aeromind_interfaces.srv import ArmDrone, ExecuteTask, Land, ReturnHome, Takeoff
+
+try:
+    from aeromind_agent.skill_catalog import get_skill_catalog as get_agent_skill_catalog
+except Exception:
+    get_agent_skill_catalog = None
+
+
+SKILL_CATALOG = [
+    {
+        "name": "StatusSkill",
+        "label": "状态检查",
+        "type": "hard",
+        "risk_level": "low",
+        "description": "读取飞控状态，汇总解锁、模式、电池、GPS、EKF。",
+        "example_task": "查询状态",
+        "enabled": True,
+    },
+    {
+        "name": "ArmSkill",
+        "label": "解锁/加锁",
+        "type": "hard",
+        "risk_level": "medium",
+        "description": "调用 /control/arm 执行解锁或加锁。",
+        "example_task": "解锁",
+        "enabled": True,
+    },
+    {
+        "name": "TakeoffSkill",
+        "label": "安全起飞",
+        "type": "hard",
+        "risk_level": "medium",
+        "description": "解析目标高度，检查状态并调用 /control/takeoff。",
+        "example_task": "起飞到10米",
+        "enabled": True,
+    },
+    {
+        "name": "LandSkill",
+        "label": "降落",
+        "type": "hard",
+        "risk_level": "medium",
+        "description": "读取当前状态并调用 /control/land。",
+        "example_task": "降落",
+        "enabled": True,
+    },
+    {
+        "name": "PlanningSkill",
+        "label": "路径规划",
+        "type": "soft",
+        "risk_level": "high",
+        "description": "自然语言目标转成 /autonomy/goal，由底层自主避障执行。",
+        "example_task": "飞到前方20米",
+        "enabled": True,
+    },
+    {
+        "name": "HoverSkill",
+        "label": "悬停保持",
+        "type": "hard",
+        "risk_level": "medium",
+        "description": "取消自主目标并发布零速度，进入悬停保持。",
+        "example_task": "原地悬停",
+        "enabled": True,
+    },
+    {
+        "name": "ReturnHomeSkill",
+        "label": "返航",
+        "type": "hard",
+        "risk_level": "high",
+        "description": "调用 /control/return_home 触发 PX4 原生 RTL。",
+        "example_task": "返航并降落",
+        "enabled": True,
+    },
+    {
+        "name": "EmergencyStopSkill",
+        "label": "急停",
+        "type": "hard",
+        "risk_level": "high",
+        "description": "取消自主目标、发布零速度，并尝试调用 /control/arm 加锁。",
+        "example_task": "立即急停",
+        "enabled": True,
+    },
+    {
+        "name": "PerceptionSkill",
+        "label": "环境感知",
+        "type": "perception",
+        "risk_level": "low",
+        "description": "读取相机、深度、LiDAR 或 detection 分析环境。",
+        "example_task": "检查前方有没有障碍物",
+        "enabled": True,
+    },
+    {
+        "name": "CaptureImageSkill",
+        "label": "拍照取证",
+        "type": "perception",
+        "risk_level": "low",
+        "description": "调用 /perception/capture_image 保存当前 RGB 图像。",
+        "example_task": "拍一张前方照片",
+        "enabled": True,
+    },
+    {
+        "name": "ScanAreaSkill",
+        "label": "区域扫描",
+        "type": "soft",
+        "risk_level": "medium",
+        "description": "基于当前传感器缓存生成区域扫描摘要。",
+        "example_task": "扫描前方区域并报告障碍物",
+        "enabled": True,
+    },
+    {
+        "name": "TargetSearchSkill",
+        "label": "目标搜索",
+        "type": "soft",
+        "risk_level": "medium",
+        "description": "根据自然语言目标匹配当前 detection，例如中文“人”会映射到 YOLO 的 person。",
+        "example_task": "检测人",
+        "enabled": True,
+    },
+    {
+        "name": "SemanticImageSkill",
+        "label": "图像语义分析",
+        "type": "perception",
+        "risk_level": "low",
+        "description": "调用 /perception/analyze_image，让视觉语言模型或规则摘要分析当前画面。",
+        "example_task": "分析当前画面中有什么",
+        "enabled": True,
+    },
+    {
+        "name": "MissionSequenceSkill",
+        "label": "复合任务",
+        "type": "soft",
+        "risk_level": "high",
+        "description": "拆解起飞、移动、目标检测等多步自然语言任务。",
+        "example_task": "起飞，向左飞20米，并检测人",
+        "enabled": True,
+    },
+    {
+        "name": "MissionReportSkill",
+        "label": "任务报告",
+        "type": "soft",
+        "risk_level": "low",
+        "description": "汇总飞行状态、工具调用、检测结果和任务结论。",
+        "example_task": "生成当前任务报告",
+        "enabled": True,
+    },
+]
 
 
 def _stamp_to_float(stamp) -> float:
@@ -40,16 +187,26 @@ class WebConsoleNode(Node):
 
         self.declare_parameter("host", "0.0.0.0")
         self.declare_parameter("port", 8080)
+        self.declare_parameter(
+            "mission_log_dir",
+            os.environ.get("AEROMIND_MISSION_DIR", os.path.expanduser("~/aeromind_ws/missions")),
+        )
         self._host = str(self.get_parameter("host").value)
         self._port = int(self.get_parameter("port").value)
+        self._mission_log_dir = os.path.expanduser(str(self.get_parameter("mission_log_dir").value))
 
         self._lock = threading.Lock()
         self._state = None
         self._odom = None
         self._image = None
         self._depth = None
+        self._depthcloud = None
         self._pointcloud = None
         self._detection = None
+        self._detections = []
+        self._autonomy = None
+        self._mission = None
+        self._image_analysis = None
         self._events = []
 
         self.create_subscription(DroneState, "/control/drone_state", self._state_cb, 10)
@@ -58,12 +215,18 @@ class WebConsoleNode(Node):
         self.create_subscription(Image, "/sensor/camera/depth/front_center", self._depth_cb, 10)
         self.create_subscription(PointCloud2, "/sensor/lidar/points", self._pointcloud_cb, 10)
         self.create_subscription(Detection, "/perception/detection", self._detection_cb, 10)
+        self.create_subscription(DetectionArray, "/perception/detections", self._detections_cb, 10)
+        self.create_subscription(AutonomyStatus, "/autonomy/status", self._autonomy_cb, 10)
+        self.create_subscription(String, "/agent/mission_status", self._mission_cb, 10)
+        self.create_subscription(String, "/perception/image_analysis", self._image_analysis_cb, 10)
 
         self._cmd_vel_pub = self.create_publisher(Twist, "/control/cmd_vel", 10)
+        self._autonomy_cancel_pub = self.create_publisher(Empty, "/autonomy/cancel", 10)
 
         self._arm_client = self.create_client(ArmDrone, "/control/arm")
         self._takeoff_client = self.create_client(Takeoff, "/control/takeoff")
         self._land_client = self.create_client(Land, "/control/land")
+        self._return_home_client = self.create_client(ReturnHome, "/control/return_home")
         self._task_client = self.create_client(ExecuteTask, "/agent/execute_task")
 
         self._static_dir = os.path.join(
@@ -122,9 +285,10 @@ class WebConsoleNode(Node):
             }
 
     def _depth_cb(self, msg: Image):
-        summary = self._summarize_depth(msg)
+        summary, depthcloud = self._summarize_depth(msg)
         with self._lock:
             self._depth = summary
+            self._depthcloud = depthcloud
 
     def _pointcloud_cb(self, msg: PointCloud2):
         summary = self._summarize_pointcloud(msg)
@@ -142,6 +306,53 @@ class WebConsoleNode(Node):
                 "height": float(msg.height),
             }
 
+    def _detections_cb(self, msg: DetectionArray):
+        detections = []
+        for item in msg.detections:
+            detections.append({
+                "class_name": item.class_name,
+                "confidence": float(item.confidence),
+                "x": float(item.x),
+                "y": float(item.y),
+                "width": float(item.width),
+                "height": float(item.height),
+            })
+        with self._lock:
+            self._detections = detections
+            if detections:
+                self._detection = max(detections, key=lambda item: item["confidence"])
+
+    def _autonomy_cb(self, msg: AutonomyStatus):
+        with self._lock:
+            self._autonomy = {
+                "stamp": _stamp_to_float(msg.header.stamp),
+                "enabled": bool(msg.enabled),
+                "state": msg.state,
+                "replanning": bool(msg.replanning),
+                "nearest_obstacle_m": float(msg.nearest_obstacle_m),
+                "target_distance_m": float(msg.target_distance_m),
+                "active_strategy": msg.active_strategy,
+                "message": msg.message,
+            }
+
+    def _mission_cb(self, msg: String):
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            self.get_logger().warning("收到无法解析的 /agent/mission_status")
+            return
+        with self._lock:
+            self._mission = payload.get("active_mission")
+
+    def _image_analysis_cb(self, msg: String):
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            self.get_logger().warning("收到无法解析的 /perception/image_analysis")
+            return
+        with self._lock:
+            self._image_analysis = payload
+
     # ------------------------------------------------------------------
     # API methods called by HTTP handler
     # ------------------------------------------------------------------
@@ -154,11 +365,16 @@ class WebConsoleNode(Node):
                 "depth": self._depth,
                 "pointcloud": self._pointcloud_meta(),
                 "detection": self._detection,
+                "detections": list(self._detections),
+                "autonomy": self._autonomy,
+                "mission": self._mission,
+                "image_analysis": self._image_analysis,
                 "events": list(self._events[-80:]),
                 "services": {
                     "arm": self._arm_client.service_is_ready(),
                     "takeoff": self._takeoff_client.service_is_ready(),
                     "land": self._land_client.service_is_ready(),
+                    "return_home": self._return_home_client.service_is_ready(),
                     "agent": self._task_client.service_is_ready(),
                 },
             }
@@ -171,26 +387,144 @@ class WebConsoleNode(Node):
         with self._lock:
             return dict(self._pointcloud) if self._pointcloud is not None else None
 
+    def latest_depthcloud(self):
+        with self._lock:
+            return dict(self._depthcloud) if self._depthcloud is not None else None
+
     def arm(self, arm: bool):
         req = ArmDrone.Request()
         req.arm = bool(arm)
-        return self._call_service(self._arm_client, req, "解锁" if arm else "加锁")
+        return self._call_service(self._arm_client, req, "解锁" if arm else "加锁", timeout_sec=15.0)
 
     def takeoff(self, altitude: float):
         req = Takeoff.Request()
         req.altitude = float(altitude)
-        return self._call_service(self._takeoff_client, req, f"起飞到 {altitude:.1f}m")
+        return self._call_service(self._takeoff_client, req, f"起飞到 {altitude:.1f}m", timeout_sec=30.0)
 
     def land(self):
         req = Land.Request()
-        return self._call_service(self._land_client, req, "降落")
+        return self._call_service(self._land_client, req, "降落", timeout_sec=30.0)
+
+    def return_home(self):
+        req = ReturnHome.Request()
+        return self._call_service(self._return_home_client, req, "PX4 RTL 返航", timeout_sec=15.0)
 
     def execute_task(self, task: str):
         req = ExecuteTask.Request()
         req.task_description = task.strip()
         if not req.task_description:
             return {"success": False, "message": "任务不能为空"}
-        return self._call_service(self._task_client, req, f"自然语言任务: {req.task_description}")
+        # Agent may call downstream Control/PX4/AirSim services after confirmation.
+        label = "确认执行任务" if req.task_description.startswith("__aeromind_confirm__:") else "自然语言任务"
+        return self._call_service(self._task_client, req, label, timeout_sec=90.0)
+
+    def skill_catalog(self):
+        if get_agent_skill_catalog is not None:
+            return {"success": True, "skills": get_agent_skill_catalog()}
+        return {"success": True, "skills": [dict(skill) for skill in SKILL_CATALOG]}
+
+    def mission_reports(self, limit: int = 20):
+        root = os.path.abspath(self._mission_log_dir)
+        if not os.path.isdir(root):
+            return {"success": True, "reports": [], "mission_log_dir": root}
+        reports = []
+        for name in os.listdir(root):
+            if not name.startswith("mission-"):
+                continue
+            mission_dir = os.path.abspath(os.path.join(root, name))
+            if not mission_dir.startswith(root) or not os.path.isdir(mission_dir):
+                continue
+            report_path = os.path.join(mission_dir, "report.md")
+            mission_path = os.path.join(mission_dir, "mission.json")
+            if not os.path.exists(report_path) and not os.path.exists(mission_path):
+                continue
+            stat_path = report_path if os.path.exists(report_path) else mission_path
+            item = {
+                "id": name,
+                "mission_dir": mission_dir,
+                "report_md": report_path if os.path.exists(report_path) else "",
+                "mission_json": mission_path if os.path.exists(mission_path) else "",
+                "captures": self._mission_captures(mission_dir),
+                "updated_at": os.path.getmtime(stat_path),
+                "status": "--",
+                "message": "",
+            }
+            if os.path.exists(mission_path):
+                try:
+                    with open(mission_path, "r", encoding="utf-8") as file:
+                        mission = json.load(file)
+                    item["status"] = mission.get("status", "--")
+                    item["message"] = mission.get("message", "")
+                    item["updated_at"] = float(mission.get("updated_at") or item["updated_at"])
+                except Exception:
+                    pass
+            reports.append(item)
+        reports.sort(key=lambda item: item["updated_at"], reverse=True)
+        return {"success": True, "reports": reports[: max(1, int(limit))], "mission_log_dir": root}
+
+    def mission_report(self, mission_id: str):
+        safe_id = os.path.basename(mission_id.strip())
+        root = os.path.abspath(self._mission_log_dir)
+        mission_dir = os.path.abspath(os.path.join(root, safe_id))
+        if not mission_dir.startswith(root) or not os.path.isdir(mission_dir):
+            return {"success": False, "message": "任务报告不存在"}
+        report_path = os.path.join(mission_dir, "report.md")
+        mission_path = os.path.join(mission_dir, "mission.json")
+        if not os.path.exists(report_path):
+            return {"success": False, "message": "report.md 尚未生成"}
+        with open(report_path, "r", encoding="utf-8") as file:
+            content = file.read()
+        mission = None
+        if os.path.exists(mission_path):
+            try:
+                with open(mission_path, "r", encoding="utf-8") as file:
+                    mission = json.load(file)
+            except Exception:
+                mission = None
+        return {
+            "success": True,
+            "id": safe_id,
+            "mission_dir": mission_dir,
+            "report_md": report_path,
+            "mission_json": mission_path if os.path.exists(mission_path) else "",
+            "captures": self._mission_captures(mission_dir),
+            "content": content,
+            "mission": mission,
+        }
+
+    def mission_report_path(self, mission_id: str):
+        safe_id = os.path.basename(mission_id.strip())
+        root = os.path.abspath(self._mission_log_dir)
+        mission_dir = os.path.abspath(os.path.join(root, safe_id))
+        report_path = os.path.abspath(os.path.join(mission_dir, "report.md"))
+        if not mission_dir.startswith(root) or not report_path.startswith(mission_dir):
+            return None
+        return report_path if os.path.exists(report_path) else None
+
+    def mission_capture_path(self, mission_id: str, filename: str):
+        safe_id = os.path.basename(mission_id.strip())
+        safe_name = os.path.basename(filename.strip())
+        root = os.path.abspath(self._mission_log_dir)
+        captures_dir = os.path.abspath(os.path.join(root, safe_id, "captures"))
+        path = os.path.abspath(os.path.join(captures_dir, safe_name))
+        if not captures_dir.startswith(root) or not path.startswith(captures_dir):
+            return None
+        return path if os.path.exists(path) else None
+
+    def _mission_captures(self, mission_dir: str):
+        captures_dir = os.path.join(mission_dir, "captures")
+        if not os.path.isdir(captures_dir):
+            return []
+        captures = []
+        for name in sorted(os.listdir(captures_dir)):
+            if not name.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp", ".ppm", ".pgm")
+            ):
+                continue
+            path = os.path.join(captures_dir, name)
+            if os.path.isfile(path):
+                captures.append({"filename": name, "path": path, "mtime": os.path.getmtime(path)})
+        return captures
 
     def publish_cmd_vel(self, payload):
         msg = Twist()
@@ -202,6 +536,12 @@ class WebConsoleNode(Node):
         msg.angular.z = float(angular.get("z", 0.0))
         self._cmd_vel_pub.publish(msg)
         return {"success": True, "message": "cmd_vel 已发布"}
+
+    def cancel_autonomy(self):
+        self._autonomy_cancel_pub.publish(Empty())
+        self._cmd_vel_pub.publish(Twist())
+        self._add_event("service", "自主任务已取消，已发布悬停零速度")
+        return {"success": True, "message": "已取消当前自主任务并发布零速度"}
 
     def shutdown_server(self):
         if hasattr(self, "_server"):
@@ -276,6 +616,20 @@ class WebConsoleNode(Node):
             "max_m": None,
             "valid_samples": 0,
         }
+        depthcloud = {
+            "stamp": summary["stamp"],
+            "frame_id": msg.header.frame_id or "camera_front_center_body",
+            "source_topic": "/sensor/camera/depth/front_center",
+            "fixed_frame": "camera_front_center_body",
+            "style": "rviz_depthcloud",
+            "color_transformer": "AxisColor",
+            "axis": "Y",
+            "width": width,
+            "height": height,
+            "total_points": width * height,
+            "sampled_points": 0,
+            "points": [],
+        }
 
         if encoding in ("32fc1", "32fc"):
             value_step = 4
@@ -287,7 +641,7 @@ class WebConsoleNode(Node):
             to_meters = lambda value: float(value) / 1000.0
 
         if width <= 0 or height <= 0 or value_step is None or not data:
-            return summary
+            return summary, depthcloud
 
         center_offset = (height // 2) * int(msg.step) + (width // 2) * value_step
         if center_offset + value_step <= len(data):
@@ -316,7 +670,45 @@ class WebConsoleNode(Node):
         summary["min_m"] = min_depth
         summary["max_m"] = max_depth
         summary["valid_samples"] = valid
-        return summary
+        depthcloud["points"] = self._sample_depthcloud_points(
+            data, width, height, int(msg.step), value_step, read_value, to_meters
+        )
+        depthcloud["sampled_points"] = len(depthcloud["points"])
+        return summary, depthcloud
+
+    def _sample_depthcloud_points(
+        self, data, width, height, row_step, value_step, read_value, to_meters
+    ):
+        # Matches the camera config used by CameraBridge for front_center depth.
+        fov_rad = math.radians(95.0)
+        fx = width / (2.0 * math.tan(fov_rad / 2.0))
+        fy = fx
+        cx = (width - 1) / 2.0
+        cy = (height - 1) / 2.0
+        target_points = 2400
+        pixel_stride = max(2, int(math.sqrt(max(1, (width * height) / target_points))))
+        points = []
+
+        for v in range(0, height, pixel_stride):
+            for u in range(0, width, pixel_stride):
+                offset = v * row_step + u * value_step
+                if offset + value_step > len(data):
+                    continue
+                depth = to_meters(read_value(offset))
+                if not math.isfinite(depth) or depth <= 0.05 or depth > 80.0:
+                    continue
+
+                lateral = (u - cx) * depth / fx
+                vertical = -(v - cy) * depth / fy
+                # RViz DepthCloud is viewed in the camera body frame here:
+                # X forward, Y left/right, Z up.
+                points.append([
+                    round(float(depth), 3),
+                    round(float(-lateral), 3),
+                    round(float(vertical), 3),
+                ])
+
+        return points
 
     def _summarize_pointcloud(self, msg: PointCloud2):
         width = int(msg.width)
@@ -374,12 +766,34 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
 
     server_version = "AeroMindWeb/0.1"
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._send_cors_headers()
+        self.end_headers()
+
     def do_GET(self):
         path = urlparse(self.path).path
-        if path == "/":
+        if path == "/ws":
+            self._serve_websocket()
+        elif path == "/":
             self._serve_static("index.html")
         elif path == "/api/status":
             self._json(self.server.node.snapshot())
+        elif path == "/api/skills":
+            self._json(self.server.node.skill_catalog())
+        elif path == "/api/reports":
+            self._json(self.server.node.mission_reports())
+        elif path.startswith("/api/reports/") and path.endswith("/download"):
+            mission_id = unquote(path.removeprefix("/api/reports/").removesuffix("/download").strip("/"))
+            self._serve_report_download(mission_id)
+        elif path.startswith("/api/reports/") and "/captures/" in path:
+            rest = path.removeprefix("/api/reports/")
+            mission_id, filename = rest.split("/captures/", 1)
+            self._serve_report_capture(unquote(mission_id), unquote(filename))
+        elif path.startswith("/api/reports/"):
+            mission_id = unquote(path.removeprefix("/api/reports/"))
+            result = self.server.node.mission_report(mission_id)
+            self._json(result, status=200 if result.get("success") else 404)
         elif path == "/api/camera":
             image = self.server.node.latest_image()
             if image is None:
@@ -387,6 +801,13 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             else:
                 image["success"] = True
                 self._json(image)
+        elif path == "/api/depthcloud":
+            depthcloud = self.server.node.latest_depthcloud()
+            if depthcloud is None:
+                self._json({"success": False, "message": "暂无深度点云"}, status=404)
+            else:
+                depthcloud["success"] = True
+                self._json(depthcloud)
         elif path == "/api/pointcloud":
             pointcloud = self.server.node.latest_pointcloud()
             if pointcloud is None:
@@ -410,10 +831,16 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             result = node.takeoff(float(payload.get("altitude", 10.0)))
         elif path == "/api/control/land":
             result = node.land()
+        elif path == "/api/control/return_home":
+            result = node.return_home()
         elif path == "/api/agent/task":
             result = node.execute_task(str(payload.get("task", "")))
+        elif path == "/api/agent/chat":
+            result = node.execute_task(str(payload.get("message", "")))
         elif path == "/api/cmd_vel":
             result = node.publish_cmd_vel(payload)
+        elif path == "/api/autonomy/cancel":
+            result = node.cancel_autonomy()
         else:
             result = {"success": False, "message": "not found"}
             self._json(result, status=404)
@@ -440,10 +867,15 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _serve_static(self, rel_path: str):
         rel_path = rel_path.strip("/") or "index.html"
@@ -462,6 +894,88 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _serve_report_download(self, mission_id: str):
+        path = self.server.node.mission_report_path(mission_id)
+        if not path:
+            self._json({"success": False, "message": "report.md 不存在"}, status=404)
+            return
+        with open(path, "rb") as file:
+            body = file.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/markdown; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{os.path.basename(os.path.dirname(path))}_report.md"')
+        self._send_cors_headers()
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_report_capture(self, mission_id: str, filename: str):
+        path = self.server.node.mission_capture_path(mission_id, filename)
+        if not path:
+            self._json({"success": False, "message": "截图不存在"}, status=404)
+            return
+        mime, _ = mimetypes.guess_type(path)
+        with open(path, "rb") as file:
+            body = file.read()
+        self.send_response(200)
+        self.send_header("Content-Type", mime or "application/octet-stream")
+        self.send_header("Cache-Control", "no-store")
+        self._send_cors_headers()
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_websocket(self):
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            self._json({"success": False, "message": "missing websocket key"}, status=400)
+            return
+
+        accept = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+        ).decode("ascii")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+
+        try:
+            while True:
+                payload = {
+                    "type": "telemetry",
+                    "stamp": time.time(),
+                    "data": self.server.node.snapshot(),
+                }
+                self._send_ws_json(payload)
+                time.sleep(1.0)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+
+    def _send_ws_json(self, payload):
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        header = bytearray([0x81])
+        length = len(data)
+        if length < 126:
+            header.append(length)
+        elif length < 65536:
+            header.extend([126, (length >> 8) & 0xFF, length & 0xFF])
+        else:
+            header.extend([
+                127,
+                (length >> 56) & 0xFF,
+                (length >> 48) & 0xFF,
+                (length >> 40) & 0xFF,
+                (length >> 32) & 0xFF,
+                (length >> 24) & 0xFF,
+                (length >> 16) & 0xFF,
+                (length >> 8) & 0xFF,
+                length & 0xFF,
+            ])
+        self.wfile.write(header)
+        self.wfile.write(data)
+        self.wfile.flush()
 
 
 def main(args=None):

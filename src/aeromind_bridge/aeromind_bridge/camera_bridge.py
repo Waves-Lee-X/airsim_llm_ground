@@ -60,7 +60,7 @@ def create_camera_info(width: int, height: int, fov_degrees: float,
 def airsim_image_to_ros(airsim_img, img_type: int, frame_id: str = "") -> Image:
     """AirSim ImageResponse → sensor_msgs/Image
 
-    RGB 图像请求使用 compress=False，返回原始 RGBA/RGB 像素。
+    RGB 图像请求使用 compress=False，AirSim/Unreal 原始像素通常为 BGRA/BGR 顺序。
     DepthPerspective 请求使用 pixels_as_float=True，返回 float32 深度数组。
     """
     if isinstance(airsim_img, str):
@@ -96,11 +96,11 @@ def airsim_image_to_ros(airsim_img, img_type: int, frame_id: str = "") -> Image:
         rgb_size = pixel_count * 3
         if raw.size >= rgba_size:
             img.data = raw[:rgba_size].tobytes()
-            img.encoding = "rgba8"
+            img.encoding = "bgra8"
             img.step = w * 4
         elif raw.size >= rgb_size:
             img.data = raw[:rgb_size].tobytes()
-            img.encoding = "rgb8"
+            img.encoding = "bgr8"
             img.step = w * 3
         else:
             raise ValueError(
@@ -191,7 +191,7 @@ class CameraBridge:
             PointCloud2, "/sensor/lidar/points", 10
         )
 
-        # 静态 TF 广播（相机/LiDAR 帧相对 odom）
+        # 静态 TF 广播（传感器外参相对 base_link）
         self._tf_broadcaster = StaticTransformBroadcaster(node)
         self._publish_static_transforms()
 
@@ -200,7 +200,7 @@ class CameraBridge:
                           f"LiDAR 点云")
 
     def _publish_static_transforms(self):
-        """发布相机和 LiDAR 的静态 tf（相对 odom）"""
+        """发布相机和 LiDAR 相对机体的静态外参。"""
         now = self._node.get_clock().now().to_msg()
         transforms = []
 
@@ -215,7 +215,7 @@ class CameraBridge:
 
                 t = TransformStamped()
                 t.header.stamp = now
-                t.header.frame_id = "odom"
+                t.header.frame_id = "base_link"
                 t.child_frame_id = body_frame_id
                 t.transform.translation.x = 0.0
                 t.transform.translation.y = 0.0
@@ -230,17 +230,17 @@ class CameraBridge:
                 optical_t.transform.translation.x = 0.0
                 optical_t.transform.translation.y = 0.0
                 optical_t.transform.translation.z = 0.0
-                # Match AirSim ROS ENU camera optical frame: Z forward, X right, Y down.
-                optical_t.transform.rotation.x = -0.7071068
-                optical_t.transform.rotation.y = 0.0
-                optical_t.transform.rotation.z = 0.0
-                optical_t.transform.rotation.w = 0.7071068
+                # REP-103: body X forward/Y left/Z up -> optical Z forward/X right/Y down.
+                optical_t.transform.rotation.x = -0.5
+                optical_t.transform.rotation.y = 0.5
+                optical_t.transform.rotation.z = -0.5
+                optical_t.transform.rotation.w = 0.5
                 transforms.append(optical_t)
 
         # LiDAR 帧
         t = TransformStamped()
         t.header.stamp = now
-        t.header.frame_id = "odom"
+        t.header.frame_id = "base_link"
         t.child_frame_id = "lidar"
         t.transform.translation.x = 0.0
         t.transform.translation.y = 0.0

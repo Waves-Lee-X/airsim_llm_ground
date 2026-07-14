@@ -15,8 +15,12 @@ find_package(rosidl_default_generators REQUIRED)
 # 消息定义
 set(msg_files
   msg/Detection.msg
+  msg/DetectionArray.msg
   msg/ObstacleMap.msg
   msg/Path.msg
+  msg/TrajectoryPoint.msg
+  msg/Trajectory.msg
+  msg/AutonomyStatus.msg
   msg/DroneState.msg
 )
 
@@ -25,6 +29,9 @@ set(srv_files
   srv/PlanPath.srv
   srv/Takeoff.srv
   srv/Land.srv
+  srv/ReturnHome.srv
+  srv/CaptureImage.srv
+  srv/AnalyzeImage.srv
   srv/ArmDrone.srv
   srv/ExecuteTask.srv
 )

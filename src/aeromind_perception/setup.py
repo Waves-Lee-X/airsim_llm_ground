@@ -19,6 +19,7 @@ setup(
     entry_points={
         "console_scripts": [
             "perception_node = aeromind_perception.perception_node:main",
+            "yolo_detection_node = aeromind_perception.yolo_detection_node:main",
         ],
     },
 )

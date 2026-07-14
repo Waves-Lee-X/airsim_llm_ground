@@ -1,0 +1,10 @@
+# 保存最近一帧 RGB/灰度图像
+string label        # 可选文件名前缀，例如 front
+---
+bool success        # 是否成功
+string message      # 附加消息
+string file_path    # 保存后的文件路径
+uint32 width        # 图像宽度
+uint32 height       # 图像高度
+string encoding     # ROS 图像编码
+string timestamp    # 保存时间戳

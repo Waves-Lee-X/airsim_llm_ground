@@ -1,0 +1,14 @@
+# Analyze the latest RGB image with an optional vision-language model.
+string prompt
+bool use_vlm
+---
+bool success
+string message
+string scene
+string risk_level
+string suggestion
+string objects_json
+string raw_response
+uint32 width
+uint32 height
+string encoding

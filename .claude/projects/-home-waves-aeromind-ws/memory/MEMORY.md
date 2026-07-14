@@ -1,0 +1,1 @@
+- [确认执行超时修复](confirm-timeout-fix.md) — Web 确认执行服务调用超时的根因与修复（三层超时链 + AirSim 阻塞）
