@@ -45,6 +45,19 @@ class LocalEsdfTest(unittest.TestCase):
         esdf.prune((0.0, 0.0, 1.0), stamp=4.0)
         self.assertFalse(esdf.occupied)
 
+    def test_voxels_outside_active_height_band_are_pruned(self):
+        esdf = LocalEsdfMap(resolution=0.5)
+        esdf.insert_points(
+            [(1.0, 0.0, 0.0), (2.0, 0.0, 9.5), (3.0, 0.0, 12.5)],
+            stamp=1.0,
+        )
+
+        esdf.prune_height_band(8.0, 12.0)
+
+        self.assertEqual(len(esdf.occupied), 1)
+        self.assertLess(esdf.clearance((2.0, 0.0, 9.5)), 0.5)
+        self.assertGreater(esdf.clearance((1.0, 0.0, 0.0), 1.0), 0.9)
+
     def test_map_points_are_voxel_centers(self):
         esdf = LocalEsdfMap(resolution=0.5)
         esdf.insert_points([(1.1, -0.1, 2.2)], stamp=1.0)

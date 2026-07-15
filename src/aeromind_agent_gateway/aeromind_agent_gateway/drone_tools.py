@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from .ros_state import RosStateBridge
+from .capability_registry import capability_catalog
 from .skill_registry import build_skill, skill_catalog
 from .workflow import validate_workflow
 
@@ -47,6 +48,19 @@ def create_drone_mcp_server(
         return _text_result(ros_state.perception_summary())
 
     @tool(
+        "analyze_current_image",
+        "调用 ROS /perception/analyze_image，让已配置的 VLM 分析最新前视 RGB 图像。用户要求分析、描述或查看当前画面时必须使用。",
+        {
+            "type": "object",
+            "properties": {"prompt": {"type": "string"}},
+            "required": ["prompt"],
+            "additionalProperties": False,
+        },
+    )
+    async def analyze_current_image(args):
+        return _text_result(await ros_state.analyze_current_image(args["prompt"]))
+
+    @tool(
         "get_system_snapshot",
         "读取无人机状态、里程计、自主避障和检测结果的完整只读快照。",
         {},
@@ -61,6 +75,14 @@ def create_drone_mcp_server(
     )
     async def list_skills(_args):
         return _text_result({"skills": skill_catalog()})
+
+    @tool(
+        "list_capabilities",
+        "读取当前真实接入 ROS 的基础能力、接口、风险和执行方式。",
+        {},
+    )
+    async def list_capabilities(_args):
+        return _text_result({"capabilities": capability_catalog()})
 
     async def request(action: str, args: dict[str, Any]):
         if request_control is None:
@@ -168,6 +190,14 @@ def create_drone_mcp_server(
         return await request("hover", {})
 
     @tool(
+        "request_capture_image",
+        "创建保存当前前视相机图像的确认请求。",
+        {},
+    )
+    async def request_capture_image(_args):
+        return await request("capture_image", {})
+
+    @tool(
         "request_square_mission",
         "创建正方形轨迹组合任务确认请求。整套轨迹只确认一次。",
         {
@@ -195,6 +225,24 @@ def create_drone_mcp_server(
         return await request("workflow", workflow)
 
     @tool(
+        "request_skill",
+        "按注册名称创建模块化技能确认请求。先用 list_skills 获取名称和参数说明。",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "args": {"type": "object"},
+            },
+            "required": ["name", "args"],
+            "additionalProperties": False,
+        },
+    )
+    async def request_skill(args):
+        return await request(
+            "workflow", build_skill(str(args["name"]), dict(args.get("args") or {}))
+        )
+
+    @tool(
         "request_workflow",
         "创建经过白名单校验的多步骤飞行工作流确认请求，最多20步。",
         {
@@ -216,8 +264,10 @@ def create_drone_mcp_server(
         tools=[
             get_drone_state,
             get_perception_summary,
+            analyze_current_image,
             get_system_snapshot,
             list_skills,
+            list_capabilities,
             request_arm,
             request_disarm,
             request_takeoff,
@@ -226,7 +276,9 @@ def create_drone_mcp_server(
             request_move,
             request_return_home,
             request_hover,
+            request_capture_image,
             request_square_mission,
+            request_skill,
             request_workflow,
         ],
     )
@@ -235,8 +287,10 @@ def create_drone_mcp_server(
 READ_ONLY_TOOL_NAMES = [
     "mcp__drone__get_drone_state",
     "mcp__drone__get_perception_summary",
+    "mcp__drone__analyze_current_image",
     "mcp__drone__get_system_snapshot",
     "mcp__drone__list_skills",
+    "mcp__drone__list_capabilities",
 ]
 
 
@@ -249,7 +303,9 @@ CONTROL_REQUEST_TOOL_NAMES = [
     "mcp__drone__request_move",
     "mcp__drone__request_return_home",
     "mcp__drone__request_hover",
+    "mcp__drone__request_capture_image",
     "mcp__drone__request_square_mission",
+    "mcp__drone__request_skill",
     "mcp__drone__request_workflow",
 ]
 
@@ -274,9 +330,30 @@ OPENAI_DRONE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "list_capabilities",
+            "description": "读取当前真实接入 ROS 的基础能力目录。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_perception_summary",
             "description": "读取目标检测和自主避障摘要，只读。",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_current_image",
+            "description": "调用 ROS /perception/analyze_image，使用已配置的 VLM 分析最新前视 RGB 图像。用户要求分析、描述或查看当前画面时必须调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {"prompt": {"type": "string"}},
+                "required": ["prompt"],
+                "additionalProperties": False,
+            },
         },
     },
     {
@@ -375,6 +452,11 @@ OPENAI_DRONE_TOOLS = [
                 "创建悬停确认请求。",
                 {"type": "object", "properties": {}},
             ),
+            (
+                "request_capture_image",
+                "创建保存当前相机图像的确认请求。",
+                {"type": "object", "properties": {}},
+            ),
         )
     ],
     {
@@ -391,6 +473,22 @@ OPENAI_DRONE_TOOLS = [
                     "land_after": {"type": "boolean"},
                 },
                 "required": ["side_length"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_skill",
+            "description": "按注册名称和参数创建模块化技能确认请求；应先调用 list_skills。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "args": {"type": "object"},
+                },
+                "required": ["name", "args"],
                 "additionalProperties": False,
             },
         },
@@ -424,10 +522,14 @@ async def execute_openai_drone_tool(
         return ros_state.drone_state()
     if name == "get_perception_summary":
         return ros_state.perception_summary()
+    if name == "analyze_current_image":
+        return await ros_state.analyze_current_image(str(args.get("prompt") or ""))
     if name == "get_system_snapshot":
         return ros_state.snapshot()
     if name == "list_skills":
         return {"skills": skill_catalog()}
+    if name == "list_capabilities":
+        return {"capabilities": capability_catalog()}
     if name == "request_square_mission":
         if request_control is None:
             return {"success": False, "message": "控制请求功能未配置"}
@@ -439,6 +541,13 @@ async def execute_openai_drone_tool(
                 "takeoff_if_needed": args.get("takeoff_if_needed", True),
                 "land_after": args.get("land_after", False),
             },
+        )
+        return await request_control("workflow", workflow)
+    if name == "request_skill":
+        if request_control is None:
+            return {"success": False, "message": "控制请求功能未配置"}
+        workflow = build_skill(
+            str(args.get("name") or ""), dict(args.get("args") or {})
         )
         return await request_control("workflow", workflow)
     if name == "request_safe_takeoff":
@@ -460,6 +569,7 @@ async def execute_openai_drone_tool(
         ),
         "request_return_home": ("return_home", {}),
         "request_hover": ("hover", {}),
+        "request_capture_image": ("capture_image", {}),
     }
     if name not in actions:
         raise ValueError(f"不允许的工具: {name}")

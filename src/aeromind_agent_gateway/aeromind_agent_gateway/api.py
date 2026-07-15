@@ -90,6 +90,11 @@ def create_app(
         _require_http_token(config, token)
         return {"success": True, "skills": sessions.skill_catalog()}
 
+    @app.get("/api/capabilities")
+    async def gateway_capabilities(token: str = Query(default="")):
+        _require_http_token(config, token)
+        return {"success": True, "capabilities": sessions.capability_catalog()}
+
     @app.get("/api/sessions/{session_id}/history")
     async def session_history(
         session_id: str,
@@ -209,6 +214,7 @@ def create_app(
                     "operator": operator,
                     "providers": sessions.provider_catalog(),
                     "skills": sessions.skill_catalog(),
+                    "capabilities": sessions.capability_catalog(),
                     "pending_confirmations": operator["pending_confirmations"],
                     "missions": operator["missions"],
                 }
@@ -297,6 +303,18 @@ def create_app(
                             **sessions.history(active_session_id),
                         }
                     )
+                elif message_type == "session.clear":
+                    try:
+                        await sessions.clear_session(active_session_id, principal)
+                    except (ValueError, PermissionError, RuntimeError) as exc:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "session_id": active_session_id,
+                                "request_id": request_id,
+                                "message": str(exc),
+                            }
+                        )
                 elif message_type == "ping":
                     await websocket.send_json(
                         {"type": "pong", "session_id": active_session_id}

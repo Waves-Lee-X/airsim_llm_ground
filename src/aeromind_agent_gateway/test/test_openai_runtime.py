@@ -159,6 +159,30 @@ class OpenAICompatibleRuntimeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(steps[1]["depends_on"], ["safety-check"])
 
+    async def test_registered_v_shape_skill_creates_workflow_confirmation(self):
+        controls = []
+
+        async def request_control(action, args):
+            controls.append((action, args))
+            return {"success": True, "status": "pending_confirmation"}
+
+        result = await execute_openai_drone_tool(
+            "request_skill",
+            {
+                "name": "flight.v_shape",
+                "args": {"width": 10, "depth": 8, "capture_at_vertex": True},
+            },
+            FakeRosState(),
+            request_control,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(controls[0][0], "workflow")
+        self.assertEqual(
+            [step["action"] for step in controls[0][1]["steps"]],
+            ["takeoff", "move", "capture_image", "move"],
+        )
+
     def test_safe_takeoff_defaults_are_validated(self):
         workflow = _safe_takeoff_workflow({"altitude": 8.0})
         check = workflow["steps"][0]

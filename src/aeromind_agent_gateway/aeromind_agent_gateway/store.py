@@ -213,6 +213,23 @@ class SessionStore:
                 (runtime_session_id, time.time(), session_id),
             )
 
+    def clear_session_history(self, session_id: str) -> dict[str, int]:
+        """Clear conversational state without deleting missions or confirmations."""
+        now = time.time()
+        with self._lock, self._db:
+            cursor = self._db.execute(
+                "DELETE FROM messages WHERE session_id=?", (session_id,)
+            )
+            self._db.execute(
+                """
+                UPDATE sessions
+                SET runtime_session_id=NULL, updated_at=?
+                WHERE id=?
+                """,
+                (now, session_id),
+            )
+        return {"deleted_messages": max(0, int(cursor.rowcount))}
+
     def update_model(self, session_id: str, model: str):
         with self._lock, self._db:
             self._db.execute(

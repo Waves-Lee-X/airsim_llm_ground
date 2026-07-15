@@ -93,12 +93,12 @@ def generate_launch_description():
     )
     autonomy_velocity_limit_arg = DeclareLaunchArgument(
         "autonomy_velocity_limit",
-        default_value="1.2",
+        default_value="1.8",
         description="执行自主避障轨迹时的速度上限，单位 m/s",
     )
     autonomy_accel_limit_arg = DeclareLaunchArgument(
         "autonomy_accel_limit",
-        default_value="0.8",
+        default_value="1.0",
         description="执行自主避障轨迹时的加速度变化上限，单位 m/s^2",
     )
     autonomy_min_altitude_arg = DeclareLaunchArgument(
@@ -218,7 +218,11 @@ def generate_launch_description():
         executable="airsim_bridge_node",
         name="airsim_bridge_node",
         output="screen",
-        parameters=[{"mode": "px4"}, {"airsim_ip": airsim_ip}],
+        parameters=[
+            {"mode": "px4"},
+            {"airsim_ip": airsim_ip},
+            {"publish_drone_state": False},
+        ],
     )
 
     # 感知节点
@@ -273,6 +277,7 @@ def generate_launch_description():
             {"map_decay_sec": ParameterValue(LaunchConfiguration("autonomy_map_decay_sec"), value_type=float)},
             {"odom_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_odom_timeout_sec"), value_type=float)},
             {"depth_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_depth_timeout_sec"), value_type=float)},
+            {"max_speed": ParameterValue(LaunchConfiguration("autonomy_velocity_limit"), value_type=float)},
             {"max_acceleration": ParameterValue(LaunchConfiguration("autonomy_accel_limit"), value_type=float)},
             {"min_flight_altitude": ParameterValue(LaunchConfiguration("autonomy_min_altitude"), value_type=float)},
             {"odom_topic": LaunchConfiguration("autonomy_odom_topic")},

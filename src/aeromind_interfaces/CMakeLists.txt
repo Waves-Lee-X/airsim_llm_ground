@@ -34,6 +34,7 @@ set(srv_files
   srv/AnalyzeImage.srv
   srv/ArmDrone.srv
   srv/ExecuteTask.srv
+  srv/ExecuteAction.srv
 )
 
 # 生成消息和服务代码

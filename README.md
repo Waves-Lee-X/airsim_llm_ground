@@ -1135,7 +1135,7 @@ ros2 topic echo /autonomy/esdf_obstacles --once
 - 支持在同一会话中切换 Claude、DeepSeek、Qwen 或自定义 Provider。
 - 开放无人机状态、里程计、检测结果和自主避障状态等只读 MCP 工具。
 - 控制类 MCP 只创建持久化确认请求，用户确认前不会产生 ROS 控制副作用。
-- 用户确认后，Gateway 会复用现有 `/agent/execute_task` 安全检查、内部确认令牌和 MissionManager。
+- 用户确认后，Gateway 调用结构化 `/agent/execute_action`，直接传递动作与 JSON 参数，不再经过二次自然语言规则解析。
 - Gateway 区分命令受理和物理完成，通过 ROS Mission、飞控状态、里程计及自主规划状态做最终验证。
 - 已接入解锁、加锁、起飞、降落、相对移动、RTL 返航和悬停请求。
 - 确认记录绑定用户和会话，默认 60 秒过期，重复确认和越权确认会被拒绝。
@@ -1143,8 +1143,9 @@ ros2 topic echo /autonomy/esdf_obstacles --once
 - 飞书消息按 `message_id` 去重，只接受 `open_id` 白名单用户；群聊必须先 @机器人。
 - 按绑定操作员保存有界滚动记忆，使 Web 与飞书可以延续近期对话和 Mission 结果。
 - 支持白名单组合工作流：一次确认后顺序执行状态检查、感知检查和飞行动作。
-- 工作流支持依赖、条件、失败策略、最多两次重试，以及暂停、恢复和取消。
-- 正方形轨迹已作为首个 Gateway 模块化技能接入 Claude、DeepSeek/Qwen 和 Web 技能库。
+- 工作流支持依赖、状态条件、前置步骤结果分支、目标检测分支、失败策略、最多两次重试，以及暂停、恢复和取消。
+- `capture_image` 已成为 Workflow 白名单 Action，可在航点或条件分支中保存相机图像。
+- 已注册正方形轨迹、V 字轨迹和人员条件巡检技能，并通过 `SKILL.md` 向模型声明用途、参数和安全约束。
 
 安装依赖：
 
@@ -1244,6 +1245,8 @@ SQLite 默认保存在：
 
 ```text
 飞一个边长 10 米的正方形轨迹，高度 6 米，完成后降落
+飞一个宽 10 米、深 8 米的 V 字形，并在顶点拍照
+巡检前方区域，发现人就悬停拍照，否则继续前进20米
 检查飞控和前方障碍物，安全后起飞到 5 米
 ```
 
@@ -1251,10 +1254,31 @@ SQLite 默认保存在：
 
 ```text
 safety_check, perception_check, arm, disarm, takeoff,
-land, move, return_home, hover
+land, move, return_home, hover, capture_image
 ```
 
-每个步骤可以声明 `depends_on`、`condition`、`retries` 和 `on_failure`。整套任务只产生一次高风险确认；确认后每个飞行动作仍复用 ROS Agent，并等待 Mission、飞控遥测或自主规划状态完成物理验证。Web 会显示当前步骤，并提供暂停、恢复和取消按钮。
+每个步骤可以声明 `depends_on`、`condition`、`retries` 和 `on_failure`。字符串条件支持 `always`、`if_airborne`、`if_not_airborne`、`if_safe`；结构化条件支持 `step_succeeded`、`step_failed`、`target_detected`、`target_not_detected`，且只能引用前面已经完成的步骤。整套任务只产生一次高风险确认；确认后每个飞行动作仍复用 ROS Agent，并等待 Mission、飞控遥测或自主规划状态完成物理验证。Web 会显示当前步骤，并提供暂停、恢复和取消按钮。
+
+技能采用三层设计：`skill_docs/*/SKILL.md` 提供模型可读说明，同目录 `skill.yaml` 声明参数与 Workflow，通用加载器负责模板展开和白名单校验。`SKILL.md` 本身不执行代码，也不能绕过人工确认、动作白名单和 ROS/PX4 安全层。模型先调用 `list_capabilities` 了解真实 ROS 基础能力，再调用 `list_skills` 与 `request_skill` 创建组合任务确认请求。
+
+Gateway 提供两份动态目录：
+
+```text
+GET http://localhost:8090/api/capabilities
+GET http://localhost:8090/api/skills
+```
+
+前端分别显示“基础能力”和“组合技能”。旧 `/agent/execute_task` 仍保留给 ROS CLI 和旧 Web 接口兼容使用；Agent Gateway 的控制主链路已经切换到 `/agent/execute_action`。
+
+当前文件化组合技能：
+
+- `flight.square`：正方形轨迹。
+- `flight.v_shape`：V 字向量轨迹，可在顶点拍照。
+- `inspection.person_branch`：发现人员悬停拍照，明确无人时继续前进。
+- `inspection.line_capture`：直线航线两端拍照，可原路返回。
+- `mission.safe_takeoff_capture`：安全检查、起飞、拍照。
+
+新增技能时创建 `skill_docs/<skill>/SKILL.md` 和 `skill.yaml` 即可；参数模板只允许有限数值、布尔值、字符串和受限四则运算，不能执行 Python、Shell 或任意 ROS 命令。
 
 安全边界：暂停或取消会发布 `/autonomy/cancel`。正在执行的 PX4 原生起飞、降落或 RTL 不会被粗暴终止，而是由飞控继续进入安全状态；Gateway 进程重启后，未完成工作流会标记为 `interrupted`，不会自动恢复飞行。
 
@@ -1509,6 +1533,7 @@ aeromind_ws/
 │   ├── WSL2代理配置.md               # WSL2 代理/VPN 配置
 │   ├── Claude智能体与飞书升级方案.md  # Agent SDK 与飞书升级方案
 │   ├── 客户汇报项目说明.md           # 面向客户的项目汇报底稿
+│   ├── 大模型能力应用与升级路线.md    # LLM/VLM 已实现能力与后续路线
 │   ├── 当前系统状态与升级交接说明.md  # 当前能力和后续升级基线
 │   ├── 智能无人机系统升级计划.md      # 智能化升级阶段计划
 │   ├── 系统使用手册.md                # 启动、操作、演示和故障排查
@@ -1522,6 +1547,7 @@ aeromind_ws/
 
 - [系统使用手册](doc/系统使用手册.md) — 完整启动、界面操作、对话确认、演示流程和故障排查
 - [项目原理、架构与操作手册](doc/项目原理架构与操作手册.md)
+- [大模型能力应用与升级路线](doc/大模型能力应用与升级路线.md) — 当前 LLM/VLM 应用、演示证据、安全边界和后续升级顺序
 - [当前系统现状与升级交接说明](doc/当前系统状态与升级交接说明.md)
 - [PX4 + AirSim 配置详细说明](doc/PX4与AirSim配置说明.md) — 网络配置、AirSim settings.json、PX4 参数详解
 - [Claude Agent SDK 多端升级方案](doc/Claude智能体与飞书升级方案.md)

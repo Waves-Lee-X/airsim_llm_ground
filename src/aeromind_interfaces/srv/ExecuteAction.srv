@@ -1,0 +1,8 @@
+# 执行经过上层确认和参数校验的结构化基础能力
+string action
+string args_json
+string request_id
+---
+bool success
+string result
+string message

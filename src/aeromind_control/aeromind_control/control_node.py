@@ -38,6 +38,105 @@ from aeromind_control.px4_control import PX4Controller, HAS_PX4_MSGS
 PROTECTED_FLIGHT_MODES = {"TAKEOFF", "LAND", "RETURN_HOME"}
 
 
+def interpolate_trajectory(points, elapsed_sec: float):
+    """Linearly interpolate a sampled trajectory state at elapsed time."""
+    if not points:
+        return None
+    elapsed = max(0.0, float(elapsed_sec))
+    previous = points[0]
+    previous_t = _duration_seconds(previous.time_from_start)
+    if elapsed <= previous_t:
+        return _trajectory_state(previous)
+    for current in points[1:]:
+        current_t = _duration_seconds(current.time_from_start)
+        if elapsed <= current_t:
+            span = max(1e-6, current_t - previous_t)
+            ratio = max(0.0, min(1.0, (elapsed - previous_t) / span))
+            return {
+                "position": _lerp_point(previous.position, current.position, ratio),
+                "velocity": _lerp_vector(previous.velocity, current.velocity, ratio),
+                "acceleration": _lerp_vector(
+                    previous.acceleration, current.acceleration, ratio
+                ),
+                "yaw": _lerp_yaw(float(previous.yaw), float(current.yaw), ratio),
+            }
+        previous = current
+        previous_t = current_t
+    return _trajectory_state(points[-1])
+
+
+def _duration_seconds(duration):
+    return float(duration.sec) + float(duration.nanosec) / 1_000_000_000.0
+
+
+def _lerp_point(start, end, ratio):
+    return tuple(
+        float(getattr(start, axis))
+        + (float(getattr(end, axis)) - float(getattr(start, axis))) * ratio
+        for axis in ("x", "y", "z")
+    )
+
+
+def _lerp_vector(start, end, ratio):
+    return _lerp_point(start, end, ratio)
+
+
+def _lerp_yaw(start, end, ratio):
+    if not math.isfinite(start):
+        return end
+    if not math.isfinite(end):
+        return start
+    delta = (end - start + math.pi) % (2.0 * math.pi) - math.pi
+    return start + delta * ratio
+
+
+def _trajectory_state(point):
+    return {
+        "position": tuple(float(getattr(point.position, axis)) for axis in ("x", "y", "z")),
+        "velocity": tuple(float(getattr(point.velocity, axis)) for axis in ("x", "y", "z")),
+        "acceleration": tuple(
+            float(getattr(point.acceleration, axis)) for axis in ("x", "y", "z")
+        ),
+        "yaw": float(point.yaw),
+    }
+
+
+def px4_gps_fix_to_drone_fix(fix_type: int) -> int:
+    """Map PX4 SensorGps fix types to DroneState's compact fix levels."""
+    if fix_type >= 5:
+        return 4  # RTK float/fixed
+    if fix_type == 4:
+        return 3  # Differential GNSS
+    if fix_type in (3, 8):
+        return 2  # 3D or extrapolated 3D
+    if fix_type == 2:
+        return 1  # 2D
+    return 0
+
+
+def estimator_status_flags_healthy(msg) -> bool:
+    """Evaluate EKF alignment and numerical faults from EstimatorStatusFlags."""
+    fault_fields = (
+        "fs_bad_mag_x",
+        "fs_bad_mag_y",
+        "fs_bad_mag_z",
+        "fs_bad_hdg",
+        "fs_bad_mag_decl",
+        "fs_bad_airspeed",
+        "fs_bad_sideslip",
+        "fs_bad_optflow_x",
+        "fs_bad_optflow_y",
+        "fs_bad_acc_vertical",
+        "fs_bad_acc_clipping",
+    )
+    aligned = bool(getattr(msg, "cs_tilt_align", False)) and bool(
+        getattr(msg, "cs_yaw_align", False)
+    )
+    faulted = any(bool(getattr(msg, name, False)) for name in fault_fields)
+    dead_reckoning = bool(getattr(msg, "cs_inertial_dead_reckoning", False))
+    return aligned and not faulted and not dead_reckoning
+
+
 def autonomy_trajectory_action(
     control_mode: str,
     planner_mode: str,
@@ -58,6 +157,39 @@ def autonomy_trajectory_action(
     return "execute"
 
 
+def should_accept_replan(has_active: bool, active_age_sec: float, interval_sec: float):
+    return not has_active or active_age_sec >= interval_sec
+
+
+def trajectory_handoff_elapsed(points, reference_state, max_elapsed_sec: float):
+    """Find a nearby point on a replacement trajectory for a continuous handoff."""
+    if not points or reference_state is None:
+        return 0.0
+    reference_position = reference_state["position"]
+    reference_velocity = reference_state["velocity"]
+    best_elapsed = 0.0
+    best_cost = float("inf")
+    maximum = max(0.0, float(max_elapsed_sec))
+    for point in points:
+        elapsed = _duration_seconds(point.time_from_start)
+        if elapsed > maximum:
+            break
+        state = _trajectory_state(point)
+        position_error = sum(
+            (state["position"][axis] - reference_position[axis]) ** 2
+            for axis in range(3)
+        )
+        velocity_error = sum(
+            (state["velocity"][axis] - reference_velocity[axis]) ** 2
+            for axis in range(3)
+        )
+        cost = position_error + 0.2 * velocity_error
+        if cost < best_cost:
+            best_cost = cost
+            best_elapsed = elapsed
+    return best_elapsed
+
+
 class ControlNode(Node):
     """飞行控制节点"""
 
@@ -68,10 +200,14 @@ class ControlNode(Node):
         self.declare_parameter("px4_mode", "airsim")
         self.declare_parameter("airsim_ip", "192.168.1.100")
         self.declare_parameter("execute_autonomy_trajectory", True)
-        self.declare_parameter("autonomy_velocity_limit", 1.2)
-        self.declare_parameter("autonomy_accel_limit", 0.8)
+        self.declare_parameter("autonomy_velocity_limit", 1.8)
+        self.declare_parameter("autonomy_accel_limit", 1.0)
         self.declare_parameter("autonomy_min_altitude", 1.0)
         self.declare_parameter("autonomy_log_interval_sec", 2.0)
+        self.declare_parameter("autonomy_tracking_rate_hz", 50.0)
+        self.declare_parameter("autonomy_replan_accept_interval_sec", 0.6)
+        self.declare_parameter("autonomy_trajectory_stale_sec", 1.0)
+        self.declare_parameter("autonomy_handoff_max_sec", 0.6)
         self._px4_mode = self.get_parameter("px4_mode").value
         self._airsim_ip = self.get_parameter("airsim_ip").value
         self._execute_autonomy_trajectory = bool(
@@ -81,6 +217,23 @@ class ControlNode(Node):
         self._autonomy_accel_limit = float(self.get_parameter("autonomy_accel_limit").value)
         self._autonomy_min_altitude = float(self.get_parameter("autonomy_min_altitude").value)
         self._autonomy_log_interval_sec = float(self.get_parameter("autonomy_log_interval_sec").value)
+        self._autonomy_tracking_rate_hz = max(
+            10.0, float(self.get_parameter("autonomy_tracking_rate_hz").value)
+        )
+        self._autonomy_replan_accept_interval_sec = max(
+            0.1,
+            float(
+                self.get_parameter("autonomy_replan_accept_interval_sec").value
+            ),
+        )
+        self._autonomy_trajectory_stale_sec = max(
+            self._autonomy_replan_accept_interval_sec + 0.2,
+            float(self.get_parameter("autonomy_trajectory_stale_sec").value),
+        )
+        self._autonomy_handoff_max_sec = max(
+            0.0,
+            float(self.get_parameter("autonomy_handoff_max_sec").value),
+        )
         self.get_logger().info(f"控制模式: {self._px4_mode}")
 
         # 创建服务
@@ -113,8 +266,16 @@ class ControlNode(Node):
 
         # 状态变量
         self._armed = False
+        self._latest_vehicle_status = None
+        self._battery_voltage = 0.0
+        self._gps_fix = 0
+        self._ekf_healthy = None
         self._latest_odom = None
         self._active_trajectory_until = 0.0
+        self._active_trajectory = None
+        self._active_trajectory_started_at = 0.0
+        self._active_trajectory_updated_at = 0.0
+        self._last_autonomy_setpoint = None
         self._last_autonomy_hold_mode = None
         self._last_autonomy_strategy = None
         self._last_autonomy_log_time = 0.0
@@ -131,6 +292,11 @@ class ControlNode(Node):
             self._init_px4()
         else:
             self._init_airsim()
+
+        self._trajectory_tracking_timer = self.create_timer(
+            1.0 / self._autonomy_tracking_rate_hz,
+            self._trajectory_tracking_callback,
+        )
 
         self.get_logger().info("控制节点已启动")
 
@@ -164,7 +330,12 @@ class ControlNode(Node):
         self._px4_ctrl = PX4Controller(self)
 
         # 订阅 PX4 状态用于内部跟踪和发布
-        from px4_msgs.msg import VehicleStatus
+        from px4_msgs.msg import (
+            BatteryStatus,
+            EstimatorStatusFlags,
+            SensorGps,
+            VehicleStatus,
+        )
 
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -184,10 +355,45 @@ class ControlNode(Node):
             self._px4_status_callback,
             px4_qos,
         )
-        self.get_logger().info("PX4 控制模式已初始化")
+        self._px4_battery_sub = self.create_subscription(
+            BatteryStatus,
+            "/fmu/out/battery_status_v1",
+            self._px4_battery_callback,
+            px4_qos,
+        )
+        self._px4_gps_sub = self.create_subscription(
+            SensorGps,
+            "/fmu/out/vehicle_gps_position",
+            self._px4_gps_callback,
+            px4_qos,
+        )
+        self._px4_estimator_sub = self.create_subscription(
+            EstimatorStatusFlags,
+            "/fmu/out/estimator_status_flags",
+            self._px4_estimator_callback,
+            px4_qos,
+        )
+        self.get_logger().info(
+            "PX4 控制模式已初始化，订阅电池、GPS 与 EKF 遥测"
+        )
+
+    def _px4_battery_callback(self, msg):
+        voltage = float(msg.voltage_v)
+        self._battery_voltage = (
+            voltage
+            if bool(msg.connected) and math.isfinite(voltage) and voltage > 0.0
+            else 0.0
+        )
+
+    def _px4_gps_callback(self, msg):
+        self._gps_fix = px4_gps_fix_to_drone_fix(int(msg.fix_type))
+
+    def _px4_estimator_callback(self, msg):
+        self._ekf_healthy = estimator_status_flags_healthy(msg)
 
     def _px4_status_callback(self, msg):
         """PX4 状态更新：同步 armed 和发布 drone_state"""
+        self._latest_vehicle_status = msg
         self._armed = (msg.arming_state == 2)
 
         state = DroneState()
@@ -196,12 +402,17 @@ class ControlNode(Node):
         nav_state_map = {
             0: "MANUAL", 1: "ALTCTL", 2: "POSCTL",
             3: "AUTO_MISSION", 4: "AUTO_LOITER", 5: "AUTO_RTL",
-            6: "ACRO", 14: "OFFBOARD", 17: "AUTO_TAKEOFF", 18: "AUTO_LAND",
+            6: "POSITION_SLOW", 10: "ACRO", 14: "OFFBOARD",
+            17: "AUTO_TAKEOFF", 18: "AUTO_LAND",
         }
         state.mode = nav_state_map.get(msg.nav_state, f"NAV_{msg.nav_state}")
-        state.battery = 0.0  # VehicleStatus 不含电池
-        state.gps_fix = 2
-        state.ekf_healthy = True
+        state.battery = float(self._battery_voltage)
+        state.gps_fix = int(self._gps_fix)
+        state.ekf_healthy = (
+            bool(self._ekf_healthy)
+            if self._ekf_healthy is not None
+            else bool(getattr(msg, "pre_flight_checks_pass", False))
+        )
         self._state_pub.publish(state)
 
     def _odom_callback(self, msg: Odometry):
@@ -223,6 +434,7 @@ class ControlNode(Node):
     def _takeoff_callback(self, request, response):
         altitude = request.altitude
         self.get_logger().info(f"收到起飞请求: 目标高度={altitude}m")
+        self._clear_active_trajectory()
         self._control_mode = "TAKEOFF"
         self._takeoff_target_altitude = float(altitude)
 
@@ -281,6 +493,7 @@ class ControlNode(Node):
 
     def _land_callback(self, request, response):
         self.get_logger().info("收到降落请求")
+        self._clear_active_trajectory()
         self._control_mode = "LAND"
 
         if self._px4_mode == "px4":
@@ -326,8 +539,8 @@ class ControlNode(Node):
 
     def _return_home_callback(self, request, response):
         self.get_logger().info("收到返航请求")
+        self._clear_active_trajectory()
         self._control_mode = "RETURN_HOME"
-        self._active_trajectory_until = 0.0
 
         if self._px4_mode == "px4":
             return self._return_home_px4(response)
@@ -373,6 +586,8 @@ class ControlNode(Node):
     def _arm_callback(self, request, response):
         arm = request.arm
         self.get_logger().info(f"收到{'解锁' if arm else '加锁'}请求")
+        if not arm:
+            self._clear_active_trajectory()
 
         if self._px4_mode == "px4":
             return self._arm_px4(arm, response)
@@ -463,23 +678,39 @@ class ControlNode(Node):
 
         self._last_autonomy_hold_mode = None
         now = time.monotonic()
+        duration = self._trajectory_duration(msg)
+        if self._px4_mode == "px4":
+            if not should_accept_replan(
+                self._active_trajectory is not None,
+                now - self._active_trajectory_updated_at,
+                self._autonomy_replan_accept_interval_sec,
+            ):
+                return
+            handoff_elapsed = trajectory_handoff_elapsed(
+                msg.points,
+                self._last_autonomy_setpoint,
+                self._autonomy_handoff_max_sec,
+            )
+            self._active_trajectory = msg
+            self._active_trajectory_started_at = now - handoff_elapsed
+            self._active_trajectory_updated_at = now
+            self._control_mode = "AUTONOMY"
+            self._log_autonomy_strategy(msg, duration, now)
+            return
+
         if now < self._active_trajectory_until:
             return
 
-        duration = self._trajectory_duration(msg)
-        self._active_trajectory_until = now + (0.45 if self._px4_mode == "px4" else max(0.05, duration * 0.8))
+        self._active_trajectory_until = now + max(0.05, duration * 0.8)
         self._control_mode = "AUTONOMY"
         self._log_autonomy_strategy(msg, duration, now)
-        if self._px4_mode == "px4":
-            self._follow_trajectory_px4(msg)
-        else:
-            self._follow_trajectory_airsim(msg)
+        self._follow_trajectory_airsim(msg)
 
     def _hold_autonomy(self, mode: str, message: str):
         if self._last_autonomy_hold_mode != mode:
             self.get_logger().info(message)
             self._last_autonomy_hold_mode = mode
-        self._active_trajectory_until = 0.0
+        self._clear_active_trajectory()
         self._control_mode = "HOLD"
         self._last_autonomy_velocity = (0.0, 0.0, 0.0)
         self._last_autonomy_velocity_time = time.monotonic()
@@ -491,6 +722,59 @@ class ControlNode(Node):
                 self._client.hoverAsync().join()
             except Exception as e:
                 self.get_logger().warn(f"AirSim 悬停失败: {e}")
+
+    def _clear_active_trajectory(self):
+        self._active_trajectory_until = 0.0
+        self._active_trajectory = None
+        self._active_trajectory_started_at = 0.0
+        self._active_trajectory_updated_at = 0.0
+        self._last_autonomy_setpoint = None
+
+    def _trajectory_tracking_callback(self):
+        if self._px4_mode != "px4" or self._px4_ctrl is None:
+            return
+        if not self._armed or self._control_mode != "AUTONOMY":
+            return
+        trajectory = self._active_trajectory
+        if trajectory is None:
+            return
+
+        now = time.monotonic()
+        update_age = now - self._active_trajectory_updated_at
+        if update_age > self._autonomy_trajectory_stale_sec:
+            self._hold_autonomy(
+                "trajectory_stale",
+                f"自主轨迹超过 {self._autonomy_trajectory_stale_sec:.2f}s 未更新，切换悬停",
+            )
+            return
+
+        trajectory_elapsed = now - self._active_trajectory_started_at
+        state = interpolate_trajectory(trajectory.points, trajectory_elapsed)
+        if state is None:
+            self._hold_autonomy("trajectory_empty", "自主轨迹为空，切换悬停")
+            return
+
+        vx, vy, vz = self._clamped_velocity(*state["velocity"])
+        guarded_vz = self._apply_altitude_guard(vx, vy, vz, state["position"][2])[2]
+        vx, vy, vz = self._smooth_velocity(vx, vy, guarded_vz)
+        ax, ay, az = self._clamped_acceleration(*state["acceleration"])
+        if guarded_vz != state["velocity"][2] and az < 0.0:
+            az = 0.0
+        position = (
+            state["position"][0],
+            state["position"][1],
+            max(self._autonomy_min_altitude, state["position"][2]),
+        )
+        self._px4_ctrl.set_trajectory_state(
+            position,
+            (vx, vy, vz),
+            (ax, ay, az),
+            state["yaw"] if math.isfinite(state["yaw"]) else float("nan"),
+        )
+        self._last_autonomy_setpoint = {
+            "position": position,
+            "velocity": (vx, vy, vz),
+        }
 
     def _follow_trajectory_airsim(self, msg: Trajectory):
         if self._client is None:
@@ -511,33 +795,6 @@ class ControlNode(Node):
             except Exception as e:
                 self.get_logger().error(f"自主轨迹点 {i + 1} 执行失败: {e}")
                 break
-
-    def _follow_trajectory_px4(self, msg: Trajectory):
-        if self._px4_ctrl is None:
-            self.get_logger().warn("无法执行自主轨迹：PX4 控制器未初始化")
-            return
-        point = self._trajectory_lookahead_point(msg, lookahead_sec=0.8)
-        vx, vy, vz = self._clamped_velocity(
-            point.velocity.x,
-            point.velocity.y,
-            point.velocity.z,
-        )
-        vx, vy, vz = self._apply_altitude_guard(vx, vy, vz, point.position.z)
-        vx, vy, vz = self._smooth_velocity(vx, vy, vz)
-        if abs(vx) + abs(vy) + abs(vz) > 0.05:
-            self._px4_ctrl.set_velocity(
-                vx,
-                vy,
-                vz,
-                point.yaw if math.isfinite(float(point.yaw)) else float("nan"),
-            )
-        else:
-            self._px4_ctrl.set_position(
-                point.position.x,
-                point.position.y,
-                point.position.z,
-                point.yaw if math.isfinite(float(point.yaw)) else float("nan"),
-            )
 
     def _apply_altitude_guard(self, vx: float, vy: float, vz: float, target_z: float):
         current_z = self._current_altitude()
@@ -603,13 +860,13 @@ class ControlNode(Node):
         scale = limit / norm
         return vx * scale, vy * scale, vz * scale
 
-    def _trajectory_lookahead_point(self, msg: Trajectory, lookahead_sec: float):
-        selected = msg.points[-1]
-        for point in msg.points:
-            if self._duration_to_sec(point.time_from_start) >= lookahead_sec:
-                selected = point
-                break
-        return selected
+    def _clamped_acceleration(self, ax: float, ay: float, az: float):
+        limit = max(0.1, self._autonomy_accel_limit)
+        norm = math.sqrt(ax * ax + ay * ay + az * az)
+        if norm <= limit or norm <= 1e-6:
+            return ax, ay, az
+        scale = limit / norm
+        return ax * scale, ay * scale, az * scale
 
     def _trajectory_duration(self, msg: Trajectory):
         if not msg.points:

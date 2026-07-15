@@ -15,6 +15,9 @@ const els = {
   cameraCanvas: document.getElementById("cameraCanvas"),
   cameraEmpty: document.getElementById("cameraEmpty"),
   cameraColorMode: document.getElementById("cameraColorMode"),
+  detectionStatus: document.getElementById("detectionStatus"),
+  detectionCount: document.getElementById("detectionCount"),
+  detectionList: document.getElementById("detectionList"),
   cameraZoomBtn: document.getElementById("cameraZoomBtn"),
   cameraViewer: document.getElementById("cameraViewer"),
   cameraViewerStage: document.getElementById("cameraViewerStage"),
@@ -26,6 +29,12 @@ const els = {
   cameraZoomValue: document.getElementById("cameraZoomValue"),
   closeCameraViewerBtn: document.getElementById("closeCameraViewerBtn"),
   hudMode: document.getElementById("hudMode"),
+  chatArmedValue: document.getElementById("chatArmedValue"),
+  chatModeValue: document.getElementById("chatModeValue"),
+  chatBatteryValue: document.getElementById("chatBatteryValue"),
+  chatGpsValue: document.getElementById("chatGpsValue"),
+  chatEkfValue: document.getElementById("chatEkfValue"),
+  chatPositionValue: document.getElementById("chatPositionValue"),
   armedValue: document.getElementById("armedValue"),
   modeValue: document.getElementById("modeValue"),
   batteryValue: document.getElementById("batteryValue"),
@@ -77,14 +86,24 @@ const els = {
   modalConfirmTaskBtn: document.getElementById("modalConfirmTaskBtn"),
   modalCancelTaskBtn: document.getElementById("modalCancelTaskBtn"),
   chatHistory: document.getElementById("chatHistory"),
+  chatScrollBtn: document.getElementById("chatScrollBtn"),
+  missionMapCanvas: document.getElementById("missionMapCanvas"),
+  missionMapMeta: document.getElementById("missionMapMeta"),
   llmOutput: document.getElementById("llmOutput"),
   planSteps: document.getElementById("planSteps"),
   toolCalls: document.getElementById("toolCalls"),
   aiStatusText: document.getElementById("aiStatusText"),
   planStatusText: document.getElementById("planStatusText"),
   toolStatusText: document.getElementById("toolStatusText"),
+  lifecycleParse: document.getElementById("lifecycleParse"),
+  lifecycleConfirm: document.getElementById("lifecycleConfirm"),
+  lifecycleExecute: document.getElementById("lifecycleExecute"),
+  lifecycleVerify: document.getElementById("lifecycleVerify"),
+  lifecycleDone: document.getElementById("lifecycleDone"),
+  lifecycleSummary: document.getElementById("lifecycleSummary"),
   eventLog: document.getElementById("eventLog"),
   skillGrid: document.getElementById("skillGrid"),
+  capabilityGrid: document.getElementById("capabilityGrid"),
   gatewayInput: document.getElementById("gatewayInput"),
   saveGatewayBtn: document.getElementById("saveGatewayBtn"),
   clearChatBtn: document.getElementById("clearChatBtn"),
@@ -95,6 +114,7 @@ let lastAgentPayload = null;
 let pendingConfirmation = null;
 let activeWorkflowId = null;
 let gatewaySkills = [];
+let gatewayCapabilities = [];
 let activeVerification = null;
 let threePointcloud = null;
 let telemetrySocket = null;
@@ -104,6 +124,11 @@ let agentSocketTimer = null;
 let agentConnected = false;
 let latestPointcloud = null;
 let latestDetections = [];
+let latestDetectionMeta = null;
+let lastDetectionOverlayKey = "";
+let chatAutoFollow = true;
+let missionTrack = [];
+let missionTrackFrame = "";
 let latestCameraFrame = null;
 let lastLiveMissionKey = "";
 let lastImageAnalysisKey = "";
@@ -121,6 +146,56 @@ const SESSION_STORAGE_KEY = "aeromind_chat_session";
 const PANEL_HEIGHT_STORAGE_PREFIX = "aeromind_panel_height_";
 const CAMERA_COLOR_MODE_KEY = "aeromind_camera_color_mode";
 const AGENT_MODEL_STORAGE_KEY = "aeromind_agent_model";
+
+const lifecycleOrder = ["parse", "confirm", "execute", "verify", "done"];
+
+function setTaskLifecycle(stage, summary, options = {}) {
+  const steps = {
+    parse: els.lifecycleParse,
+    confirm: els.lifecycleConfirm,
+    execute: els.lifecycleExecute,
+    verify: els.lifecycleVerify,
+    done: els.lifecycleDone,
+  };
+  const activeIndex = Math.max(0, lifecycleOrder.indexOf(stage));
+  const skipped = new Set(options.skipped || []);
+  const outcome = options.outcome || "active";
+  const activeText = options.activeText || {
+    parse: "正在理解任务",
+    confirm: "等待操作员",
+    execute: "正在调用 ROS",
+    verify: "核验飞控状态",
+    done: "任务已完成",
+  }[stage] || "进行中";
+
+  lifecycleOrder.forEach((key, index) => {
+    const element = steps[key];
+    if (!element) return;
+    element.classList.remove("active", "complete", "error");
+    element.removeAttribute("aria-current");
+    const detail = element.querySelector("em");
+    if (stage === "done" && outcome !== "error") {
+      element.classList.add("complete");
+      detail.textContent = skipped.has(key) ? "无需执行" : "已完成";
+      return;
+    }
+    if (index < activeIndex) {
+      element.classList.add("complete");
+      detail.textContent = skipped.has(key) ? "无需执行" : "已完成";
+      return;
+    }
+    if (index === activeIndex) {
+      element.classList.add(outcome === "error" ? "error" : "active");
+      element.setAttribute("aria-current", "step");
+      detail.textContent = activeText;
+      return;
+    }
+    detail.textContent = "未开始";
+  });
+  if (els.lifecycleSummary) {
+    els.lifecycleSummary.textContent = summary || "任务状态等待更新";
+  }
+}
 const existingSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
 const sessionId = existingSessionId || `ground-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let chatMessages = loadChatHistory();
@@ -136,21 +211,15 @@ els.cameraColorMode.value = localStorage.getItem(CAMERA_COLOR_MODE_KEY) || "auto
 els.agentModelSelect.value = localStorage.getItem(AGENT_MODEL_STORAGE_KEY) || "claude:sonnet";
 
 const fallbackSkills = [
-  { name: "StatusSkill", label: "状态检查", type: "hard", risk_level: "low", description: "读取飞控状态", example_task: "查询状态", enabled: true },
-  { name: "ArmSkill", label: "解锁/加锁", type: "hard", risk_level: "medium", description: "调用 /control/arm", example_task: "解锁", enabled: true },
-  { name: "TakeoffSkill", label: "安全起飞", type: "hard", risk_level: "medium", description: "调用 /control/takeoff", example_task: "起飞到10米", enabled: true },
-  { name: "LandSkill", label: "降落", type: "hard", risk_level: "medium", description: "调用 /control/land", example_task: "降落", enabled: true },
-  { name: "PlanningSkill", label: "路径规划", type: "soft", risk_level: "high", description: "发布 /autonomy/goal", example_task: "飞到前方20米", enabled: true },
-  { name: "HoverSkill", label: "悬停保持", type: "hard", risk_level: "medium", description: "取消自主目标并发布零速度", example_task: "原地悬停", enabled: true },
-  { name: "ReturnHomeSkill", label: "返航", type: "hard", risk_level: "high", description: "调用 PX4 原生 RTL", example_task: "返航并降落", enabled: true },
-  { name: "EmergencyStopSkill", label: "急停", type: "hard", risk_level: "high", description: "取消任务、零速度、尝试加锁", example_task: "立即急停", enabled: true },
-  { name: "PerceptionSkill", label: "环境感知", type: "perception", risk_level: "low", description: "读取相机/深度/点云摘要", example_task: "检查前方有没有障碍物", enabled: true },
-  { name: "CaptureImageSkill", label: "拍照取证", type: "perception", risk_level: "low", description: "保存当前 RGB 图像", example_task: "拍一张前方照片", enabled: true },
-  { name: "ScanAreaSkill", label: "区域扫描", type: "soft", risk_level: "medium", description: "生成区域扫描摘要", example_task: "扫描前方区域", enabled: true },
-  { name: "TargetSearchSkill", label: "目标搜索", type: "soft", risk_level: "medium", description: "匹配当前 detection", example_task: "检测人", enabled: true },
-  { name: "SemanticImageSkill", label: "图像语义分析", type: "perception", risk_level: "low", description: "分析当前 RGB 画面", example_task: "分析当前画面中有什么", enabled: true },
-  { name: "MissionSequenceSkill", label: "复合任务", type: "soft", risk_level: "high", description: "拆解起飞、移动和目标检测", example_task: "起飞，向左飞20米，并检测人", enabled: true },
-  { name: "MissionReportSkill", label: "任务报告", type: "soft", risk_level: "low", description: "汇总当前任务报告", example_task: "生成当前任务报告", enabled: true },
+  { name: "flight.square", label: "正方形轨迹", risk_level: "high", description: "四边闭合飞行轨迹", example_task: "飞一个边长10米的正方形轨迹", enabled: true },
+  { name: "flight.v_shape", label: "V 字轨迹", risk_level: "high", description: "两个相对向量航段组成 V 字", example_task: "飞一个宽10米、深10米的V字形", enabled: true },
+  { name: "inspection.person_branch", label: "人员条件巡检", risk_level: "high", description: "发现人员悬停拍照，否则继续前进", example_task: "巡检前方，发现人就悬停拍照，否则继续前进20米", enabled: true },
+];
+const fallbackCapabilities = [
+  { name: "system.status", label: "飞控状态", risk_level: "low", interface: "/control/drone_state", description: "读取飞控与位置状态", example_task: "查询无人机状态", enabled: true },
+  { name: "flight.takeoff", label: "起飞", risk_level: "high", interface: "/control/takeoff", description: "按目标高度起飞", example_task: "起飞到10米", enabled: true },
+  { name: "flight.move_relative", label: "相对移动", risk_level: "high", interface: "/autonomy/goal", description: "执行相对三维移动", example_task: "向前飞10米", enabled: true },
+  { name: "perception.capture_image", label: "拍照保存", risk_level: "low", interface: "/perception/capture_image", description: "保存当前 RGB 图像", example_task: "拍一张前方照片", enabled: true },
 ];
 
 function fmt(value, digits = 2) {
@@ -208,7 +277,11 @@ function setupResizableCards() {
 
     const storedHeight = Number(localStorage.getItem(`${PANEL_HEIGHT_STORAGE_PREFIX}${key}`));
     if (Number.isFinite(storedHeight) && storedHeight > 0) {
-      card.style.height = `${clampPanelHeight(storedHeight)}px`;
+      const restoredHeight = clampPanelHeight(storedHeight, key);
+      card.style.height = `${restoredHeight}px`;
+      if (restoredHeight !== storedHeight) {
+        localStorage.setItem(`${PANEL_HEIGHT_STORAGE_PREFIX}${key}`, String(restoredHeight));
+      }
     }
 
     handle.addEventListener("pointerdown", (event) => {
@@ -219,7 +292,7 @@ function setupResizableCards() {
       handle.setPointerCapture?.(event.pointerId);
 
       const onPointerMove = (moveEvent) => {
-        const nextHeight = clampPanelHeight(startHeight + moveEvent.clientY - startY);
+        const nextHeight = clampPanelHeight(startHeight + moveEvent.clientY - startY, key);
         card.style.height = `${nextHeight}px`;
       };
 
@@ -239,9 +312,10 @@ function setupResizableCards() {
   });
 }
 
-function clampPanelHeight(value) {
-  const viewportLimit = Math.max(160, Math.floor(window.innerHeight * 0.72));
-  return Math.max(118, Math.min(viewportLimit, Number(value) || 118));
+function clampPanelHeight(value, key = "") {
+  const minimum = key === "mission-compact" ? 190 : 118;
+  const viewportLimit = Math.max(minimum, Math.floor(window.innerHeight * 0.72));
+  return Math.max(minimum, Math.min(viewportLimit, Number(value) || minimum));
 }
 
 function updateBadge(el, text, className = "badge neutral") {
@@ -314,6 +388,8 @@ function saveAndRenderChat() {
 }
 
 function renderChat() {
+  const previousScrollTop = els.chatHistory.scrollTop;
+  const shouldFollow = chatAutoFollow || isChatNearBottom();
   const messages = chatMessages.length
     ? chatMessages.map((msg) => {
       const tag = msg.tag ? `<div class="muted" style="margin-top:4px">${escapeHtml(msg.tag)}</div>` : "";
@@ -337,7 +413,28 @@ function renderChat() {
       </div>`
     : "";
   els.chatHistory.innerHTML = messages + confirmation;
+  if (shouldFollow) {
+    scrollChatToBottom();
+  } else {
+    els.chatHistory.scrollTop = previousScrollTop;
+    updateChatScrollButton();
+  }
+}
+
+function isChatNearBottom() {
+  return els.chatHistory.scrollHeight - els.chatHistory.scrollTop - els.chatHistory.clientHeight < 56;
+}
+
+function updateChatScrollButton() {
+  const atBottom = isChatNearBottom();
+  chatAutoFollow = atBottom;
+  els.chatScrollBtn?.classList.toggle("hidden", atBottom);
+}
+
+function scrollChatToBottom() {
   els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+  chatAutoFollow = true;
+  els.chatScrollBtn?.classList.add("hidden");
 }
 
 function formatChatContent(content) {
@@ -368,6 +465,27 @@ function renderAgentPayload(payload, serviceMessage = "") {
   pendingConfirmation = payload.pending_confirmation || null;
   setupActiveVerification(payload);
   const confirmLabel = confirmationLabel(parsed, pendingConfirmation);
+  const failedTool = tools.find((tool) => tool.status && tool.status !== "success");
+
+  if (pendingConfirmation) {
+    setTaskLifecycle("confirm", pendingConfirmation.summary || "任务解析完成，等待操作员确认");
+  } else if (activeVerification) {
+    setTaskLifecycle("verify", finalStatus || "控制请求已受理，等待真实飞控状态验证", {
+      skipped: parsed.need_confirm ? [] : ["confirm"],
+    });
+  } else if (failedTool) {
+    setTaskLifecycle("execute", finalStatus || `${failedTool.name || "ROS 工具"}调用失败`, {
+      outcome: "error",
+      activeText: "执行失败",
+      skipped: parsed.need_confirm ? [] : ["confirm"],
+    });
+  } else {
+    const skipped = [];
+    if (!parsed.need_confirm) skipped.push("confirm");
+    if (!tools.length) skipped.push("execute", "verify");
+    else if (!payload.verification_done) skipped.push("verify");
+    setTaskLifecycle("done", finalStatus || "任务处理完成", { skipped });
+  }
 
   els.aiStatusText.textContent = "PARSED";
   els.planStatusText.textContent = parsed.skill || "PLAN";
@@ -481,6 +599,7 @@ function renderConfirmation() {
     ? `\n参数: ${JSON.stringify(pendingConfirmation.args)}`
     : "";
   els.confirmationPanel.classList.remove("hidden");
+  setTaskLifecycle("confirm", pendingConfirmation.summary || "等待操作员确认高风险动作");
   els.confirmationText.textContent = [
     pendingConfirmation.summary || "确认执行该任务",
     `来源: ${pendingConfirmation.source === "gateway" ? "Agent MCP" : (pendingConfirmation.skill || "任务服务")}`,
@@ -498,13 +617,28 @@ function renderConfirmation() {
 }
 
 async function refreshSkills() {
-  try {
-    const data = await api("/api/skills");
-    renderSkills(mergeSkills(data.skills || fallbackSkills, gatewaySkills));
-  } catch (err) {
-    renderSkills(mergeSkills(fallbackSkills, gatewaySkills));
-    pushEvent("error", `技能库加载失败，使用本地 fallback: ${err.message}`);
-  }
+  renderSkills(gatewaySkills.length ? gatewaySkills : fallbackSkills);
+  renderCapabilities(gatewayCapabilities.length ? gatewayCapabilities : fallbackCapabilities);
+}
+
+function renderCapabilities(capabilities) {
+  if (!els.capabilityGrid) return;
+  els.capabilityGrid.innerHTML = capabilities.map((item) => `
+    <button class="skill-card" data-capability-task="${escapeHtml(item.example_task || "")}">
+      <span>${escapeHtml(item.name || "CAPABILITY").toUpperCase()}</span>
+      <strong>${escapeHtml(item.label || item.name || "--")}</strong>
+      <small>${escapeHtml(item.description || "")}</small>
+      <em>${escapeHtml(item.interface || item.mode || "ROS")}</em>
+    </button>
+  `).join("");
+  els.capabilityGrid.querySelectorAll("[data-capability-task]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const task = button.getAttribute("data-capability-task");
+      if (!task) return;
+      els.taskInput.value = task;
+      submitAgentTask(task);
+    });
+  });
 }
 
 function mergeSkills(...groups) {
@@ -594,6 +728,13 @@ function renderLiveMission(mission) {
   els.missionResult.textContent = mission.report_md
     ? `${mission.message || "--"} · 报告: ${mission.report_md}`
     : (mission.message || "--");
+  if (mission.status === "done") {
+    setTaskLifecycle("done", mission.message || "组合任务已完成");
+  } else if (mission.status === "failed") {
+    setTaskLifecycle("execute", mission.message || "组合任务执行失败", {outcome: "error", activeText: "执行失败"});
+  } else {
+    setTaskLifecycle("execute", mission.message || `${statusLabel} ${current}/${total}`);
+  }
 
   const icons = {
     done: ["✓", "ok"],
@@ -724,11 +865,26 @@ function renderStatus(data, source = "HTTP") {
   const depth = data.depth;
   const pointcloud = data.pointcloud;
   const autonomy = data.autonomy;
+  updateMissionMap(odom, data.autonomy_goal, data.autonomy_trajectory);
   renderLiveMission(data.mission);
   renderImageAnalysis(data.image_analysis);
-  latestDetections = Array.isArray(data.detections)
+  const reportedDetections = Array.isArray(data.detections)
     ? data.detections
     : (data.detection ? [data.detection] : []);
+  latestDetectionMeta = data.detection_meta || null;
+  const detectionAge = Number(latestDetectionMeta?.age_s);
+  const detectionAgeValid = latestDetectionMeta?.age_s == null
+    || (Number.isFinite(detectionAge) && detectionAge <= 3);
+  const detectionsActive = latestDetectionMeta
+    ? latestDetectionMeta.active === true && detectionAgeValid
+    : reportedDetections.length > 0;
+  latestDetections = detectionsActive ? reportedDetections : [];
+  renderDetectionSummary(latestDetections, latestDetectionMeta);
+  const overlayKey = detectionOverlayKey(latestDetections, detectionsActive);
+  if (overlayKey !== lastDetectionOverlayKey) {
+    lastDetectionOverlayKey = overlayKey;
+    redrawCameraDetections();
+  }
 
   els.systemLine.textContent = `ROS 网关已连接 · ${source}`;
   updateBadge(els.linkBadge, source === "WS" ? "实时连接" : "HTTP 轮询", "badge");
@@ -739,10 +895,22 @@ function renderStatus(data, source = "HTTP") {
 
     els.armedValue.textContent = state.armed ? "是" : "否";
     els.modeValue.textContent = state.mode || "--";
-    els.batteryValue.textContent = `${fmt(state.battery, 1)} V`;
-    els.gpsValue.textContent = String(state.gps_fix ?? "--");
+    els.batteryValue.textContent = Number(state.battery) > 0
+      ? `${fmt(state.battery, 1)} V`
+      : "--";
+    const gpsLabels = {0: "无定位", 1: "2D", 2: "3D", 3: "差分", 4: "RTK"};
+    els.gpsValue.textContent = gpsLabels[Number(state.gps_fix)] || "--";
     els.ekfValue.textContent = state.ekf_healthy ? "正常" : "异常";
     els.hudMode.textContent = `MODE ${state.mode || "--"}`;
+    els.chatArmedValue.textContent = state.armed ? "已解锁" : "未解锁";
+    els.chatArmedValue.className = state.armed ? "status-ok" : "status-warn";
+    els.chatModeValue.textContent = state.mode || "--";
+    els.chatBatteryValue.textContent = Number(state.battery) > 0
+      ? `${fmt(state.battery, 1)} V`
+      : "--";
+    els.chatGpsValue.textContent = gpsLabels[Number(state.gps_fix)] || "--";
+    els.chatEkfValue.textContent = state.ekf_healthy ? "正常" : "异常";
+    els.chatEkfValue.className = state.ekf_healthy ? "status-ok" : "status-bad";
   }
 
   if (odom) {
@@ -753,6 +921,11 @@ function renderStatus(data, source = "HTTP") {
     els.velX.textContent = fmt(odom.velocity.x);
     els.velY.textContent = fmt(odom.velocity.y);
     els.velZ.textContent = fmt(odom.velocity.z);
+    els.chatPositionValue.textContent = [
+      fmt(odom.position.x, 1),
+      fmt(odom.position.y, 1),
+      fmt(odom.position.z, 1),
+    ].join(" / ");
   }
 
   updateActiveVerification(state, odom, autonomy);
@@ -783,6 +956,155 @@ function renderStatus(data, source = "HTTP") {
   els.serviceBadge.textContent = `${ready}/${Object.keys(services).length} 服务`;
   els.agentBadge.textContent = services.agent ? "任务服务就绪" : "任务服务离线";
   renderEvents(data.events || []);
+}
+
+function updateMissionMap(odom, goal, trajectory) {
+  const position = odom?.position;
+  const frame = odom?.frame_id || goal?.frame_id || trajectory?.frame_id || "odom";
+  if (frame !== missionTrackFrame) {
+    missionTrack = [];
+    missionTrackFrame = frame;
+  }
+  if (Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y))) {
+    const point = {x: Number(position.x), y: Number(position.y), z: Number(position.z || 0)};
+    const previous = missionTrack.at(-1);
+    const distance = previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : Infinity;
+    if (!previous || distance >= 0.1) {
+      if (distance > 250) missionTrack = [];
+      missionTrack.push(point);
+      missionTrack = missionTrack.slice(-800);
+    }
+  }
+  drawMissionMap(odom, goal, trajectory);
+}
+
+function drawMissionMap(odom, goal, trajectory) {
+  const canvas = els.missionMapCanvas;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(260, rect.width || 280);
+  const height = Math.max(140, rect.height || 166);
+  const pixelWidth = Math.round(width * dpr);
+  const pixelHeight = Math.round(height * dpr);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#0d1014";
+  ctx.fillRect(0, 0, width, height);
+
+  const planned = Array.isArray(trajectory?.points)
+    ? trajectory.points.filter((point) => Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
+    : [];
+  const goalPoint = goal?.position && Number.isFinite(Number(goal.position.x))
+    ? {x: Number(goal.position.x), y: Number(goal.position.y), z: Number(goal.position.z || 0)}
+    : null;
+  const current = odom?.position && Number.isFinite(Number(odom.position.x))
+    ? {x: Number(odom.position.x), y: Number(odom.position.y), z: Number(odom.position.z || 0)}
+    : null;
+  const allPoints = [...missionTrack, ...planned, ...(goalPoint ? [goalPoint] : []), ...(current ? [current] : [])];
+  if (!allPoints.length) {
+    ctx.fillStyle = "#69727e";
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("等待世界坐标轨迹", width / 2, height / 2);
+    els.missionMapMeta.textContent = "等待 odom / autonomy 数据";
+    return;
+  }
+
+  const xs = allPoints.map((point) => Number(point.x));
+  const ys = allPoints.map((point) => Number(point.y));
+  const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const span = Math.max(20, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.22;
+  const padding = 24;
+  const scale = Math.min((width - padding * 2) / span, (height - padding * 2) / span);
+  const project = (point) => ({
+    x: width / 2 + (Number(point.x) - centerX) * scale,
+    y: height / 2 - (Number(point.y) - centerY) * scale,
+  });
+  const gridStep = niceMapStep(span / 5);
+  const minGridX = Math.floor((centerX - span / 2) / gridStep) * gridStep;
+  const maxGridX = Math.ceil((centerX + span / 2) / gridStep) * gridStep;
+  const minGridY = Math.floor((centerY - span / 2) / gridStep) * gridStep;
+  const maxGridY = Math.ceil((centerY + span / 2) / gridStep) * gridStep;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#1c2229";
+  for (let x = minGridX; x <= maxGridX; x += gridStep) {
+    const a = project({x, y: minGridY});
+    const b = project({x, y: maxGridY});
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  for (let y = minGridY; y <= maxGridY; y += gridStep) {
+    const a = project({x: minGridX, y});
+    const b = project({x: maxGridX, y});
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+
+  drawMapPath(ctx, missionTrack, project, "#25b8c7", false, 2);
+  drawMapPath(ctx, planned, project, trajectory?.collision_free === false ? "#ed5c5c" : "#34c487", true, 1.5);
+  if (missionTrack.length) {
+    const home = project(missionTrack[0]);
+    ctx.fillStyle = "#d5dae0";
+    ctx.beginPath(); ctx.arc(home.x, home.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  if (goalPoint) drawMapGoal(ctx, project(goalPoint));
+  if (current) drawMapVehicle(ctx, project(current), odom?.velocity);
+
+  const z = current ? `${current.z.toFixed(1)}m` : "--";
+  const mode = trajectory?.planner_mode || "无规划轨迹";
+  els.missionMapMeta.textContent = `${missionTrackFrame || "odom"} · 网格 ${gridStep}m · Z ${z} · ${mode}`;
+}
+
+function niceMapStep(value) {
+  const exponent = Math.floor(Math.log10(Math.max(0.1, value)));
+  const fraction = value / (10 ** exponent);
+  const nice = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return nice * (10 ** exponent);
+}
+
+function drawMapPath(ctx, points, project, color, dashed, lineWidth) {
+  if (points.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.setLineDash(dashed ? [5, 4] : []);
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    const pixel = project(point);
+    if (index === 0) ctx.moveTo(pixel.x, pixel.y);
+    else ctx.lineTo(pixel.x, pixel.y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMapGoal(ctx, point) {
+  ctx.save();
+  ctx.strokeStyle = "#e8b84a";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(point.x, point.y, 6, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(point.x - 9, point.y); ctx.lineTo(point.x + 9, point.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(point.x, point.y - 9); ctx.lineTo(point.x, point.y + 9); ctx.stroke();
+  ctx.restore();
+}
+
+function drawMapVehicle(ctx, point, velocity) {
+  const vx = Number(velocity?.x || 0);
+  const vy = Number(velocity?.y || 0);
+  const angle = Math.hypot(vx, vy) > 0.1 ? Math.atan2(vy, vx) : 0;
+  ctx.save();
+  ctx.translate(point.x, point.y);
+  ctx.rotate(-angle);
+  ctx.fillStyle = "#f3f6f8";
+  ctx.beginPath();
+  ctx.moveTo(8, 0); ctx.lineTo(-6, -5); ctx.lineTo(-3, 0); ctx.lineTo(-6, 5); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function updateActiveVerification(state, odom, autonomy) {
@@ -1006,7 +1328,8 @@ function drawImage(image) {
 
   canvas.width = width;
   canvas.height = height;
-  ctx.putImageData(new ImageData(rgba, width, height), 0, 0);
+  const baseImageData = new ImageData(rgba, width, height);
+  ctx.putImageData(baseImageData, 0, 0);
   drawDetections(ctx, width, height);
   els.cameraEmpty.style.display = "none";
   const detectionText = latestDetections.length ? ` · ${latestDetections.length} 目标` : "";
@@ -1017,6 +1340,7 @@ function drawImage(image) {
     height,
     encoding: image.encoding || "--",
     detectionCount: latestDetections.length,
+    baseImageData,
   };
   if (isCameraViewerOpen()) {
     renderCameraViewer();
@@ -1079,26 +1403,122 @@ function drawDetections(ctx, width, height) {
   ctx.lineWidth = Math.max(2, Math.round(width / 640));
   ctx.font = `${Math.max(14, Math.round(width / 70))}px system-ui, sans-serif`;
   latestDetections.forEach((det) => {
-    const boxWidth = Number(det.width || 0);
-    const boxHeight = Number(det.height || 0);
-    const cx = Number(det.x || 0);
-    const cy = Number(det.y || 0);
+    let boxWidth = Number(det.width || 0);
+    let boxHeight = Number(det.height || 0);
+    let cx = Number(det.x || 0);
+    let cy = Number(det.y || 0);
+    const normalized = boxWidth <= 1.5 && boxHeight <= 1.5 && cx <= 1.5 && cy <= 1.5;
+    if (normalized) {
+      boxWidth *= width;
+      boxHeight *= height;
+      cx *= width;
+      cy *= height;
+    }
     if (boxWidth <= 0 || boxHeight <= 0) return;
     const x = Math.max(0, cx - boxWidth / 2);
     const y = Math.max(0, cy - boxHeight / 2);
     const w = Math.min(width - x, boxWidth);
     const h = Math.min(height - y, boxHeight);
+    if (w <= 0 || h <= 0) return;
     const label = `${det.class_name || "target"} ${Math.round(Number(det.confidence || 0) * 100)}%`;
-    ctx.strokeStyle = "#22c55e";
+    const color = detectionColor(det.class_name);
+    ctx.strokeStyle = color;
     ctx.fillStyle = "rgba(10, 14, 20, 0.78)";
     ctx.strokeRect(x, y, w, h);
-    const textWidth = ctx.measureText(label).width + 12;
+    const corner = Math.max(8, Math.min(w, h) * 0.12);
+    ctx.lineWidth *= 1.6;
+    [
+      [x, y + corner, x, y, x + corner, y],
+      [x + w - corner, y, x + w, y, x + w, y + corner],
+      [x, y + h - corner, x, y + h, x + corner, y + h],
+      [x + w - corner, y + h, x + w, y + h, x + w, y + h - corner],
+    ].forEach((points) => {
+      ctx.beginPath();
+      ctx.moveTo(points[0], points[1]);
+      ctx.lineTo(points[2], points[3]);
+      ctx.lineTo(points[4], points[5]);
+      ctx.stroke();
+    });
+    ctx.lineWidth /= 1.6;
+    const textWidth = Math.min(width - x, ctx.measureText(label).width + 12);
     const textHeight = Math.max(20, Math.round(width / 50));
-    ctx.fillRect(x, Math.max(0, y - textHeight), textWidth, textHeight);
-    ctx.fillStyle = "#bbf7d0";
-    ctx.fillText(label, x + 6, Math.max(14, y - 6));
+    const labelY = y >= textHeight ? y - textHeight : y;
+    ctx.fillRect(x, labelY, textWidth, textHeight);
+    ctx.fillStyle = color;
+    ctx.fillText(label, x + 6, labelY + textHeight - 6, Math.max(0, textWidth - 10));
   });
   ctx.restore();
+}
+
+function detectionOverlayKey(detections, active) {
+  if (!active) return "stale";
+  return detections.map((detection) => [
+    detection.class_name,
+    Number(detection.confidence || 0).toFixed(3),
+    Number(detection.x || 0).toFixed(1),
+    Number(detection.y || 0).toFixed(1),
+    Number(detection.width || 0).toFixed(1),
+    Number(detection.height || 0).toFixed(1),
+  ].join(":")).join("|");
+}
+
+function redrawCameraDetections() {
+  if (!latestCameraFrame?.baseImageData || !els.cameraCanvas) return;
+  const ctx = els.cameraCanvas.getContext("2d");
+  ctx.putImageData(latestCameraFrame.baseImageData, 0, 0);
+  drawDetections(ctx, latestCameraFrame.width, latestCameraFrame.height);
+  latestCameraFrame.detectionCount = latestDetections.length;
+  if (isCameraViewerOpen()) renderCameraViewer();
+}
+
+function detectionColor(className) {
+  const palette = ["#25b8c7", "#34c487", "#e8b84a", "#6ea8fe", "#d985d4", "#ed775c"];
+  const text = String(className || "target");
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash * 31) + text.charCodeAt(index)) >>> 0;
+  }
+  return palette[hash % palette.length];
+}
+
+function renderDetectionSummary(detections, meta) {
+  if (!els.detectionStatus || !els.detectionList) return;
+  const age = Number(meta?.age_s);
+  const hasAge = meta?.age_s != null && Number.isFinite(age);
+  const active = meta ? meta.active !== false : detections.length > 0;
+  const frame = meta?.frame_id || "camera";
+  els.detectionStatus.className = active ? "live" : "stale";
+  els.detectionStatus.textContent = active
+    ? `YOLO 实时检测 · ${frame}`
+    : `检测数据超时${hasAge ? ` · ${age.toFixed(1)}s` : ""}`;
+  els.detectionCount.textContent = active ? `${detections.length} 目标` : "数据失效";
+
+  if (!active) {
+    els.detectionList.innerHTML = `<span class="muted">等待 /perception/detections 恢复</span>`;
+    return;
+  }
+  if (!detections.length) {
+    els.detectionList.innerHTML = `<span class="muted">当前画面未检测到目标</span>`;
+    return;
+  }
+
+  const groups = new Map();
+  detections.forEach((detection) => {
+    const name = detection.class_name || "target";
+    const current = groups.get(name) || {count: 0, confidence: 0};
+    current.count += 1;
+    current.confidence = Math.max(current.confidence, Number(detection.confidence || 0));
+    groups.set(name, current);
+  });
+  els.detectionList.innerHTML = [...groups.entries()]
+    .sort((left, right) => right[1].confidence - left[1].confidence)
+    .map(([name, result]) => `
+      <span class="detection-item" style="--detection-color:${detectionColor(name)}">
+        <strong>${escapeHtml(name)}</strong>
+        <span>${result.count}</span>
+        <em>${Math.round(result.confidence * 100)}%</em>
+      </span>
+    `).join("");
 }
 
 async function refreshPointcloud() {
@@ -1474,6 +1894,7 @@ async function submitAgentTask(task) {
     await confirmPendingTask(confirmationAction);
     return;
   }
+  chatAutoFollow = true;
   addChat("user", task);
   els.taskInput.value = "";
   els.aiStatusText.textContent = "THINKING";
@@ -1482,6 +1903,7 @@ async function submitAgentTask(task) {
   els.llmOutput.textContent = "正在解析自然语言任务...\n正在准备 ROS 工具调用...";
   els.planSteps.textContent = "1. 接收用户任务\n2. 解析意图\n3. 选择技能";
   els.toolCalls.textContent = "等待任务服务返回工具调用...";
+  setTaskLifecycle("parse", `正在解析：${task}`);
   if (agentConnected && agentSocket?.readyState === WebSocket.OPEN) {
     const requestId = `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     agentSocket.send(JSON.stringify({
@@ -1515,6 +1937,7 @@ async function submitAgentTask(task) {
       els.taskResult.textContent = err.message;
     }
     els.aiStatusText.textContent = "ERROR";
+    setTaskLifecycle("execute", err.message, {outcome: "error", activeText: "处理失败"});
     pushEvent("error", `自然语言: ${err.message}`);
   }
 }
@@ -1597,6 +2020,7 @@ function handleAgentEvent(event) {
   if (event.type === "session.ready") {
     renderProviderOptions(event.providers || [], event.session);
     gatewaySkills = Array.isArray(event.skills) ? event.skills : [];
+    gatewayCapabilities = Array.isArray(event.capabilities) ? event.capabilities : [];
     refreshSkills();
     els.agentBadge.textContent = `${event.session?.provider || "claude"} AGENT`.toUpperCase();
     if (event.session?.model) {
@@ -1607,11 +2031,8 @@ function handleAgentEvent(event) {
       els.agentModelSelect.value = selected;
       localStorage.setItem(AGENT_MODEL_STORAGE_KEY, selected);
     }
-    const timeline = Array.isArray(event.timeline) && event.timeline.length
-      ? event.timeline
-      : (Array.isArray(event.history) ? event.history : []);
-    if (timeline.length) {
-      chatMessages = timeline.map((message) => ({
+    const history = Array.isArray(event.history) ? event.history : [];
+    chatMessages = history.map((message) => ({
         role: message.role === "user" ? "user" : "assistant",
         content: typeof message.content === "string"
           ? message.content
@@ -1622,8 +2043,7 @@ function handleAgentEvent(event) {
           message.model || "",
         ].filter(Boolean).join(" · "),
       })).slice(-60);
-      saveAndRenderChat();
-    }
+    saveAndRenderChat();
     const pending = Array.isArray(event.pending_confirmations)
       ? event.pending_confirmations.at(-1)
       : null;
@@ -1650,6 +2070,7 @@ function handleAgentEvent(event) {
     ensureStreamingMessage(requestId, event.model || "Agent");
     els.aiStatusText.textContent = "STREAMING";
     els.missionPhase.textContent = "Agent 正在分析";
+    setTaskLifecycle("parse", "Agent 正在理解任务并选择可用技能");
     saveAndRenderChat();
     return;
   }
@@ -1663,6 +2084,7 @@ function handleAgentEvent(event) {
   if (event.type === "tool.started") {
     els.toolStatusText.textContent = "MCP CALL";
     els.missionPhase.textContent = "读取 ROS 状态";
+    setTaskLifecycle("execute", `正在调用 ${event.tool || "ROS 工具"}`, {skipped: ["confirm"]});
     els.toolCalls.innerHTML += `
       <div class="tool-row">
         <span class="muted">•</span>
@@ -1692,6 +2114,11 @@ function handleAgentEvent(event) {
     els.missionPhase.textContent = "Agent 回复完成";
     els.missionResult.textContent = "完成";
     els.llmOutput.textContent = message.content;
+    if (pendingConfirmation) {
+      setTaskLifecycle("confirm", pendingConfirmation.summary || "等待操作员确认");
+    } else {
+      setTaskLifecycle("done", "Agent 回复完成", {skipped: ["confirm", "verify"]});
+    }
     pushEvent("service", "Agent 回复完成");
     return;
   }
@@ -1707,6 +2134,17 @@ function handleAgentEvent(event) {
     pushEvent("system", `Agent 模型已切换: ${event.provider || "claude"}:${event.model}${migration}`);
     return;
   }
+  if (event.type === "session.cleared") {
+    chatMessages = [];
+    chatAutoFollow = true;
+    localStorage.removeItem(CHAT_STORAGE_KEY);
+    renderChat();
+    pushEvent(
+      "system",
+      `当前对话已清空${event.deleted_messages ? ` · ${event.deleted_messages} 条` : ""}，任务记录与长期记忆已保留`,
+    );
+    return;
+  }
   if (event.type === "confirmation.required") {
     const confirmation = event.confirmation || {};
     pendingConfirmation = {
@@ -1718,6 +2156,7 @@ function handleAgentEvent(event) {
     els.aiStatusText.textContent = "CONFIRM";
     els.missionPhase.textContent = "等待人工确认";
     els.missionResult.textContent = confirmation.summary || "等待确认";
+    setTaskLifecycle("confirm", confirmation.summary || "高风险动作等待操作员确认");
     pushEvent("system", `等待确认: ${confirmation.summary || confirmation.action}`);
     return;
   }
@@ -1729,6 +2168,11 @@ function handleAgentEvent(event) {
     const approved = event.decision === "approve";
     els.aiStatusText.textContent = approved ? "EXECUTING" : "CANCEL";
     els.missionPhase.textContent = approved ? "已确认，交给 ROS Agent" : "任务已取消";
+    if (approved) {
+      setTaskLifecycle("execute", "操作员已确认，正在提交 ROS 控制请求");
+    } else {
+      setTaskLifecycle("confirm", "操作员已取消任务，未向无人机发送动作", {outcome: "error", activeText: "已取消"});
+    }
     pushEvent("system", approved ? "控制请求已确认" : "控制请求已取消");
     return;
   }
@@ -1740,6 +2184,7 @@ function handleAgentEvent(event) {
     els.aiStatusText.textContent = "EXPIRED";
     els.missionPhase.textContent = "确认已过期";
     els.missionResult.textContent = "任务未执行，请重新发起";
+    setTaskLifecycle("confirm", "确认窗口已过期，任务未执行", {outcome: "error", activeText: "已过期"});
     pushEvent("system", "控制确认已过期，未执行任何动作");
     return;
   }
@@ -1747,6 +2192,7 @@ function handleAgentEvent(event) {
     els.aiStatusText.textContent = "EXECUTING";
     els.missionPhase.textContent = "ROS Agent 正在执行";
     els.toolStatusText.textContent = "ROS CALL";
+    setTaskLifecycle("execute", `正在执行 ${event.action || "控制动作"}`);
     pushEvent("service", `执行控制动作: ${event.action || "--"}`);
     return;
   }
@@ -1760,6 +2206,7 @@ function handleAgentEvent(event) {
     els.missionPhase.textContent = labels[event.phase] || "正在验证";
     els.missionResult.textContent = message;
     els.toolStatusText.textContent = event.phase === "accepted" ? "ROS ACCEPTED" : "VERIFYING";
+    setTaskLifecycle(event.phase === "verifying" ? "verify" : "execute", message);
     pushEvent("service", message);
     return;
   }
@@ -1770,6 +2217,11 @@ function handleAgentEvent(event) {
     els.missionPhase.textContent = success ? "物理动作验证完成" : "控制任务失败";
     els.missionResult.textContent = message;
     els.toolStatusText.textContent = success ? "ROS DONE" : "ROS ERROR";
+    if (success) {
+      setTaskLifecycle("done", message);
+    } else {
+      setTaskLifecycle("verify", message, {outcome: "error", activeText: "验证失败"});
+    }
     addChat("assistant", message, { tag: success ? "ROS 执行结果" : "执行失败" });
     pushEvent(success ? "service" : "error", message);
     return;
@@ -1816,6 +2268,7 @@ function handleAgentEvent(event) {
       addChat("assistant", `任务失败：${event.message || "未知错误"}`);
     }
     els.aiStatusText.textContent = "ERROR";
+    setTaskLifecycle("execute", event.message || "Agent 执行失败", {outcome: "error", activeText: "执行失败"});
     pushEvent("error", `Agent Runtime: ${event.message || "未知错误"}`);
   }
 }
@@ -1886,6 +2339,23 @@ function renderGatewayMission(mission) {
   els.missionPhase.textContent = phase;
   els.missionResult.textContent = `[${source}] ${mission.result?.message || mission.title || "--"}`;
   els.taskResult.textContent = JSON.stringify({ mission }, null, 2);
+  if (mission.status === "pending_confirmation") {
+    setTaskLifecycle("confirm", mission.title || "任务等待操作员确认");
+  } else if (mission.status === "completed") {
+    setTaskLifecycle("done", mission.result?.message || mission.title || "任务已完成");
+  } else if (["failed", "cancelled", "expired"].includes(mission.status)) {
+    const failedAt = mission.status === "expired"
+      ? "confirm"
+      : (mission.phase === "verifying" ? "verify" : "execute");
+    setTaskLifecycle(failedAt, mission.result?.message || phase, {
+      outcome: "error",
+      activeText: mission.status === "cancelled" ? "已取消" : mission.status === "expired" ? "已过期" : "任务失败",
+    });
+  } else if (mission.phase === "verifying") {
+    setTaskLifecycle("verify", mission.result?.message || phase);
+  } else {
+    setTaskLifecycle("execute", mission.result?.message || phase);
+  }
   const workflow = mission.result?.workflow
     || (mission.action === "workflow" ? mission.args : null);
   if (workflow?.workflow_id && Array.isArray(workflow.steps)) {
@@ -1950,6 +2420,9 @@ async function confirmPendingTask(action) {
   pendingConfirmation = null;
   renderConfirmation();
   els.aiStatusText.textContent = action === "confirm" ? "EXECUTING" : "CANCEL";
+  setTaskLifecycle(action === "confirm" ? "execute" : "confirm",
+    action === "confirm" ? "操作员已确认，正在提交控制请求" : "操作员已取消任务",
+    action === "confirm" ? {} : {outcome: "error", activeText: "已取消"});
   try {
     const result = await post("/api/agent/chat", {
       session_id: sessionId,
@@ -1967,6 +2440,7 @@ async function confirmPendingTask(action) {
       addChat("assistant", `${action === "confirm" ? "确认执行" : "取消"}失败：${err.message}`);
     }
     els.aiStatusText.textContent = "ERROR";
+    setTaskLifecycle("execute", err.message, {outcome: "error", activeText: "确认后执行失败"});
     pushEvent("error", `确认流程: ${err.message}`);
   }
 }
@@ -2030,13 +2504,24 @@ els.taskInput.addEventListener("keydown", (event) => {
 });
 
 els.clearChatBtn.addEventListener("click", () => {
+  if (agentConnected && agentSocket?.readyState === WebSocket.OPEN) {
+    agentSocket.send(JSON.stringify({
+      type: "session.clear",
+      request_id: `clear-${Date.now()}`,
+      session_id: sessionId,
+    }));
+    pushEvent("system", "正在清空当前对话上下文");
+    return;
+  }
   chatMessages = [];
-  pendingConfirmation = null;
+  chatAutoFollow = true;
   localStorage.removeItem(CHAT_STORAGE_KEY);
   renderChat();
-  renderConfirmation();
-  pushEvent("system", "已清空 AI 对话");
+  pushEvent("system", "Gateway 未连接，仅清空了当前浏览器中的对话");
 });
+
+els.chatHistory.addEventListener("scroll", updateChatScrollButton, {passive: true});
+els.chatScrollBtn.addEventListener("click", scrollChatToBottom);
 
 els.agentModelSelect.addEventListener("change", () => {
   const selected = els.agentModelSelect.value;

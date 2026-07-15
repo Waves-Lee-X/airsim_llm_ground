@@ -63,6 +63,19 @@ class LocalEsdfMap:
             self.occupied.discard(key)
             self._last_seen.pop(key, None)
 
+    def prune_height_band(self, minimum_z: float, maximum_z: float):
+        """Remove occupied voxels that cannot intersect the active flight corridor."""
+        lower = min(float(minimum_z), float(maximum_z))
+        upper = max(float(minimum_z), float(maximum_z))
+        remove = [
+            key
+            for key in self.occupied
+            if not lower <= self._center(key)[2] <= upper
+        ]
+        for key in remove:
+            self.occupied.discard(key)
+            self._last_seen.pop(key, None)
+
     def clearance(self, point: Point3, max_radius: float = 8.0) -> float:
         if not self.occupied:
             return max_radius

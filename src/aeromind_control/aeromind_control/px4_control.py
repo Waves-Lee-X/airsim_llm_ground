@@ -153,6 +153,22 @@ def _velocity_to_trajectory_setpoint(vx: float, vy: float, vz: float, yaw: float
     return sp
 
 
+def _state_to_trajectory_setpoint(position, velocity, acceleration, yaw=float("nan")):
+    """ROS ENU trajectory state -> PX4 NED position setpoint with feed-forward."""
+    sp = TrajectorySetpoint()
+    sp.timestamp = 0
+    px4_position = _enu_to_ned(*position)
+    px4_velocity = _enu_to_ned(*velocity)
+    px4_acceleration = _enu_to_ned(*acceleration)
+    for index in range(3):
+        sp.position[index] = px4_position[index]
+        sp.velocity[index] = px4_velocity[index]
+        sp.acceleration[index] = px4_acceleration[index]
+    sp.yaw = yaw
+    sp.yawspeed = float("nan")
+    return sp
+
+
 class PX4Controller:
     """PX4 Offboard 控制器
 
@@ -337,6 +353,24 @@ class PX4Controller:
             return
         self._offboard_mode = "velocity"
         sp = _velocity_to_trajectory_setpoint(vx, vy, vz, yaw)
+        sp.timestamp = self._timestamp_us()
+        self._last_trajectory_setpoint = sp
+        self._trajectory_pub.publish(sp)
+
+    def set_trajectory_state(
+        self,
+        position,
+        velocity,
+        acceleration,
+        yaw: float = float("nan"),
+    ):
+        """Track an ENU trajectory state using position control and feed-forward."""
+        if not HAS_PX4_MSGS:
+            return
+        self._offboard_mode = "position"
+        sp = _state_to_trajectory_setpoint(
+            position, velocity, acceleration, yaw
+        )
         sp.timestamp = self._timestamp_us()
         self._last_trajectory_setpoint = sp
         self._trajectory_pub.publish(sp)

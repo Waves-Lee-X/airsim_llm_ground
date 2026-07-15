@@ -5,7 +5,8 @@ import unittest
 
 from aeromind_agent_gateway.ros_state import RosStateBridge
 from aeromind_agent_gateway.skill_registry import build_skill, skill_catalog
-from aeromind_agent_gateway.workflow import build_square_workflow, validate_workflow
+from aeromind_agent_gateway.ros_state import _action_task
+from aeromind_agent_gateway.workflow import validate_workflow
 
 
 class FakePublisher:
@@ -32,12 +33,82 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(workflow["steps"][-1]["action"], "land")
         self.assertEqual(skill_catalog()[0]["name"], "flight.square")
 
+    def test_v_shape_skill_uses_vector_moves_and_capture_action(self):
+        workflow = build_skill(
+            "flight.v_shape",
+            {"width": 10, "depth": 8, "capture_at_vertex": True},
+        )
+        self.assertEqual(
+            [step["action"] for step in workflow["steps"]],
+            ["takeoff", "move", "capture_image", "move"],
+        )
+        self.assertEqual(
+            workflow["steps"][1]["args"],
+            {"forward_m": 8.0, "right_m": 5.0, "up_m": 0.0},
+        )
+        task, intent = _action_task("move", workflow["steps"][1]["args"])
+        self.assertTrue(task.startswith("__aeromind_move_vector__:"))
+        self.assertEqual(intent, "move_to")
+        self.assertEqual(workflow["steps"][2]["retries"], 0)
+
+    def test_person_inspection_skill_contains_true_and_false_branches(self):
+        workflow = build_skill("inspection.person_branch", {"distance": 20})
+        conditions = {
+            step["id"]: step["condition"] for step in workflow["steps"]
+        }
+        self.assertEqual(
+            conditions["capture-on-person"]["type"], "target_detected"
+        )
+        self.assertEqual(
+            conditions["continue-if-clear"]["type"], "target_not_detected"
+        )
+        self.assertEqual(
+            conditions["hover-if-sensor-unavailable"]["type"], "step_failed"
+        )
+
+    def test_skill_catalog_is_loaded_from_manifests_with_parameters(self):
+        skills = {item["name"]: item for item in skill_catalog()}
+        self.assertEqual(skills["flight.square"]["version"], "2.0.0")
+        self.assertIn("side_length", skills["flight.square"]["parameters"])
+        with self.assertRaises(ValueError):
+            build_skill("flight.square", {"side_length": 10, "unknown": True})
+
     def test_workflow_rejects_unknown_actions_and_forward_dependencies(self):
         with self.assertRaises(ValueError):
             validate_workflow(
                 {
                     "name": "危险任务",
                     "steps": [{"id": "shell", "action": "bash", "args": {}}],
+                }
+            )
+        with self.assertRaises(ValueError):
+            validate_workflow(
+                {
+                    "name": "错误条件引用",
+                    "steps": [
+                        {
+                            "id": "capture",
+                            "action": "capture_image",
+                            "condition": {
+                                "type": "step_succeeded",
+                                "step_id": "future",
+                            },
+                        }
+                    ],
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "相对移动，不允许自动重试"):
+            validate_workflow(
+                {
+                    "name": "危险移动重试",
+                    "steps": [
+                        {
+                            "id": "move",
+                            "action": "move",
+                            "args": {"direction": "forward", "distance": 2},
+                            "retries": 1,
+                        }
+                    ],
                 }
             )
         with self.assertRaises(ValueError):
@@ -62,7 +133,7 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         async def execute(action, args, progress):
             attempts.append((action, args))
             await progress("verifying", {"message": "checking"})
-            if action == "move" and len(attempts) == 1:
+            if action == "hover" and len(attempts) == 1:
                 return {"success": False, "message": "temporary"}
             return {
                 "success": True,
@@ -81,15 +152,14 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                 "name": "重试任务",
                 "steps": [
                     {
-                        "id": "move",
-                        "action": "move",
-                        "args": {"direction": "forward", "distance": 2},
+                        "id": "hover",
+                        "action": "hover",
                         "retries": 1,
                     },
                     {
-                        "id": "hover",
-                        "action": "hover",
-                        "depends_on": ["move"],
+                        "id": "land",
+                        "action": "land",
+                        "depends_on": ["hover"],
                     },
                 ],
             }
@@ -97,7 +167,7 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         result = await bridge._execute_workflow(workflow, progress)
 
         self.assertTrue(result["success"])
-        self.assertEqual([item[0] for item in attempts], ["move", "move", "hover"])
+        self.assertEqual([item[0] for item in attempts], ["hover", "hover", "land"])
         self.assertEqual(result["workflow"]["steps"][0]["attempt"], 2)
         self.assertTrue(events)
 
@@ -147,6 +217,118 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
             result["step_results"]["person"]["detections"][0]["class_name"],
             "person",
         )
+
+    async def test_person_inspection_selects_capture_branch(self):
+        bridge = self._bridge()
+        bridge.snapshot = lambda: {
+            "available": True,
+            "state": {"stamp": time.time(), "armed": True},
+            "odometry": {"position_m": {"z": 5.0}},
+            "autonomy": {},
+            "detections_fresh": True,
+            "detections": [{"class_name": "person", "confidence": 0.9}],
+        }
+        called = []
+
+        async def execute(action, args, progress):
+            called.append(action)
+            return {"success": True, "physical_complete": True, "message": "done"}
+
+        bridge.execute_confirmed_action = execute
+
+        async def progress(_phase, _details):
+            return None
+
+        result = await bridge._execute_workflow(
+            build_skill("inspection.person_branch", {"distance": 20}), progress
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(called, ["hover", "capture_image"])
+
+    async def test_person_inspection_moves_only_after_fresh_negative_observation(self):
+        bridge = self._bridge()
+        bridge.snapshot = lambda: {
+            "available": True,
+            "state": {"stamp": time.time(), "armed": True},
+            "odometry": {"position_m": {"z": 5.0}},
+            "autonomy": {},
+            "detections_fresh": True,
+            "detections": [],
+        }
+        called = []
+
+        async def execute(action, args, progress):
+            called.append(action)
+            return {"success": True, "physical_complete": True, "message": "done"}
+
+        bridge.execute_confirmed_action = execute
+
+        async def progress(_phase, _details):
+            return None
+
+        result = await bridge._execute_workflow(
+            build_skill("inspection.person_branch", {"distance": 20}), progress
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(called, ["move"])
+
+    async def test_capture_action_completes_without_telemetry_wait(self):
+        bridge = self._bridge()
+
+        async def execute_action(action, args, request_id, timeout_sec):
+            self.assertEqual(action, "capture_image")
+            self.assertEqual(args, {})
+            self.assertTrue(request_id.startswith("gateway-"))
+            self.assertEqual(timeout_sec, 45.0)
+            return {
+                "success": True,
+                "message": "图像已保存",
+                "result": '{"parsed_task":{"intent":"capture_image"}}',
+            }
+
+        bridge._execute_action_service = execute_action
+        events = []
+
+        async def progress(phase, details):
+            events.append((phase, details))
+
+        result = await bridge.execute_confirmed_action(
+            "capture_image", {}, progress
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["physical_complete"])
+        self.assertEqual(events[-1][0], "completed")
+
+    async def test_failed_move_verification_cancels_active_autonomy_goal(self):
+        bridge = self._bridge()
+
+        async def execute_action(_action, _args, request_id, timeout_sec):
+            self.assertTrue(request_id.startswith("gateway-"))
+            self.assertEqual(timeout_sec, 45.0)
+            return {"success": True, "message": "目标已发布", "result": "{}"}
+
+        async def wait_for_completion(*_args, **_kwargs):
+            return {
+                "terminal": True,
+                "success": False,
+                "phase": "timeout",
+                "message": "移动验证超时",
+            }
+
+        bridge._execute_action_service = execute_action
+        bridge._wait_for_action_completion = wait_for_completion
+        events = []
+
+        async def progress(phase, details):
+            events.append((phase, details))
+
+        result = await bridge.execute_confirmed_action(
+            "move", {"direction": "forward", "distance": 10.0}, progress
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(len(bridge._autonomy_cancel_pub.messages), 1)
+        self.assertEqual(events[-1][0], "stopped")
 
     async def test_failed_safety_check_stops_workflow(self):
         bridge = self._bridge()

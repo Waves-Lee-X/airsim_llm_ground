@@ -8,6 +8,7 @@ setup(
     name=package_name,
     version="0.1.0",
     packages=find_packages(),
+    package_data={package_name: ["skill_docs/*/SKILL.md", "skill_docs/*/skill.yaml"]},
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
@@ -20,6 +21,7 @@ setup(
         "uvicorn[standard]>=0.34,<1",
         "lark-oapi>=1.4,<2",
         "Pillow>=9,<13",
+        "PyYAML>=5.4,<7",
     ],
     zip_safe=True,
     maintainer="AeroMind Team",

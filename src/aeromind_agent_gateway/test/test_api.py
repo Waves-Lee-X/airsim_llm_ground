@@ -12,6 +12,7 @@ from aeromind_agent_gateway.events import EventBus
 from aeromind_agent_gateway.session_manager import (
     SessionManager,
     _deterministic_control_fallback,
+    _is_current_image_analysis_request,
 )
 from aeromind_agent_gateway.store import SessionStore
 
@@ -103,6 +104,12 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
             skills = await client.get("/api/skills")
             self.assertEqual(skills.status_code, 200)
             self.assertEqual(skills.json()["skills"][0]["name"], "flight.square")
+            capabilities = await client.get("/api/capabilities")
+            self.assertEqual(capabilities.status_code, 200)
+            self.assertIn(
+                "flight.takeoff",
+                {item["name"] for item in capabilities.json()["capabilities"]},
+            )
 
             created = await client.post(
                 "/api/sessions",
@@ -138,6 +145,12 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(forbidden.status_code, 403)
 
+    def test_current_image_analysis_request_detection(self):
+        self.assertTrue(_is_current_image_analysis_request("分析当前画面"))
+        self.assertTrue(_is_current_image_analysis_request("看看相机里有什么"))
+        self.assertTrue(_is_current_image_analysis_request("使用 VLM 检查图像"))
+        self.assertFalse(_is_current_image_analysis_request("检查无人机状态"))
+
     async def test_event_bus_delivers_persisted_sequence(self):
         self.sessions.ensure_session("s2", "u2", "web")
         queue = await self.sessions.subscribe("s2")
@@ -164,6 +177,26 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("检测到一名行人", prompt)
         self.assertIn("不得当作飞行安全传感器的唯一依据", prompt)
         self.assertIn("是否可以继续前进", prompt)
+
+    async def test_clear_session_removes_chat_but_keeps_operator_memory(self):
+        session = self.sessions.ensure_session("clear-me", "web-local", "web")
+        self.store.add_message("clear-me", "user", "记住低速飞行")
+        self.store.upsert_operator_memory(
+            session["user_id"], "用户偏好低速飞行", "clear-me", 1
+        )
+        queue = await self.sessions.subscribe_user("web-local")
+
+        result = await self.sessions.clear_session("clear-me", "web-local")
+        event = await queue.get()
+
+        self.assertEqual(result["deleted_messages"], 1)
+        self.assertEqual(self.sessions.history("clear-me")["messages"], [])
+        self.assertEqual(event["type"], "session.cleared")
+        self.assertEqual(
+            self.sessions.operator_state("web-local")["memory"]["summary"],
+            "用户偏好低速飞行",
+        )
+        await self.sessions.unsubscribe_user("web-local", queue)
 
     async def test_linked_channels_share_events_and_confirmation(self):
         web = self.sessions.ensure_session("web-session", "web-local", "web")
@@ -315,6 +348,47 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
     def test_square_question_does_not_create_control_fallback(self):
         self.assertIsNone(_deterministic_control_fallback("什么是正方形轨迹？"))
 
+    def test_v_shape_capture_command_uses_registered_skill(self):
+        action, workflow = _deterministic_control_fallback(
+            "飞一个宽 10 米、深 8 米的 V 字形并在顶点拍照"
+        )
+        self.assertEqual(action, "workflow")
+        self.assertEqual(
+            [step["action"] for step in workflow["steps"]],
+            ["takeoff", "move", "capture_image", "move"],
+        )
+        self.assertEqual(workflow["steps"][1]["args"]["forward_m"], 8.0)
+        self.assertEqual(workflow["steps"][1]["args"]["right_m"], 5.0)
+
+    def test_v_shape_question_does_not_create_control_fallback(self):
+        self.assertIsNone(_deterministic_control_fallback("如何飞 V 字形轨迹？"))
+
+    def test_direct_takeoff_has_deterministic_confirmation_fallback(self):
+        self.assertEqual(
+            _deterministic_control_fallback("起飞到10米"),
+            ("takeoff", {"altitude": 10.0}),
+        )
+        self.assertEqual(
+            _deterministic_control_fallback("请立即起飞至 8.5 m"),
+            ("takeoff", {"altitude": 8.5}),
+        )
+        self.assertEqual(
+            _deterministic_control_fallback("起飞"),
+            ("takeoff", {"altitude": 10.0}),
+        )
+
+    def test_direct_basic_controls_have_deterministic_fallback(self):
+        self.assertEqual(_deterministic_control_fallback("降落"), ("land", {}))
+        self.assertEqual(
+            _deterministic_control_fallback("返航并降落"),
+            ("return_home", {}),
+        )
+        self.assertEqual(_deterministic_control_fallback("解锁"), ("arm", {}))
+
+    def test_control_questions_do_not_create_confirmation_fallback(self):
+        self.assertIsNone(_deterministic_control_fallback("为什么不能起飞到10米"))
+        self.assertIsNone(_deterministic_control_fallback("现在可以降落吗"))
+
     async def test_square_fallback_creates_real_confirmation_and_event(self):
         session = self.sessions.ensure_session(
             "square-fallback", "web-local", "web"
@@ -334,7 +408,7 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
         while not queue.empty():
             events.append((await queue.get())["type"])
         self.assertIn("confirmation.required", events)
-        self.assertIn("control.request.recovered", events)
+        self.assertIn("control.request.routed", events)
         latest = self.store.messages(session["id"], limit=1)[0]
         self.assertIn(pending[0]["id"], latest["content"])
         await self.sessions.unsubscribe_user("web-local", queue)

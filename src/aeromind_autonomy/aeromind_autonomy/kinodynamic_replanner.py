@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 
 from .local_esdf import LocalEsdfMap
-from .minimum_snap import sample_minimum_snap
+from .minimum_snap import sample_minimum_snap, sample_minimum_snap_boundary
 
 
 @dataclass
@@ -35,6 +35,7 @@ class KinodynamicReplanner:
         blocked_exit_clearance: float | None = None,
         max_acceleration: float = 1.5,
         min_altitude: float = 1.0,
+        strategy_switch_penalty: float = 0.8,
     ):
         self.safety_radius = safety_radius
         self.max_speed = max_speed
@@ -45,6 +46,8 @@ class KinodynamicReplanner:
         self.arrival_speed = arrival_speed
         self.max_acceleration = max_acceleration
         self.min_altitude = min_altitude
+        self.strategy_switch_penalty = max(0.0, strategy_switch_penalty)
+        self._last_tracking_strategy = None
         self.blocked_enter_clearance = (
             blocked_enter_clearance if blocked_enter_clearance is not None else safety_radius
         )
@@ -62,6 +65,7 @@ class KinodynamicReplanner:
     ) -> ReplanResult:
         nearest = esdf.nearest_obstacle(position)
         if goal is None:
+            self._last_tracking_strategy = None
             trajectory = sample_minimum_snap(
                 position, position, self.horizon_sec, self.sample_count
             )
@@ -84,6 +88,7 @@ class KinodynamicReplanner:
                 position, goal, self.horizon_sec, self.sample_count
             )
             self._blocked_latched = False
+            self._last_tracking_strategy = None
             return ReplanResult(
                 state="ARRIVED",
                 strategy="goal_reached",
@@ -101,8 +106,13 @@ class KinodynamicReplanner:
             end = tuple(position[i] + candidate_velocity[i] * self.horizon_sec for i in range(3))
             if end[2] < self.min_altitude:
                 continue
-            trajectory = sample_minimum_snap(
-                position, end, self.horizon_sec, self.sample_count
+            trajectory = sample_minimum_snap_boundary(
+                position,
+                end,
+                self.horizon_sec,
+                self.sample_count,
+                start_velocity=velocity,
+                end_velocity=candidate_velocity,
             )
             points = [
                 sample["position"]
@@ -124,6 +134,11 @@ class KinodynamicReplanner:
                 + alignment * 0.8
                 - effort * 0.4
             )
+            if (
+                self._last_tracking_strategy is not None
+                and name != self._last_tracking_strategy
+            ):
+                score -= self.strategy_switch_penalty
             safe = clearance >= self.safety_radius
             if not safe:
                 score -= (self.safety_radius - clearance) * 10.0
@@ -155,6 +170,7 @@ class KinodynamicReplanner:
             self._blocked_latched = False
 
         if not safe or self._blocked_latched:
+            self._last_tracking_strategy = None
             command_velocity = (0.0, 0.0, 0.0)
             trajectory = sample_minimum_snap(
                 position, position, self.horizon_sec, self.sample_count
@@ -177,6 +193,7 @@ class KinodynamicReplanner:
                 message=f"{reason}，悬停",
             )
 
+        self._last_tracking_strategy = strategy
         return ReplanResult(
             state="TRACKING",
             strategy=strategy,

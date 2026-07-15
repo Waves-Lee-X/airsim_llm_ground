@@ -1,0 +1,36 @@
+name: inspection.person_branch
+label: 人员条件巡检
+version: 2.0.0
+risk_level: high
+description: 检查人员；发现后悬停拍照，未发现则继续前进。
+example_task: 巡检前方区域，发现人就悬停拍照，否则继续前进20米
+workflow_name: 人员条件巡检
+parameters:
+  distance: {type: number, minimum: 0.5, maximum: 100, default: 20}
+  minimum_confidence: {type: number, minimum: 0, maximum: 1, default: 0.5}
+workflow:
+  - id: detect-person
+    label: 检查前方是否有人
+    action: perception_check
+    args:
+      target: person
+      minimum_confidence: "${minimum_confidence}"
+    on_failure: continue
+  - id: hover-on-person
+    label: 发现人员后悬停
+    action: hover
+    condition: {type: target_detected, step_id: detect-person}
+  - id: capture-on-person
+    label: 发现人员后保存图像
+    action: capture_image
+    depends_on: [hover-on-person]
+    condition: {type: target_detected, step_id: detect-person}
+  - id: continue-if-clear
+    label: "未发现人员，继续前进 ${distance} 米"
+    action: move
+    args: {direction: forward, distance: "${distance}"}
+    condition: {type: target_not_detected, step_id: detect-person}
+  - id: hover-if-sensor-unavailable
+    label: 感知数据不可用，保持悬停
+    action: hover
+    condition: {type: step_failed, step_id: detect-person}

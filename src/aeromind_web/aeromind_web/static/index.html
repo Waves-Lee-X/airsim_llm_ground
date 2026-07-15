@@ -3,21 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>无人机任务控制台</title>
-    <link rel="stylesheet" href="./styles.css?v=20260714-confirm" />
+    <title>AeroMind AI 地面站</title>
+    <link rel="stylesheet" href="./styles.css?v=20260715-enterprise" />
+    <link rel="stylesheet" href="./enterprise.css?v=20260715-layout2" />
   </head>
   <body>
     <div class="station-shell">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark">GS</span>
+          <span class="brand-mark">AM</span>
           <div>
-            <h1>无人机任务控制台</h1>
+            <h1>AeroMind AI 地面站</h1>
             <p id="systemLine">正在等待 ROS 网关</p>
           </div>
         </div>
         <div class="gateway-bar">
-          <label for="gatewayInput">ROS 网关</label>
+          <label for="gatewayInput">控制网关</label>
           <input id="gatewayInput" type="text" value="http://localhost:8080" />
           <button id="saveGatewayBtn">连接</button>
         </div>
@@ -32,6 +33,10 @@
 
       <main class="console-grid">
         <aside class="left-rail">
+          <div class="rail-heading">
+            <div><span>FLIGHT OPERATIONS</span><strong>飞行与能力</strong></div>
+            <em>LIVE</em>
+          </div>
           <section class="panel status-panel">
             <div class="panel-header compact">
               <h2>飞行状态</h2>
@@ -64,11 +69,21 @@
 
           <section class="panel skill-panel">
             <div class="panel-header compact">
-              <h2>技能库</h2>
-              <span>能力模块</span>
+              <h2>基础能力</h2>
+              <span>ROS 接口</span>
+            </div>
+            <div class="skill-grid" id="capabilityGrid">
+              <div class="muted">正在加载基础能力...</div>
+            </div>
+          </section>
+
+          <section class="panel skill-panel">
+            <div class="panel-header compact">
+              <h2>组合技能</h2>
+              <span>SKILL.md</span>
             </div>
             <div class="skill-grid" id="skillGrid">
-              <div class="muted">正在加载技能库...</div>
+              <div class="muted">正在加载组合技能...</div>
             </div>
           </section>
         </aside>
@@ -76,7 +91,10 @@
         <section class="center-stage">
           <section class="panel ai-chat-panel main-chat">
             <div class="panel-header">
-              <h2>任务协同控制</h2>
+              <div class="panel-title-group">
+                <span>AI AGENT WORKSPACE</span>
+                <h2>智能任务控制</h2>
+              </div>
               <div class="header-actions">
                 <span id="agentBadge">任务服务</span>
                 <select id="agentModelSelect" title="切换当前对话模型">
@@ -84,13 +102,24 @@
                   <option value="claude:opus">Claude Opus</option>
                   <option value="claude:haiku">Claude Haiku</option>
                 </select>
-                <button id="clearChatBtn" type="button">清空对话</button>
+                <button id="clearChatBtn" type="button" title="清空当前会话的对话上下文，保留任务记录和长期记忆">清空当前对话</button>
               </div>
             </div>
+            <div class="chat-flight-status" aria-label="无人机实时状态">
+              <div><span>飞行状态</span><strong id="chatArmedValue">未解锁</strong></div>
+              <div><span>模式</span><strong id="chatModeValue">--</strong></div>
+              <div><span>电池</span><strong id="chatBatteryValue">--</strong></div>
+              <div><span>定位</span><strong id="chatGpsValue">--</strong></div>
+              <div><span>EKF</span><strong id="chatEkfValue">--</strong></div>
+              <div><span>位置 ENU</span><strong id="chatPositionValue">-- / -- / --</strong></div>
+            </div>
             <div class="conversation-layout">
-              <div id="chatHistory" class="chat-history"></div>
+              <div class="chat-column">
+                <div id="chatHistory" class="chat-history" tabindex="0" aria-label="对话记录"></div>
+                <button id="chatScrollBtn" class="chat-scroll-btn hidden" type="button" title="滚动到最新消息" aria-label="滚动到最新消息">↓</button>
+              </div>
               <aside class="conversation-side">
-                <div class="side-card mission-card resizable-card" data-resize-key="mission">
+                <div class="side-card mission-card resizable-card" data-resize-key="mission-compact">
                   <h3>任务态势</h3>
                   <div class="mission-state">
                     <div>
@@ -102,7 +131,7 @@
                       <strong id="missionResult">--</strong>
                     </div>
                   </div>
-                  <div id="workflowControls" class="button-row" hidden>
+                  <div id="workflowControls" class="button-row mission-controls" hidden>
                     <button id="pauseWorkflowBtn" type="button">暂停</button>
                     <button id="resumeWorkflowBtn" type="button">恢复</button>
                     <button id="cancelWorkflowBtn" class="danger" type="button">取消</button>
@@ -138,12 +167,16 @@
               </aside>
             </div>
             <form id="taskForm" class="chat-form">
-              <textarea id="taskInput" rows="3" autocomplete="off">检查状态，如果安全就起飞到10米</textarea>
-              <button class="primary" type="submit">发送任务</button>
+              <textarea id="taskInput" rows="3" autocomplete="off" placeholder="输入任务，例如：检查状态，安全后起飞到 10 米"></textarea>
+              <button class="primary" type="submit">发送</button>
             </form>
           </section>
 
           <section class="panel ai-monitor">
+            <div class="execution-heading compact-execution-heading">
+              <div><span>LIVE EXECUTION</span><strong>任务执行详情</strong></div>
+              <em id="lifecycleSummary">系统就绪，等待自然语言任务</em>
+            </div>
             <div class="monitor-column">
               <div class="column-title"><span>语义解析</span><em id="aiStatusText">IDLE</em></div>
               <div id="llmOutput" class="terminal-pane">等待自然语言任务...</div>
@@ -160,6 +193,10 @@
         </section>
 
         <aside class="right-rail">
+          <div class="rail-heading">
+            <div><span>MULTI-SENSOR FUSION</span><strong>多传感器感知</strong></div>
+            <em>LIVE</em>
+          </div>
           <section class="panel camera-panel small-panel">
             <div class="panel-header">
               <h2>前视 RGB 相机</h2>
@@ -179,6 +216,30 @@
               <div class="hud-line top-left">RGB FRONT</div>
               <div class="hud-line bottom-right" id="hudMode">MODE --</div>
               <div class="sensor-corners"></div>
+            </div>
+            <div class="detection-summary">
+              <div class="detection-summary-head">
+                <span id="detectionStatus">视觉检测等待数据</span>
+                <strong id="detectionCount">0 目标</strong>
+              </div>
+              <div id="detectionList" class="detection-list">
+                <span class="muted">暂无有效检测结果</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel attitude-map-panel">
+            <div class="panel-header compact">
+              <h2>飞行态势地图</h2>
+              <span id="missionMapMeta">等待 odom / autonomy 数据</span>
+            </div>
+            <div class="mission-map-stage">
+              <canvas id="missionMapCanvas" width="600" height="300"></canvas>
+              <div class="mission-map-legend">
+                <span><i class="track"></i>实际轨迹</span>
+                <span><i class="plan"></i>规划轨迹</span>
+                <span><i class="goal"></i>目标点</span>
+              </div>
             </div>
           </section>
 
@@ -266,7 +327,7 @@
       <section class="bottom-log">
         <div class="panel log-panel">
           <div class="panel-header compact">
-            <h2>事件日志</h2>
+            <h2>系统事件与告警</h2>
             <button id="clearLogBtn">清空</button>
           </div>
           <div id="eventLog" class="event-log"></div>
@@ -312,6 +373,6 @@
         <canvas id="cameraViewerCanvas"></canvas>
       </div>
     </div>
-    <script src="./app.js?v=20260714-confirm"></script>
+    <script src="./app.js?v=20260715-vision1"></script>
   </body>
 </html>

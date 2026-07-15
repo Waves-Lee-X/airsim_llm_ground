@@ -14,7 +14,7 @@ from rclpy.node import Node
 from std_msgs.msg import Empty, String
 
 from aeromind_interfaces.msg import AutonomyStatus, DetectionArray, DroneState
-from aeromind_interfaces.srv import ExecuteTask
+from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction
 from .workflow import validate_workflow
 
 
@@ -28,6 +28,7 @@ ACTION_VERIFICATION_TIMEOUTS = {
     "move": 180.0,
     "return_home": 300.0,
     "hover": 20.0,
+    "capture_image": 30.0,
 }
 
 
@@ -38,11 +39,17 @@ class RosStateBridge(Node):
         self._state: dict[str, Any] | None = None
         self._odom: dict[str, Any] | None = None
         self._autonomy: dict[str, Any] | None = None
+        self._autonomy_terminal: dict[str, Any] | None = None
         self._detections: list[dict[str, Any]] = []
         self._detections_stamp: float | None = None
         self._mission: dict[str, Any] | None = None
         self._workflow_controls: dict[str, str] = {}
-        self._task_client = self.create_client(ExecuteTask, "/agent/execute_task")
+        self._action_client = self.create_client(
+            ExecuteAction, "/agent/execute_action"
+        )
+        self._analyze_image_client = self.create_client(
+            AnalyzeImage, "/perception/analyze_image"
+        )
         self._autonomy_cancel_pub = self.create_publisher(
             Empty, "/autonomy/cancel", 10
         )
@@ -93,17 +100,24 @@ class RosStateBridge(Node):
             }
 
     def _autonomy_cb(self, msg: AutonomyStatus):
+        received_at = time.time()
+        record = {
+            "stamp": received_at,
+            "enabled": bool(msg.enabled),
+            "state": msg.state,
+            "replanning": bool(msg.replanning),
+            "nearest_obstacle_m": float(msg.nearest_obstacle_m),
+            "target_distance_m": float(msg.target_distance_m),
+            "active_strategy": msg.active_strategy,
+            "message": msg.message,
+        }
         with self._lock:
-            self._autonomy = {
-                "stamp": time.time(),
-                "enabled": bool(msg.enabled),
-                "state": msg.state,
-                "replanning": bool(msg.replanning),
-                "nearest_obstacle_m": float(msg.nearest_obstacle_m),
-                "target_distance_m": float(msg.target_distance_m),
-                "active_strategy": msg.active_strategy,
-                "message": msg.message,
-            }
+            self._autonomy = record
+            if (
+                msg.state in {"ARRIVED", "BLOCKED_HOLD"}
+                or msg.active_strategy in {"goal_reached", "blocked_hold"}
+            ):
+                self._autonomy_terminal = dict(record)
 
     def _detections_cb(self, msg: DetectionArray):
         values = [
@@ -140,6 +154,11 @@ class RosStateBridge(Node):
                 "state": state,
                 "odometry": odometry,
                 "autonomy": autonomy,
+                "autonomy_terminal": (
+                    dict(self._autonomy_terminal)
+                    if self._autonomy_terminal
+                    else None
+                ),
                 "detections": [dict(item) for item in self._detections]
                 if detections_age is not None and detections_age <= 2.0
                 else [],
@@ -166,6 +185,61 @@ class RosStateBridge(Node):
             "autonomy": snapshot["autonomy"],
         }
 
+    async def analyze_current_image(self, prompt: str = "") -> dict[str, Any]:
+        """Ask perception_node to analyze the latest RGB frame with its VLM."""
+        if (
+            not self._analyze_image_client.service_is_ready()
+            and not self._analyze_image_client.wait_for_service(timeout_sec=1.0)
+        ):
+            return {
+                "success": False,
+                "message": "/perception/analyze_image 服务未就绪",
+                "source": "unavailable",
+            }
+
+        request = AnalyzeImage.Request()
+        request.prompt = prompt.strip() or "请分析当前前视相机画面。"
+        request.use_vlm = True
+        ros_future = self._analyze_image_client.call_async(request)
+        loop = asyncio.get_running_loop()
+        result_future = loop.create_future()
+
+        def on_done(done_future):
+            try:
+                response = done_future.result()
+                raw = _parse_json_object(response.raw_response)
+                value = {
+                    "success": bool(response.success),
+                    "message": response.message,
+                    "scene": response.scene,
+                    "risk_level": response.risk_level,
+                    "suggestion": response.suggestion,
+                    "objects": _parse_json_list(response.objects_json),
+                    "source": raw.get("source", "unknown"),
+                    "image": {
+                        "width": int(response.width),
+                        "height": int(response.height),
+                        "encoding": response.encoding,
+                    },
+                }
+                if raw.get("vlm_error"):
+                    value["vlm_error"] = str(raw["vlm_error"])
+                loop.call_soon_threadsafe(_set_result_if_pending, result_future, value)
+            except Exception as exc:
+                loop.call_soon_threadsafe(
+                    _set_exception_if_pending, result_future, exc
+                )
+
+        ros_future.add_done_callback(on_done)
+        try:
+            return await asyncio.wait_for(result_future, timeout=35.0)
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "message": "/perception/analyze_image 调用超时（35s）",
+                "source": "timeout",
+            }
+
     async def execute_confirmed_action(
         self,
         action: str,
@@ -175,49 +249,34 @@ class RosStateBridge(Node):
         if action == "workflow":
             return await self._execute_workflow(args, progress)
         started_at = time.time()
-        task, expected_intent = _action_task(action, args)
-        first = await self._execute_task_service(task, timeout_sec=20.0)
-        if not first.get("success"):
-            return first
-
-        payload = _parse_agent_payload(first.get("result"))
-        parsed = payload.get("parsed_task") or {}
-        actual_intent = str(parsed.get("intent", ""))
-        if actual_intent != expected_intent:
-            return {
-                "success": False,
-                "message": (
-                    f"Agent 意图校验失败：确认的是 {expected_intent}，"
-                    f"实际解析为 {actual_intent or 'unknown'}"
-                ),
-                "agent_result": first,
-            }
-
-        pending = payload.get("pending_confirmation")
-        if not pending:
-            accepted = {
-                **first,
-                "message": first.get("message") or "动作已由 ROS Agent 执行",
-                "agent_payload": payload,
-            }
-        else:
-            token = str(pending.get("token", "")).strip()
-            if not token:
-                return {
-                    "success": False,
-                    "message": "ROS Agent 返回了无效确认令牌",
-                    "agent_result": first,
-                }
-            second = await self._execute_task_service(
-                f"__aeromind_confirm__:{token}", timeout_sec=120.0
-            )
-            accepted = {
-                **second,
-                "agent_payload": _parse_agent_payload(second.get("result")),
-                "gateway_confirmed_action": {"action": action, "args": args},
-            }
+        accepted = await self._execute_action_service(
+            action,
+            args,
+            request_id=f"gateway-{int(started_at * 1000)}",
+            timeout_sec=45.0,
+        )
         if not accepted.get("success"):
             return accepted
+        payload = _parse_agent_payload(accepted.get("result"))
+        accepted["agent_payload"] = payload
+        accepted["gateway_confirmed_action"] = {"action": action, "args": args}
+
+        # CaptureImage is completed synchronously by perception_node. Unlike a
+        # flight action, it has no later telemetry state to wait for.
+        if action == "capture_image":
+            await progress(
+                "completed",
+                {
+                    "message": accepted.get("message") or "当前相机图像已保存",
+                    "physical_complete": True,
+                },
+            )
+            return {
+                "success": True,
+                "message": accepted.get("message") or "当前相机图像已保存",
+                "physical_complete": True,
+                "command_result": accepted,
+            }
 
         agent_payload = accepted.get("agent_payload") or payload
         ros_mission_id = _extract_ros_mission_id(agent_payload)
@@ -244,6 +303,15 @@ class RosStateBridge(Node):
             ros_mission_id,
             ACTION_VERIFICATION_TIMEOUTS[action],
         )
+        if action == "move" and not verification["success"]:
+            self._autonomy_cancel_pub.publish(Empty())
+            await progress(
+                "stopped",
+                {
+                    "message": "移动验证失败，已清空自主飞行目标并保持悬停",
+                    "physical_complete": False,
+                },
+            )
         return {
             "success": bool(verification["success"]),
             "message": verification["message"],
@@ -299,7 +367,9 @@ class RosStateBridge(Node):
                     results.get(item, {}).get("success") is not True
                     for item in step["depends_on"]
                 )
-                if dependency_failed or not self._workflow_condition(step["condition"]):
+                if dependency_failed or not self._workflow_condition(
+                    step["condition"], results
+                ):
                     step["status"] = "skipped"
                     results[step["id"]] = {
                         "success": True,
@@ -402,7 +472,22 @@ class RosStateBridge(Node):
             )
             await asyncio.sleep(0.25)
 
-    def _workflow_condition(self, condition: str) -> bool:
+    def _workflow_condition(
+        self, condition: str | dict[str, Any], results: dict[str, dict[str, Any]]
+    ) -> bool:
+        if isinstance(condition, dict):
+            source = results.get(str(condition.get("step_id"))) or {}
+            condition_type = str(condition.get("type"))
+            if condition_type == "step_succeeded":
+                return source.get("success") is True
+            if condition_type == "step_failed":
+                return source.get("success") is False
+            matched = bool(source.get("matched"))
+            if condition_type == "target_detected":
+                return matched
+            if condition_type == "target_not_detected":
+                return bool(source.get("observation_available")) and not matched
+            return False
         snapshot = self.snapshot()
         state = snapshot.get("state") or {}
         odom = snapshot.get("odometry") or {}
@@ -475,6 +560,9 @@ class RosStateBridge(Node):
     def _perception_check(self, args: dict[str, Any]) -> dict[str, Any]:
         snapshot = self.snapshot()
         detections = snapshot.get("detections") or []
+        observation_available = bool(
+            snapshot.get("detections_fresh", bool(detections))
+        )
         target = str(args.get("target") or "").strip().lower()
         confidence = float(args.get("minimum_confidence", 0.35))
         matched = [
@@ -482,8 +570,8 @@ class RosStateBridge(Node):
             if float(item.get("confidence", 0.0)) >= confidence
             and (not target or target in str(item.get("class_name", "")).lower())
         ]
-        success = bool(matched) if target else bool(
-            detections or snapshot.get("autonomy")
+        success = observation_available if target else bool(
+            observation_available or snapshot.get("autonomy")
         )
         if target:
             message = (
@@ -496,6 +584,8 @@ class RosStateBridge(Node):
             "success": success,
             "physical_complete": success,
             "message": message,
+            "matched": bool(matched),
+            "observation_available": observation_available,
             "target": target,
             "detections": matched if target else detections,
             "autonomy": snapshot.get("autonomy"),
@@ -564,20 +654,25 @@ class RosStateBridge(Node):
             "evidence": _verification_evidence(snapshot),
         }
 
-    async def _execute_task_service(
-        self, task: str, timeout_sec: float
+    async def _execute_action_service(
+        self,
+        action: str,
+        args: dict[str, Any],
+        request_id: str,
+        timeout_sec: float,
     ) -> dict[str, Any]:
-        if not self._task_client.service_is_ready() and not self._task_client.wait_for_service(
+        if not self._action_client.service_is_ready() and not self._action_client.wait_for_service(
             timeout_sec=1.0
         ):
             return {
                 "success": False,
-                "message": "/agent/execute_task 服务未就绪",
+                "message": "/agent/execute_action 结构化动作服务未就绪",
             }
-
-        request = ExecuteTask.Request()
-        request.task_description = task
-        ros_future = self._task_client.call_async(request)
+        request = ExecuteAction.Request()
+        request.action = action
+        request.args_json = json.dumps(args, ensure_ascii=False)
+        request.request_id = request_id
+        ros_future = self._action_client.call_async(request)
         loop = asyncio.get_running_loop()
         result_future = loop.create_future()
 
@@ -601,7 +696,7 @@ class RosStateBridge(Node):
         except asyncio.TimeoutError:
             return {
                 "success": False,
-                "message": f"/agent/execute_task 调用超时（{timeout_sec:.0f}s）",
+                "message": f"/agent/execute_action 调用超时（{timeout_sec:.0f}s）",
             }
 
 
@@ -613,6 +708,22 @@ def _set_result_if_pending(future: asyncio.Future, value: Any):
 def _set_exception_if_pending(future: asyncio.Future, error: Exception):
     if not future.done():
         future.set_exception(error)
+
+
+def _parse_json_object(value: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_json_list(value: str) -> list[Any]:
+    try:
+        parsed = json.loads(value or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _parse_agent_payload(value: Any) -> dict[str, Any]:
@@ -694,13 +805,32 @@ def _evaluate_action_completion(
     if action == "move" and autonomy_fresh:
         autonomy_state = str(autonomy.get("state", ""))
         strategy = str(autonomy.get("active_strategy", ""))
-        message = str(autonomy.get("message", ""))
         if strategy == "goal_reached" or autonomy_state == "ARRIVED":
             return _verification_result(True, "自主规划器确认已到达目标", snapshot)
-        if autonomy_state == "BLOCKED_HOLD" or "阻塞" in message:
+        if autonomy_state == "BLOCKED_HOLD" and strategy == "blocked_hold":
             return _verification_result(
-                False, message or "自主规划器报告目标不可达", snapshot
+                False,
+                str(autonomy.get("message", "")) or "自主规划器报告目标不可达",
+                snapshot,
             )
+    if action == "move":
+        terminal = snapshot.get("autonomy_terminal") or {}
+        if float(terminal.get("stamp", 0.0)) >= started_at:
+            terminal_state = str(terminal.get("state", ""))
+            terminal_strategy = str(terminal.get("active_strategy", ""))
+            terminal_message = str(terminal.get("message", ""))
+            if terminal_strategy == "goal_reached" or terminal_state == "ARRIVED":
+                return _verification_result(
+                    True,
+                    terminal_message or "自主规划器确认已到达目标",
+                    snapshot,
+                )
+            if terminal_state == "BLOCKED_HOLD" and terminal_strategy == "blocked_hold":
+                return _verification_result(
+                    False,
+                    terminal_message or "自主规划器报告目标不可达",
+                    snapshot,
+                )
     if action == "return_home" and state_fresh and not armed:
         return _verification_result(True, "飞控遥测确认 RTL 已完成并加锁", snapshot)
     if action == "hover" and odom_fresh and speed <= 0.25:
@@ -766,6 +896,7 @@ def _verification_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
     state = snapshot.get("state") or {}
     odom = snapshot.get("odometry") or {}
     autonomy = snapshot.get("autonomy") or {}
+    autonomy_terminal = snapshot.get("autonomy_terminal") or {}
     return {
         "armed": state.get("armed"),
         "mode": state.get("mode"),
@@ -774,6 +905,12 @@ def _verification_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
         "autonomy_state": autonomy.get("state"),
         "autonomy_strategy": autonomy.get("active_strategy"),
         "target_distance_m": autonomy.get("target_distance_m"),
+        "autonomy_terminal": {
+            "stamp": autonomy_terminal.get("stamp"),
+            "state": autonomy_terminal.get("state"),
+            "strategy": autonomy_terminal.get("active_strategy"),
+            "message": autonomy_terminal.get("message"),
+        } if autonomy_terminal else None,
     }
 
 
@@ -791,8 +928,19 @@ def _action_task(action: str, args: dict[str, Any]) -> tuple[str, str]:
     if action == "hover":
         return "悬停", "hover"
     if action == "move":
+        if "direction" not in args:
+            vector = {
+                key: float(args.get(key, 0.0))
+                for key in ("forward_m", "right_m", "up_m")
+            }
+            return (
+                "__aeromind_move_vector__:" + json.dumps(vector),
+                "move_to",
+            )
         return (
             f"向{args['direction']}飞行 {float(args['distance']):.1f} 米",
             "move_to",
         )
+    if action == "capture_image":
+        return "拍照并保存当前相机图像", "capture_image"
     raise ValueError(f"不支持的控制动作: {action}")

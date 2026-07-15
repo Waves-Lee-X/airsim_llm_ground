@@ -25,6 +25,7 @@ ACTION_SPECS = {
     "move": {"risk": "high", "summary": "向{direction}飞行 {distance:.1f} 米"},
     "return_home": {"risk": "high", "summary": "触发 PX4 原生 RTL 返航"},
     "hover": {"risk": "medium", "summary": "取消自主目标并悬停"},
+    "capture_image": {"risk": "low", "summary": "保存当前相机图像"},
     "workflow": {"risk": "high", "summary": "执行组合任务：{name}"},
 }
 

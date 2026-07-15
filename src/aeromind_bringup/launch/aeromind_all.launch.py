@@ -94,12 +94,12 @@ def generate_launch_description():
     )
     autonomy_velocity_limit_arg = DeclareLaunchArgument(
         "autonomy_velocity_limit",
-        default_value="1.2",
+        default_value="1.8",
         description="执行自主避障轨迹时的速度上限，单位 m/s",
     )
     autonomy_accel_limit_arg = DeclareLaunchArgument(
         "autonomy_accel_limit",
-        default_value="0.8",
+        default_value="1.0",
         description="执行自主避障轨迹时的加速度变化上限，单位 m/s^2",
     )
     autonomy_min_altitude_arg = DeclareLaunchArgument(

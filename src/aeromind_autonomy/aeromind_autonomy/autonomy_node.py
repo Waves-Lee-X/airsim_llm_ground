@@ -59,6 +59,7 @@ class AutonomyNode(Node):
         self.declare_parameter("safety_radius", 1.2)
         self.declare_parameter("max_speed", 2.0)
         self.declare_parameter("max_acceleration", 1.5)
+        self.declare_parameter("strategy_switch_penalty", 0.8)
         self.declare_parameter("min_flight_altitude", 1.0)
         self.declare_parameter("horizon_sec", 2.5)
         self.declare_parameter("depth_fov_deg", 95.0)
@@ -67,6 +68,7 @@ class AutonomyNode(Node):
         self.declare_parameter("max_depth_m", 18.0)
         self.declare_parameter("depth_lateral_limit_m", 8.0)
         self.declare_parameter("depth_vertical_limit_m", 4.0)
+        self.declare_parameter("obstacle_vertical_corridor_m", 2.0)
         self.declare_parameter("arrival_distance_m", 0.6)
         self.declare_parameter("arrival_speed_mps", 0.3)
         self.declare_parameter("blocked_exit_clearance_m", 1.6)
@@ -92,6 +94,10 @@ class AutonomyNode(Node):
         self._max_depth_m = float(self.get_parameter("max_depth_m").value)
         self._depth_lateral_limit_m = float(self.get_parameter("depth_lateral_limit_m").value)
         self._depth_vertical_limit_m = float(self.get_parameter("depth_vertical_limit_m").value)
+        self._obstacle_vertical_corridor_m = max(
+            0.5,
+            float(self.get_parameter("obstacle_vertical_corridor_m").value),
+        )
         self._blocked_timeout_sec = float(self.get_parameter("blocked_timeout_sec").value)
         self._odom_timeout_sec = float(self.get_parameter("odom_timeout_sec").value)
         self._depth_timeout_sec = float(self.get_parameter("depth_timeout_sec").value)
@@ -135,6 +141,9 @@ class AutonomyNode(Node):
             blocked_exit_clearance=float(self.get_parameter("blocked_exit_clearance_m").value),
             max_acceleration=float(self.get_parameter("max_acceleration").value),
             min_altitude=float(self.get_parameter("min_flight_altitude").value),
+            strategy_switch_penalty=float(
+                self.get_parameter("strategy_switch_penalty").value
+            ),
         )
 
         if bool(self.get_parameter("use_param_target").value):
@@ -285,6 +294,14 @@ class AutonomyNode(Node):
                 body_to_world(point, sensor_origin, orientation)
                 for point in body_points
             ]
+        vertical_band = self._active_vertical_band()
+        if vertical_band is not None:
+            minimum_z, maximum_z = vertical_band
+            world_points = [
+                point
+                for point in world_points
+                if minimum_z <= point[2] <= maximum_z
+            ]
         received = time.monotonic()
         self._esdf.insert_points(
             world_points,
@@ -330,6 +347,12 @@ class AutonomyNode(Node):
             points.append((float(point[0]), float(point[1]), float(point[2])))
             if len(points) >= self._esdf.max_points:
                 break
+        vertical_band = self._active_vertical_band()
+        if vertical_band is not None:
+            minimum_z, maximum_z = vertical_band
+            points = [
+                point for point in points if minimum_z <= point[2] <= maximum_z
+            ]
         received = time.monotonic()
         self._esdf.insert_points(points, stamp=received)
         self._latest_depth_received = received
@@ -339,6 +362,9 @@ class AutonomyNode(Node):
         velocity = self._local_velocity()
         goal = self._goal_world
         self._esdf.prune(position, stamp=time.monotonic())
+        vertical_band = self._active_vertical_band(position, goal)
+        if vertical_band is not None:
+            self._esdf.prune_height_band(*vertical_band)
 
         if not self._enabled:
             result = self._replanner.replan(self._esdf, position, velocity, None)
@@ -368,6 +394,17 @@ class AutonomyNode(Node):
             return (0.0, 0.0, 0.0)
         vel = self._latest_odom.twist.twist.linear
         return (float(vel.x), float(vel.y), float(vel.z))
+
+    def _active_vertical_band(self, position=None, goal=None):
+        goal = self._goal_world if goal is None else goal
+        if goal is None:
+            return None
+        position = self._world_position() if position is None else position
+        margin = self._obstacle_vertical_corridor_m
+        return (
+            min(position[2], goal[2]) - margin,
+            max(position[2], goal[2]) + margin,
+        )
 
     def _world_position(self):
         if self._latest_odom is None:

@@ -17,11 +17,13 @@ import os
 import re
 import shutil
 import struct
+import threading
 import time
 import urllib.error
 import urllib.request
 
 import rclpy
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
@@ -30,7 +32,7 @@ from sensor_msgs.msg import Image, PointCloud2
 from std_msgs.msg import Empty, String
 
 from aeromind_interfaces.msg import AutonomyStatus, Detection, DetectionArray, DroneState
-from aeromind_interfaces.srv import AnalyzeImage, ArmDrone, CaptureImage, ExecuteTask, Land, ReturnHome, Takeoff
+from aeromind_interfaces.srv import AnalyzeImage, ArmDrone, CaptureImage, ExecuteAction, ExecuteTask, Land, ReturnHome, Takeoff
 
 from .skill_catalog import get_skill_catalog, skill_by_name
 
@@ -80,14 +82,36 @@ class AgentNode(Node):
         self._task_srv = self.create_service(
             ExecuteTask, "/agent/execute_task", self._execute_task_callback
         )
+        self._action_srv = self.create_service(
+            ExecuteAction, "/agent/execute_action", self._execute_action_callback
+        )
 
         # 创建服务客户端（用于调用其他模块的服务）
-        self._arm_client = self.create_client(ArmDrone, "/control/arm")
-        self._takeoff_client = self.create_client(Takeoff, "/control/takeoff")
-        self._land_client = self.create_client(Land, "/control/land")
-        self._return_home_client = self.create_client(ReturnHome, "/control/return_home")
-        self._capture_image_client = self.create_client(CaptureImage, "/perception/capture_image")
-        self._analyze_image_client = self.create_client(AnalyzeImage, "/perception/analyze_image")
+        self._service_client_group = ReentrantCallbackGroup()
+        self._arm_client = self.create_client(
+            ArmDrone, "/control/arm", callback_group=self._service_client_group
+        )
+        self._takeoff_client = self.create_client(
+            Takeoff, "/control/takeoff", callback_group=self._service_client_group
+        )
+        self._land_client = self.create_client(
+            Land, "/control/land", callback_group=self._service_client_group
+        )
+        self._return_home_client = self.create_client(
+            ReturnHome,
+            "/control/return_home",
+            callback_group=self._service_client_group,
+        )
+        self._capture_image_client = self.create_client(
+            CaptureImage,
+            "/perception/capture_image",
+            callback_group=self._service_client_group,
+        )
+        self._analyze_image_client = self.create_client(
+            AnalyzeImage,
+            "/perception/analyze_image",
+            callback_group=self._service_client_group,
+        )
         self._cmd_vel_pub = self.create_publisher(Twist, "/control/cmd_vel", 10)
         self._autonomy_goal_pub = self.create_publisher(PoseStamped, "/autonomy/goal", 10)
         self._autonomy_cancel_pub = self.create_publisher(Empty, "/autonomy/cancel", 10)
@@ -143,6 +167,39 @@ class AgentNode(Node):
             token = task.removeprefix("__aeromind_cancel__:").strip()
             return self._cancel_pending_task(token, response)
 
+        if task.startswith("__aeromind_move_vector__:"):
+            try:
+                args = json.loads(
+                    task.removeprefix("__aeromind_move_vector__:").strip()
+                )
+                if not isinstance(args, dict):
+                    raise ValueError("移动向量必须是对象")
+                args = self._normalize_move_args(args, "")
+                components = (
+                    args["forward_m"], args["right_m"], args["up_m"]
+                )
+                if not all(math.isfinite(value) for value in components) or not any(
+                    abs(value) >= 0.1 for value in components
+                ) or any(
+                    abs(value) > 100.0 for value in components
+                ):
+                    raise ValueError("移动向量超出允许范围")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                response.success = False
+                response.result = self._json_result("unknown", {}, "移动向量无效")
+                response.message = "移动向量无效"
+                return response
+            parsed = self._parsed(
+                "move_to",
+                args,
+                self._move_reason(args),
+                risk_level="high",
+                need_confirm=True,
+                skill="PlanningSkill",
+            )
+            self.get_logger().info(f"解析结果: {json.dumps(parsed, ensure_ascii=False)}")
+            return self._request_confirmation(parsed, response)
+
         parsed = self._parse_task(task)
         self.get_logger().info(f"解析结果: {json.dumps(parsed, ensure_ascii=False)}")
 
@@ -153,6 +210,114 @@ class AgentNode(Node):
             return self._request_confirmation(parsed, response)
 
         return self._execute_parsed_task(parsed, response)
+
+    def _execute_action_callback(self, request, response):
+        """执行已经由 Gateway 确认的结构化基础动作。"""
+        action = request.action.strip()
+        try:
+            args = json.loads(request.args_json or "{}")
+            if not isinstance(args, dict):
+                raise ValueError("args_json 必须是对象")
+            parsed = self._structured_action(action, args)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            response.success = False
+            response.message = f"结构化动作无效: {exc}"
+            response.result = self._json_result("unknown", {}, response.message)
+            return response
+
+        self.get_logger().info(
+            f"执行结构化动作[{request.request_id or '--'}]: "
+            f"{json.dumps(parsed, ensure_ascii=False)}"
+        )
+        if action in {"arm", "disarm", "takeoff", "land", "move", "return_home"}:
+            safety = self._safety_check(parsed)
+            if not safety["ok"]:
+                parsed["safety_check"] = safety
+                response.success = False
+                response.message = safety["message"]
+                response.result = self._agent_result(
+                    parsed,
+                    reply=f"结构化动作安全检查未通过：{safety['message']}",
+                    tool_calls=safety["tool_calls"],
+                    final_status="安全检查未通过，未执行",
+                    progress=safety["progress"],
+                )
+                return response
+        return self._execute_parsed_task(parsed, response)
+
+    def _structured_action(self, action: str, args: dict):
+        simple = {
+            "arm": ("arm", "ArmSkill", "执行解锁"),
+            "disarm": ("disarm", "ArmSkill", "执行加锁"),
+            "land": ("land", "LandSkill", "执行降落"),
+            "return_home": ("return_home", "ReturnHomeSkill", "触发 PX4 原生 RTL 返航"),
+            "hover": ("hover", "HoverSkill", "进入悬停保持"),
+            "capture_image": ("capture_image", "CaptureImageSkill", "保存当前相机图像"),
+        }
+        if action in simple:
+            intent, skill, reason = simple[action]
+            return self._parsed(intent, {}, reason, skill=skill, need_confirm=False)
+
+        if action == "takeoff":
+            altitude = self._coerce_float(args.get("altitude"), 0.0)
+            if not math.isfinite(altitude) or not 1.0 <= altitude <= 30.0:
+                raise ValueError("起飞高度必须在 1 到 30 米之间")
+            return self._parsed(
+                "takeoff",
+                {"altitude": altitude},
+                f"起飞到 {altitude:.1f} 米",
+                risk_level="high",
+                need_confirm=False,
+                skill="TakeoffSkill",
+            )
+
+        if action == "move":
+            if "direction" in args:
+                distance = self._coerce_float(args.get("distance"), 0.0)
+                direction = str(args.get("direction", "")).lower()
+                direction = {
+                    "前方": "forward", "后方": "backward", "左侧": "left",
+                    "右侧": "right", "上方": "up", "下方": "down",
+                }.get(direction, direction)
+                vectors = {
+                    "forward": (distance, 0.0, 0.0),
+                    "backward": (-distance, 0.0, 0.0),
+                    "left": (0.0, -distance, 0.0),
+                    "right": (0.0, distance, 0.0),
+                    "up": (0.0, 0.0, distance),
+                    "down": (0.0, 0.0, -distance),
+                }
+                if direction not in vectors or not 0.5 <= distance <= 100.0:
+                    raise ValueError("移动方向或距离无效")
+                forward_m, right_m, up_m = vectors[direction]
+            else:
+                forward_m = self._coerce_float(args.get("forward_m"), 0.0)
+                right_m = self._coerce_float(args.get("right_m"), 0.0)
+                up_m = self._coerce_float(args.get("up_m"), 0.0)
+            components = (forward_m, right_m, up_m)
+            if not all(math.isfinite(value) for value in components):
+                raise ValueError("移动向量必须是有限数值")
+            if not any(abs(value) >= 0.1 for value in components):
+                raise ValueError("移动向量不能全部为 0")
+            if any(abs(value) > 100.0 for value in components):
+                raise ValueError("移动向量各分量不能超过 100 米")
+            move_args = {
+                "forward_m": forward_m,
+                "right_m": right_m,
+                "up_m": up_m,
+                "takeoff_altitude": self._coerce_float(
+                    args.get("takeoff_altitude"), 10.0
+                ),
+            }
+            return self._parsed(
+                "move_to",
+                move_args,
+                self._move_reason(move_args),
+                risk_level="high",
+                need_confirm=False,
+                skill="PlanningSkill",
+            )
+        raise ValueError(f"不支持的基础动作: {action}")
 
     def _drone_state_callback(self, msg: DroneState):
         self._latest_state = {
@@ -245,14 +410,17 @@ class AgentNode(Node):
                 },
             })
         self._latest_detections = detections
+        if detections:
+            self._latest_detection = max(
+                detections,
+                key=lambda item: item["confidence"],
+            )
 
     def _image_analysis_callback(self, msg: String):
         try:
             self._latest_image_analysis = json.loads(msg.data)
         except json.JSONDecodeError:
             self.get_logger().warning("收到无法解析的 /perception/image_analysis")
-        if detections:
-            self._latest_detection = max(detections, key=lambda item: item["confidence"])
 
     def _autonomy_status_callback(self, msg: AutonomyStatus):
         self._latest_autonomy_status = {
@@ -2867,8 +3035,14 @@ class AgentNode(Node):
                 "message": f"{service_name} 请求已下发，执行状态请查看飞控状态/WebSocket 实时反馈",
             }
 
-        rclpy.spin_until_future_complete(self, future, timeout_sec=timeout_sec)
-        result = future.result()
+        completed = threading.Event()
+        future.add_done_callback(lambda _done: completed.set())
+        if not completed.wait(timeout=timeout_sec):
+            return {"success": False, "message": f"{service_name} 无响应或调用超时"}
+        try:
+            result = future.result()
+        except Exception as exc:
+            return {"success": False, "message": f"{service_name} 调用异常: {exc}"}
         if result is None:
             return {"success": False, "message": f"{service_name} 无响应或调用超时"}
 

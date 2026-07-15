@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 import uuid
@@ -17,6 +18,7 @@ from .openai_runtime import OpenAICompatibleRuntime
 from .ros_state import RosStateBridge
 from .runtime import AgentRuntime
 from .skill_registry import build_skill, skill_catalog
+from .capability_registry import capability_catalog
 from .store import SessionStore
 
 
@@ -83,6 +85,27 @@ class SessionManager:
             "messages": self._store.messages(session_id, limit=limit),
         }
 
+    async def clear_session(self, session_id: str, user_id: str) -> dict[str, Any]:
+        session = self._store.get_session(session_id)
+        if session is None:
+            raise ValueError("会话不存在")
+        principal = self._config.resolve_identity(user_id)
+        if session["user_id"] != principal:
+            raise PermissionError("会话属于其他用户")
+
+        runtime = self._runtimes.pop(session_id, None)
+        if runtime is not None:
+            await runtime.interrupt()
+            await runtime.close()
+        result = self._store.clear_session_history(session_id)
+        await self._events.emit(
+            session_id,
+            "session.cleared",
+            deleted_messages=result["deleted_messages"],
+            memory_retained=True,
+        )
+        return result
+
     async def start(self):
         for mission in self._store.interrupt_executing_workflows():
             if mission is not None:
@@ -130,6 +153,9 @@ class SessionManager:
 
     def skill_catalog(self) -> list[dict[str, Any]]:
         return skill_catalog()
+
+    def capability_catalog(self) -> list[dict[str, Any]]:
+        return capability_catalog()
 
     def operator_timeline(self, user_id: str, limit: int = 100):
         principal = self._config.resolve_identity(user_id)
@@ -244,6 +270,58 @@ class SessionManager:
             provider=session["provider"],
         )
 
+        deterministic_request = _deterministic_control_fallback(content)
+        if deterministic_request is not None:
+            action, args = deterministic_request
+            try:
+                created = await self._confirmations.create(
+                    session_id=session_id,
+                    user_id=session["user_id"],
+                    action=action,
+                    args=args,
+                )
+            except Exception as exc:
+                await self._events.emit(
+                    session_id,
+                    "error",
+                    request_id=request_id,
+                    message=f"确定性控制路由失败: {exc}",
+                )
+                return
+            text = (
+                "控制网关已识别为白名单飞行能力，并创建真实确认请求。\n\n"
+                f"任务：{created['summary']}\n\n"
+                f"确认编号：`{created['confirmation_id']}`\n\n"
+                "等待确认。请在弹窗中选择“确认执行”或“取消”，"
+                "也可以直接发送“确认执行”或“取消执行”。"
+            )
+            assistant_message = self._store.add_message(
+                session_id,
+                "assistant",
+                text,
+                model="deterministic-router",
+                provider="gateway",
+            )
+            await self._events.emit(
+                session_id,
+                "control.request.routed",
+                request_id=request_id,
+                confirmation_id=created["confirmation_id"],
+                action=action,
+            )
+            await self._events.emit(
+                session_id,
+                "assistant.completed",
+                request_id=request_id,
+                message=assistant_message,
+                model="deterministic-router",
+                provider="gateway",
+                usage=None,
+                cost_usd=None,
+                latency_ms=0,
+            )
+            return
+
         runtime = self._runtime(session, exclude_latest_user=True)
 
         async def emit(event_type: str, payload: dict[str, Any]):
@@ -265,9 +343,35 @@ class SessionManager:
                     session["user_id"]
                 )
             }
-            result = await runtime.run_turn(
-                self._prompt_with_vision_context(session_id, content), emit
-            )
+            runtime_prompt = self._prompt_with_vision_context(session_id, content)
+            if _is_current_image_analysis_request(content):
+                await emit(
+                    "tool.started",
+                    {
+                        "tool_call_id": f"vision-{request_id}",
+                        "tool": "analyze_current_image",
+                        "arguments": {"prompt": content},
+                    },
+                )
+                vision_result = await self._ros_state.analyze_current_image(content)
+                await emit(
+                    "tool.completed",
+                    {
+                        "tool_call_id": f"vision-{request_id}",
+                        "success": bool(vision_result.get("success")),
+                        "result": vision_result,
+                    },
+                )
+                runtime_prompt += (
+                    "\n\n控制网关已经为本轮确定性调用了当前图像 VLM 分析。"
+                    "请直接依据以下结果回答，不要再次调用 analyze_current_image，"
+                    "也不要用历史 Mission 或遥测替代它。source=vlm 表示视觉模型成功；"
+                    "其他 source 必须明确说明降级或失败。\n"
+                    "<current_image_analysis>\n"
+                    f"{json.dumps(vision_result, ensure_ascii=False)}\n"
+                    "</current_image_analysis>"
+                )
+            result = await runtime.run_turn(runtime_prompt, emit)
             if result.get("runtime_session_id"):
                 self._store.update_runtime_session(
                     session_id, result["runtime_session_id"]
@@ -749,26 +853,87 @@ def _deterministic_control_fallback(
     content: str,
 ) -> tuple[str, dict[str, Any]] | None:
     compact = re.sub(r"\s+", "", str(content or "").lower())
-    if "正方形" not in compact or not any(
-        word in compact for word in ("飞", "执行", "轨迹任务")
+    if not compact or any(
+        phrase in compact
+        for phrase in ("为什么", "如何", "怎么", "能不能", "可以吗", "是否", "解释", "介绍", "原理")
     ):
         return None
-    match = re.search(r"(?:边长)?(\d+(?:\.\d+)?)(?:米|m)", compact)
-    if match is None:
-        return None
-    side_length = float(match.group(1))
-    altitude_match = re.search(r"(?:高度|高)(\d+(?:\.\d+)?)(?:米|m)", compact)
-    altitude = float(altitude_match.group(1)) if altitude_match else 10.0
-    workflow = build_skill(
-        "flight.square",
-        {
-            "side_length": side_length,
-            "altitude": altitude,
-            "takeoff_if_needed": True,
-            "land_after": "降落" in compact,
-        },
+    if any(marker in compact for marker in ("v字", "v形", "v型")) and any(
+        word in compact for word in ("飞", "执行", "轨迹任务")
+    ):
+        width_match = re.search(r"宽(?:度)?(\d+(?:\.\d+)?)(?:米|m)", compact)
+        depth_match = re.search(r"深(?:度)?(\d+(?:\.\d+)?)(?:米|m)", compact)
+        altitude_match = re.search(r"(?:高度|高)(\d+(?:\.\d+)?)(?:米|m)", compact)
+        workflow = build_skill(
+            "flight.v_shape",
+            {
+                "width": float(width_match.group(1)) if width_match else 10.0,
+                "depth": float(depth_match.group(1)) if depth_match else 10.0,
+                "altitude": float(altitude_match.group(1)) if altitude_match else 10.0,
+                "takeoff_if_needed": True,
+                "capture_at_vertex": "拍照" in compact,
+                "land_after": "降落" in compact,
+            },
+        )
+        return "workflow", workflow
+    if "正方形" in compact and any(
+        word in compact for word in ("飞", "执行", "轨迹任务")
+    ):
+        match = re.search(r"(?:边长)?(\d+(?:\.\d+)?)(?:米|m)", compact)
+        if match is None:
+            return None
+        side_length = float(match.group(1))
+        altitude_match = re.search(r"(?:高度|高)(\d+(?:\.\d+)?)(?:米|m)", compact)
+        altitude = float(altitude_match.group(1)) if altitude_match else 10.0
+        workflow = build_skill(
+            "flight.square",
+            {
+                "side_length": side_length,
+                "altitude": altitude,
+                "takeoff_if_needed": True,
+                "land_after": "降落" in compact,
+            },
+        )
+        return "workflow", workflow
+
+    takeoff_match = re.fullmatch(
+        r"(?:请|现在|立即|直接|让无人机)*(?:起飞|升空)(?:到|至|高度为)?"
+        r"(\d+(?:\.\d+)?)(?:米|m)(?:高度)?[。！!]*",
+        compact,
     )
-    return "workflow", workflow
+    if takeoff_match:
+        return "takeoff", {"altitude": float(takeoff_match.group(1))}
+    if compact.rstrip("。！!") in {
+        "起飞",
+        "立即起飞",
+        "现在起飞",
+        "直接起飞",
+        "执行起飞",
+        "让无人机起飞",
+    }:
+        return "takeoff", {"altitude": 10.0}
+    if compact.rstrip("。！!") in {"降落", "立即降落", "现在降落", "执行降落"}:
+        return "land", {}
+    if compact.rstrip("。！!") in {"返航", "立即返航", "现在返航", "返航并降落", "rtl"}:
+        return "return_home", {}
+    if compact.rstrip("。！!") in {"解锁", "立即解锁", "无人机解锁"}:
+        return "arm", {}
+    if compact.rstrip("。！!") in {"加锁", "立即加锁", "无人机加锁"}:
+        return "disarm", {}
+    return None
+
+
+def _is_current_image_analysis_request(content: str) -> bool:
+    text = str(content or "")
+    return bool(
+        re.search(
+            r"(?:分析|描述|查看|看看|识别).{0,8}(?:当前)?(?:画面|图像|相机)"
+            r"|(?:画面|图像|相机).{0,8}(?:有什么|是什么|分析|描述)"
+            r"|(?:使用|调用).{0,6}VLM",
+            text,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _parse_confirmation_command(content: str) -> tuple[str, str | None] | None:

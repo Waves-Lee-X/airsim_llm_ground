@@ -1,0 +1,44 @@
+name: inspection.line_capture
+label: 直线拍照巡检
+version: 1.0.0
+risk_level: high
+description: 沿前方直线飞行并在起点、终点保存图像，可原路返回。
+example_task: 向前巡检20米，在起点和终点拍照，然后返回
+workflow_name: "前方 ${distance} 米直线拍照巡检"
+parameters:
+  distance: {type: number, minimum: 1, maximum: 100, default: 20}
+  altitude: {type: number, minimum: 1, maximum: 30, default: 8}
+  takeoff_if_needed: {type: boolean, default: true}
+  return_after: {type: boolean, default: true}
+  land_after: {type: boolean, default: false}
+workflow:
+  - id: takeoff
+    action: takeoff
+    args: {altitude: "${altitude}"}
+    condition: if_not_airborne
+    retries: 1
+    include_if: takeoff_if_needed
+  - id: start-capture
+    label: 保存巡检起点图像
+    action: capture_image
+    retries: 1
+  - id: outbound
+    label: "向前巡检 ${distance} 米"
+    action: move
+    args: {direction: forward, distance: "${distance}"}
+    depends_on: [start-capture]
+  - id: end-capture
+    label: 保存巡检终点图像
+    action: capture_image
+    depends_on: [outbound]
+    retries: 1
+  - id: return-leg
+    label: "原路返回 ${distance} 米"
+    action: move
+    args: {direction: backward, distance: "${distance}"}
+    depends_on: [end-capture]
+    include_if: return_after
+  - id: land
+    action: land
+    condition: if_airborne
+    include_if: land_after

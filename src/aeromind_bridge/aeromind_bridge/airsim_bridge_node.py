@@ -70,8 +70,12 @@ class AirSimBridgeNode(Node):
         # 声明参数
         self.declare_parameter("mode", "airsim")
         self.declare_parameter("airsim_ip", "192.168.1.100")
+        self.declare_parameter("publish_drone_state", True)
         self._mode = self.get_parameter("mode").value
         self._airsim_ip = self.get_parameter("airsim_ip").value
+        self._publish_drone_state = bool(
+            self.get_parameter("publish_drone_state").value
+        )
 
         if self._mode not in ("airsim", "px4"):
             self.get_logger().error(f"未知模式 '{self._mode}'，回退到 airsim")
@@ -387,6 +391,8 @@ class AirSimBridgeNode(Node):
     def _px4_status_callback(self, msg):
         """PX4 VehicleStatus → /control/drone_state + 缓存状态"""
         self._latest_vehicle_status = msg  # 缓存用于 cmd_vel 自动 arm
+        if not self._publish_drone_state:
+            return
         try:
             state = vehicle_status_to_drone_state(msg)
             self._state_pub.publish(state)

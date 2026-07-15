@@ -45,6 +45,25 @@ class SessionStoreTest(unittest.TestCase):
         self.assertEqual(session["model"], "deepseek-chat")
         self.assertIsNone(session["runtime_session_id"])
 
+    def test_clear_session_history_keeps_control_records(self):
+        self.store.ensure_session("s1", "u1", "web", "sonnet")
+        self.store.update_runtime_session("s1", "claude-session")
+        self.store.add_message("s1", "user", "起飞")
+        confirmation = self.store.create_confirmation(
+            "s1", "u1", "takeoff", {"altitude": 10.0}, "起飞", "high", 60
+        )
+        self.store.create_gateway_mission(confirmation)
+
+        result = self.store.clear_session_history("s1")
+
+        self.assertEqual(result["deleted_messages"], 1)
+        self.assertEqual(self.store.messages("s1"), [])
+        self.assertIsNone(self.store.get_session("s1")["runtime_session_id"])
+        self.assertIsNotNone(self.store.get_confirmation(confirmation["id"]))
+        self.assertIsNotNone(
+            self.store.gateway_mission_for_confirmation(confirmation["id"])
+        )
+
     def test_confirmation_round_trip(self):
         self.store.ensure_session("s1", "u1", "web", "sonnet")
         item = self.store.create_confirmation(

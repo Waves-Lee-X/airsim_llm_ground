@@ -21,13 +21,13 @@ from urllib.parse import unquote, urlparse
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Image, PointCloud2
 from std_msgs.msg import Empty, String
 
-from aeromind_interfaces.msg import AutonomyStatus, Detection, DetectionArray, DroneState
+from aeromind_interfaces.msg import AutonomyStatus, Detection, DetectionArray, DroneState, Trajectory
 from aeromind_interfaces.srv import ArmDrone, ExecuteTask, Land, ReturnHome, Takeoff
 
 try:
@@ -204,7 +204,11 @@ class WebConsoleNode(Node):
         self._pointcloud = None
         self._detection = None
         self._detections = []
+        self._detections_received_at = 0.0
+        self._detections_frame_id = ""
         self._autonomy = None
+        self._autonomy_goal = None
+        self._autonomy_trajectory = None
         self._mission = None
         self._image_analysis = None
         self._events = []
@@ -217,6 +221,8 @@ class WebConsoleNode(Node):
         self.create_subscription(Detection, "/perception/detection", self._detection_cb, 10)
         self.create_subscription(DetectionArray, "/perception/detections", self._detections_cb, 10)
         self.create_subscription(AutonomyStatus, "/autonomy/status", self._autonomy_cb, 10)
+        self.create_subscription(PoseStamped, "/autonomy/goal", self._autonomy_goal_cb, 10)
+        self.create_subscription(Trajectory, "/autonomy/trajectory", self._autonomy_trajectory_cb, 10)
         self.create_subscription(String, "/agent/mission_status", self._mission_cb, 10)
         self.create_subscription(String, "/perception/image_analysis", self._image_analysis_cb, 10)
 
@@ -305,6 +311,7 @@ class WebConsoleNode(Node):
                 "width": float(msg.width),
                 "height": float(msg.height),
             }
+            self._detections_received_at = time.time()
 
     def _detections_cb(self, msg: DetectionArray):
         detections = []
@@ -319,6 +326,8 @@ class WebConsoleNode(Node):
             })
         with self._lock:
             self._detections = detections
+            self._detections_received_at = time.time()
+            self._detections_frame_id = msg.header.frame_id
             if detections:
                 self._detection = max(detections, key=lambda item: item["confidence"])
 
@@ -333,6 +342,34 @@ class WebConsoleNode(Node):
                 "target_distance_m": float(msg.target_distance_m),
                 "active_strategy": msg.active_strategy,
                 "message": msg.message,
+            }
+
+    def _autonomy_goal_cb(self, msg: PoseStamped):
+        position = msg.pose.position
+        with self._lock:
+            self._autonomy_goal = {
+                "stamp": _stamp_to_float(msg.header.stamp),
+                "frame_id": msg.header.frame_id,
+                "position": {"x": position.x, "y": position.y, "z": position.z},
+            }
+
+    def _autonomy_trajectory_cb(self, msg: Trajectory):
+        with self._lock:
+            self._autonomy_trajectory = {
+                "stamp": _stamp_to_float(msg.header.stamp),
+                "frame_id": msg.header.frame_id,
+                "collision_free": bool(msg.collision_free),
+                "planner_mode": msg.planner_mode,
+                "message": msg.message,
+                "points": [
+                    {
+                        "x": point.position.x,
+                        "y": point.position.y,
+                        "z": point.position.z,
+                        "yaw": float(point.yaw),
+                    }
+                    for point in msg.points[:200]
+                ],
             }
 
     def _mission_cb(self, msg: String):
@@ -359,14 +396,29 @@ class WebConsoleNode(Node):
 
     def snapshot(self):
         with self._lock:
+            detection_age = (
+                max(0.0, time.time() - self._detections_received_at)
+                if self._detections_received_at > 0.0
+                else None
+            )
+            detections_active = detection_age is not None and detection_age <= 3.0
             return {
                 "state": self._state,
                 "odom": self._odom,
                 "depth": self._depth,
                 "pointcloud": self._pointcloud_meta(),
-                "detection": self._detection,
-                "detections": list(self._detections),
+                "detection": self._detection if detections_active else None,
+                "detections": list(self._detections) if detections_active else [],
+                "detection_meta": {
+                    "source_topic": "/perception/detections",
+                    "frame_id": self._detections_frame_id,
+                    "received_at": self._detections_received_at,
+                    "age_s": detection_age,
+                    "active": detections_active,
+                },
                 "autonomy": self._autonomy,
+                "autonomy_goal": self._autonomy_goal,
+                "autonomy_trajectory": self._autonomy_trajectory,
                 "mission": self._mission,
                 "image_analysis": self._image_analysis,
                 "events": list(self._events[-80:]),
@@ -817,6 +869,8 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 self._json(pointcloud)
         elif path.startswith("/static/"):
             self._serve_static(path.removeprefix("/static/"))
+        elif path in {"/styles.css", "/enterprise.css", "/app.js"}:
+            self._serve_static(path.removeprefix("/"))
         else:
             self._json({"success": False, "message": "not found"}, status=404)
 
@@ -988,7 +1042,8 @@ def main(args=None):
     finally:
         node.shutdown_server()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

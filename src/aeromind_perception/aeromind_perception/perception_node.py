@@ -59,9 +59,19 @@ class PerceptionNode(Node):
         self._image_topic = str(self.get_parameter("image_topic").value)
         self._detections_topic = str(self.get_parameter("detections_topic").value)
         self._vlm_enabled = bool(self.get_parameter("vlm_enabled").value)
-        self._vlm_api_url = str(self.get_parameter("vlm_api_url").value).strip()
-        self._vlm_api_key = str(self.get_parameter("vlm_api_key").value).strip()
-        self._vlm_model = str(self.get_parameter("vlm_model").value).strip()
+        self._vlm_api_url = (
+            str(self.get_parameter("vlm_api_url").value).strip()
+            or os.environ.get("AEROMIND_VLM_API_URL", "").strip()
+        )
+        self._vlm_api_key = (
+            str(self.get_parameter("vlm_api_key").value).strip()
+            or os.environ.get("AEROMIND_VLM_API_KEY", "").strip()
+            or os.environ.get("DASHSCOPE_API_KEY", "").strip()
+        )
+        self._vlm_model = (
+            str(self.get_parameter("vlm_model").value).strip()
+            or os.environ.get("AEROMIND_VLM_MODEL", "").strip()
+        )
         self._vlm_timeout_sec = float(self.get_parameter("vlm_timeout_sec").value)
         self._auto_analyze_enabled = bool(self.get_parameter("auto_analyze_enabled").value)
         self._auto_analyze_interval_sec = max(1.0, float(self.get_parameter("auto_analyze_interval_sec").value))
@@ -69,6 +79,7 @@ class PerceptionNode(Node):
         self._capture_dir = os.path.expanduser(str(self.get_parameter("capture_dir").value))
         self._latest_image = None
         self._latest_detections = []
+        self._latest_detections_at = 0.0
         self._latest_analysis = None
         self._last_auto_analysis_time = 0.0
 
@@ -104,7 +115,10 @@ class PerceptionNode(Node):
 
         self.get_logger().info(
             f"感知节点已启动：image_topic={self._image_topic}, capture_dir={self._capture_dir}, "
-            f"vlm_enabled={self._vlm_enabled}, auto_analyze={self._auto_analyze_enabled}"
+            f"vlm_enabled={self._vlm_enabled}, "
+            f"vlm_model={self._vlm_model or '未配置'}, "
+            f"vlm_api_key={'已配置' if self._vlm_api_key else '未配置'}, "
+            f"auto_analyze={self._auto_analyze_enabled}"
         )
 
     def _image_callback(self, msg: Image):
@@ -125,6 +139,7 @@ class PerceptionNode(Node):
                 "height": float(item.height),
             })
         self._latest_detections = detections
+        self._latest_detections_at = time.time()
 
     def _capture_image_callback(self, request, response):
         self.get_logger().info("收到拍照保存请求")
@@ -180,7 +195,11 @@ class PerceptionNode(Node):
 
     def _analyze_latest_image(self, prompt: str, use_vlm_request: bool):
         msg = self._latest_image
-        detections = list(self._latest_detections)
+        detections = (
+            list(self._latest_detections)
+            if time.time() - self._latest_detections_at <= 2.0
+            else []
+        )
         fallback = self._rule_image_analysis(msg, prompt, detections)
         analysis_payload = dict(fallback)
         use_vlm = bool(use_vlm_request and self._vlm_enabled and self._vlm_api_url and self._vlm_model)
@@ -280,6 +299,10 @@ class PerceptionNode(Node):
         }
 
     def _call_vlm(self, msg: Image, prompt: str, fallback: dict):
+        if not self._vlm_api_key:
+            raise RuntimeError(
+                "VLM API Key 未配置，请设置 AEROMIND_VLM_API_KEY 或 DASHSCOPE_API_KEY"
+            )
         image_b64 = self._image_png_base64(msg)
         if not image_b64:
             raise RuntimeError("当前图像编码无法转换为 PNG")

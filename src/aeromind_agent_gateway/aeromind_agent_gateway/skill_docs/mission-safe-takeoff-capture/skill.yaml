@@ -1,0 +1,28 @@
+name: mission.safe_takeoff_capture
+label: 安全起飞拍照
+version: 1.0.0
+risk_level: high
+description: 确定性安全检查通过后起飞，并保存前视图像。
+example_task: 检查安全后起飞到8米并拍照
+workflow_name: "安全起飞到 ${altitude} 米并拍照"
+parameters:
+  altitude: {type: number, minimum: 1, maximum: 30, default: 8}
+  minimum_obstacle_distance: {type: number, minimum: 0.5, maximum: 20, default: 2}
+  require_gps: {type: boolean, default: true}
+workflow:
+  - id: safety-check
+    action: safety_check
+    args:
+      require_gps: "${require_gps}"
+      minimum_obstacle_distance: "${minimum_obstacle_distance}"
+  - id: takeoff
+    action: takeoff
+    args: {altitude: "${altitude}"}
+    depends_on: [safety-check]
+    condition: if_not_airborne
+    retries: 1
+  - id: capture
+    label: 到达目标高度后拍照
+    action: capture_image
+    depends_on: [takeoff]
+    retries: 1
