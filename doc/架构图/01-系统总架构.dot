@@ -1,0 +1,86 @@
+digraph SystemArchitecture {
+  graph [
+    rankdir=TB,
+    bgcolor="#F4F7FA",
+    pad="0.28",
+    nodesep="0.35",
+    ranksep="0.52",
+    splines=ortho,
+    fontname="Microsoft YaHei"
+  ];
+  node [fontname="Microsoft YaHei"];
+  edge [color="#6F8496", penwidth=2.0, arrowsize=0.8];
+
+  title [shape=plain, label=<
+    <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+      <TR><TD><FONT POINT-SIZE="25" COLOR="#162638"><B>无人机智能控制平台：系统总架构</B></FONT></TD></TR>
+      <TR><TD><FONT POINT-SIZE="12" COLOR="#637486">自然语言任务规划、ROS 2 能力编排、感知决策与 PX4 飞行控制</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  interaction [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#C8D5DF" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#E9F0F5">
+      <TR><TD COLSPAN="3" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>01 交互与展示层</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="web" WIDTH="245" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Web 智能地面站</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">对话、确认、态势、RGB、深度、点云</FONT></TD>
+        <TD PORT="remote" WIDTH="245" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>远程消息入口</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">飞书 / 移动端任务下发与通知</FONT></TD>
+        <TD PORT="engineering" WIDTH="245" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>工程调试入口</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">RViz2、ROS CLI、PX4 Console</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  intelligence [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#BFCFDC" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#E5EDF4">
+      <TR><TD COLSPAN="4" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>02 智能任务与网关层</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="gateway" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Agent Gateway</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">流式会话、历史记忆、模型切换</FONT></TD>
+        <TD PORT="models" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>LLM / VLM</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">意图理解、规划、图像语义分析</FONT></TD>
+        <TD PORT="skills" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Skills / Workflow</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">基础能力组合、条件分支、任务恢复</FONT></TD>
+        <TD PORT="safety" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>控制安全网关</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">白名单、风险分级、人工确认、审计</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  ros [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#B5C9D5" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#DCE9EE">
+      <TR><TD COLSPAN="4" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>03 ROS 2 机器人能力层</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="bridge" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>桥接节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">AirSim / PX4 数据标准化发布</FONT></TD>
+        <TD PORT="perception" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>感知节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">图像、YOLO、VLM、深度、点云</FONT></TD>
+        <TD PORT="autonomy" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>自主规划节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">目标、局部重规划、Minimum Snap</FONT></TD>
+        <TD PORT="control" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>控制节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">Action、轨迹跟踪、Offboard 控制</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  platform [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#AFC4C7" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#DCEAEA">
+      <TR><TD COLSPAN="4" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>04 仿真、飞控与机载平台层</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="airsim" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>AirSim 仿真</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">RGB、深度、LiDAR、仿真环境</FONT></TD>
+        <TD PORT="xrce" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Micro XRCE-DDS</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">PX4 uORB 与 ROS 2 DDS 桥梁</FONT></TD>
+        <TD PORT="px4" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>PX4 飞控</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">状态估计、模式管理、姿态控制</FONT></TD>
+        <TD PORT="hardware" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>真机与传感器</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">计算平台、相机、雷达、动力系统</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  guard [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#E0B765" CELLBORDER="0" CELLPADDING="10" BGCOLOR="#FFF8E8">
+      <TR><TD><FONT POINT-SIZE="12" COLOR="#765B20"><B>贯穿全链路的安全原则：</B> 大模型不直接输出电机控制量；所有动作必须经过结构化能力、参数校验、确认策略和飞控状态反馈。</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  title -> interaction [style=invis, weight=10];
+  interaction:web:s -> intelligence:gateway:n;
+  interaction:remote:s -> intelligence:gateway:n;
+  interaction:engineering:s -> ros:bridge:n;
+  intelligence:gateway:s -> ros:bridge:n;
+  intelligence:models:s -> ros:perception:n;
+  intelligence:skills:s -> ros:autonomy:n;
+  intelligence:safety:s -> ros:control:n;
+  ros:bridge:s -> platform:xrce:n [dir=both];
+  ros:autonomy:s -> platform:px4:n;
+  ros:control:s -> platform:px4:n;
+  platform -> guard [style=invis, weight=10];
+}

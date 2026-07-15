@@ -9,10 +9,13 @@ import threading
 import time
 from typing import Any, Awaitable, Callable
 
+from geometry_msgs.msg import Vector3
 from nav_msgs.msg import Odometry
+from rclpy.action import ActionClient
 from rclpy.node import Node
 from std_msgs.msg import Empty, String
 
+from aeromind_interfaces.action import FollowWaypoints
 from aeromind_interfaces.msg import AutonomyStatus, DetectionArray, DroneState
 from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction
 from .workflow import validate_workflow
@@ -49,6 +52,9 @@ class RosStateBridge(Node):
         )
         self._analyze_image_client = self.create_client(
             AnalyzeImage, "/perception/analyze_image"
+        )
+        self._waypoint_action_client = ActionClient(
+            self, FollowWaypoints, "/autonomy/follow_waypoints"
         )
         self._autonomy_cancel_pub = self.create_publisher(
             Empty, "/autonomy/cancel", 10
@@ -487,6 +493,22 @@ class RosStateBridge(Node):
                 return matched
             if condition_type == "target_not_detected":
                 return bool(source.get("observation_available")) and not matched
+            if condition_type == "risk_level_is":
+                return str(source.get("risk_level") or "").lower() == str(
+                    condition.get("value") or ""
+                ).lower()
+            if condition_type in {
+                "semantic_target_detected",
+                "semantic_target_not_detected",
+            }:
+                semantic_matched = _semantic_result_contains(
+                    source, str(condition.get("target") or "")
+                )
+                return (
+                    semantic_matched
+                    if condition_type == "semantic_target_detected"
+                    else bool(source.get("success")) and not semantic_matched
+                )
             return False
         snapshot = self.snapshot()
         state = snapshot.get("state") or {}
@@ -515,9 +537,154 @@ class RosStateBridge(Node):
             result = self._perception_check(step["args"])
             await progress("checked", {"message": result["message"]})
             return result
+        if action == "analyze_image":
+            result = await self.analyze_current_image(step["args"]["prompt"])
+            result = {
+                **result,
+                "physical_complete": bool(result.get("success")),
+            }
+            await progress(
+                "analyzed",
+                {"message": result.get("message", "图像语义分析完成")},
+            )
+            return result
+        if action == "wait":
+            duration = float(step["args"]["duration_sec"])
+            await progress("waiting", {"message": f"等待 {duration:.1f} 秒"})
+            await asyncio.sleep(duration)
+            return {
+                "success": True,
+                "physical_complete": True,
+                "message": f"已等待 {duration:.1f} 秒",
+                "duration_sec": duration,
+            }
+        if action == "mission_report":
+            snapshot = self.snapshot()
+            title = str(step["args"].get("title") or "任务报告")
+            result = {
+                "success": True,
+                "physical_complete": True,
+                "message": f"已生成报告数据：{title}",
+                "title": title,
+                "snapshot": snapshot,
+            }
+            await progress("reported", {"message": result["message"]})
+            return result
+        if action == "follow_waypoints":
+            return await self._execute_waypoint_action(step["args"], progress)
         return await self.execute_confirmed_action(
             action, step["args"], progress
         )
+
+    async def _execute_waypoint_action(
+        self, args: dict[str, Any], progress: ProgressCallback
+    ) -> dict[str, Any]:
+        if not self._waypoint_action_client.server_is_ready():
+            if not self._waypoint_action_client.wait_for_server(timeout_sec=2.0):
+                return {
+                    "success": False,
+                    "physical_complete": False,
+                    "message": "/autonomy/follow_waypoints Action 服务未就绪",
+                }
+        request = FollowWaypoints.Goal()
+        request.cruise_speed = float(args.get("cruise_speed", 1.5))
+        for point in args["points"]:
+            request.relative_waypoints.append(
+                Vector3(
+                    x=float(point.get("forward_m", 0.0)),
+                    y=float(point.get("right_m", 0.0)),
+                    z=float(point.get("up_m", 0.0)),
+                )
+            )
+        loop = asyncio.get_running_loop()
+
+        def feedback_callback(feedback_message):
+            feedback = feedback_message.feedback
+            asyncio.run_coroutine_threadsafe(
+                progress(
+                    "waypoint",
+                    {
+                        "message": (
+                            f"连续轨迹航点 {feedback.current_waypoint}/"
+                            f"{len(request.relative_waypoints)}，"
+                            f"进度 {feedback.progress * 100:.0f}%"
+                        ),
+                        "waypoint_index": int(feedback.current_waypoint),
+                        "waypoint_count": len(request.relative_waypoints),
+                        "progress": float(feedback.progress),
+                        "remaining_distance_m": float(feedback.remaining_distance),
+                        "nearest_obstacle_m": float(feedback.nearest_obstacle),
+                        "state": feedback.state,
+                    },
+                ),
+                loop,
+            )
+
+        goal_handle = await self._await_ros_future(
+            self._waypoint_action_client.send_goal_async(
+                request, feedback_callback=feedback_callback
+            ),
+            timeout_sec=10.0,
+        )
+        if goal_handle is None or not goal_handle.accepted:
+            return {
+                "success": False,
+                "physical_complete": False,
+                "message": "连续多航点 Action 目标被拒绝",
+            }
+        await progress(
+            "accepted",
+            {
+                "message": f"ROS 2 Action 已受理 {len(request.relative_waypoints)} 个航点",
+                "physical_complete": False,
+            },
+        )
+        try:
+            wrapped_result = await self._await_ros_future(
+                goal_handle.get_result_async(), timeout_sec=360.0
+            )
+        except asyncio.CancelledError:
+            goal_handle.cancel_goal_async()
+            raise
+        if wrapped_result is None:
+            goal_handle.cancel_goal_async()
+            return {
+                "success": False,
+                "physical_complete": False,
+                "message": "连续多航点 Action 等待结果超时",
+            }
+        action_result = wrapped_result.result
+        return {
+            "success": bool(action_result.success),
+            "physical_complete": bool(action_result.success),
+            "message": action_result.message,
+            "completed_waypoints": int(action_result.completed_waypoints),
+            "final_position": {
+                "x": float(action_result.final_position.x),
+                "y": float(action_result.final_position.y),
+                "z": float(action_result.final_position.z),
+            },
+        }
+
+    async def _await_ros_future(self, ros_future, timeout_sec: float):
+        loop = asyncio.get_running_loop()
+        result_future = loop.create_future()
+
+        def on_done(done_future):
+            try:
+                loop.call_soon_threadsafe(
+                    _set_result_if_pending, result_future, done_future.result()
+                )
+            except Exception as exc:
+                loop.call_soon_threadsafe(
+                    _set_exception_if_pending, result_future, exc
+                )
+
+        ros_future.add_done_callback(on_done)
+        try:
+            return await asyncio.wait_for(result_future, timeout=timeout_sec)
+        except asyncio.TimeoutError:
+            return None
 
     def _safety_check(self, args: dict[str, Any]) -> dict[str, Any]:
         snapshot = self.snapshot()
@@ -912,6 +1079,36 @@ def _verification_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
             "message": autonomy_terminal.get("message"),
         } if autonomy_terminal else None,
     }
+
+
+def _semantic_result_contains(result: dict[str, Any], target: str) -> bool:
+    aliases = {
+        "人": "person",
+        "行人": "person",
+        "人员": "person",
+        "汽车": "car",
+        "车辆": "car",
+        "车": "car",
+    }
+
+    def normalize(value: Any) -> str:
+        text = "".join(str(value or "").lower().split())
+        return aliases.get(text, text)
+
+    expected = normalize(target)
+    if not expected:
+        return False
+    values = []
+    for item in result.get("objects") or []:
+        if isinstance(item, dict):
+            values.extend(
+                item.get(key, "")
+                for key in ("name", "class_name", "label", "description")
+            )
+        else:
+            values.append(item)
+    normalized = [normalize(value) for value in values]
+    return any(expected in value for value in normalized)
 
 
 def _action_task(action: str, args: dict[str, Any]) -> tuple[str, str]:

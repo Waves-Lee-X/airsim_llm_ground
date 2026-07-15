@@ -1,0 +1,85 @@
+digraph RosDataFlow {
+  graph [rankdir=TB, bgcolor="#F4F7FA", pad="0.28", nodesep="0.38", ranksep="0.48", splines=ortho, fontname="Microsoft YaHei"];
+  node [fontname="Microsoft YaHei"];
+  edge [color="#6F8496", penwidth=2.0, arrowsize=0.8];
+
+  title [shape=plain, label=<
+    <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+      <TR><TD><FONT POINT-SIZE="25" COLOR="#162638"><B>ROS 2 模块与数据流</B></FONT></TD></TR>
+      <TR><TD><FONT POINT-SIZE="12" COLOR="#637486">传感器数据如何进入 ROS、被处理，并最终形成飞行指令与 Web 可视化</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  source [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#B9CCD8" CELLBORDER="0" CELLSPACING="10" CELLPADDING="12" BGCOLOR="#E3EDF3">
+      <TR><TD COLSPAN="2" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>数据源</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="airsim" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>AirSim 传感器</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">Scene RGB · DepthPlanar · LiDAR 点云</FONT></TD>
+        <TD PORT="px4" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>PX4 飞控</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">里程计 · 电池 · GPS · 模式 · 解锁状态</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  transport [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#B7C9D5" CELLBORDER="0" CELLSPACING="10" CELLPADDING="12" BGCOLOR="#E0EAF1">
+      <TR><TD COLSPAN="2" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>接入与转换</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="bridge" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>airsim_bridge_node</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">RPC 拉取数据，转换为 ROS 标准消息并发布 TF</FONT></TD>
+        <TD PORT="xrce" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>Micro XRCE-DDS Agent</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">UDP 8888 接收 PX4 uXRCE Client 数据并接入 DDS</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  bus [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#9DBBC5" CELLBORDER="1" CELLSPACING="0" CELLPADDING="11" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="4" BGCOLOR="#D8E8EB"><FONT POINT-SIZE="18"><B>ROS 2 DDS 数据总线：Topic / Service / Action / TF</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="image" WIDTH="180"><FONT POINT-SIZE="14"><B>图像与点云</B></FONT><BR/><FONT POINT-SIZE="10">/sensor/camera/rgb<BR/>/sensor/camera/depth<BR/>/sensor/lidar/points</FONT></TD>
+        <TD PORT="flight" WIDTH="180"><FONT POINT-SIZE="14"><B>飞控状态</B></FONT><BR/><FONT POINT-SIZE="10">/fmu/out/*<BR/>/control/drone_state<BR/>/local_position/odom</FONT></TD>
+        <TD PORT="mission" WIDTH="180"><FONT POINT-SIZE="14"><B>自主任务</B></FONT><BR/><FONT POINT-SIZE="10">/autonomy/goal<BR/>/autonomy/trajectory<BR/>/autonomy/status</FONT></TD>
+        <TD PORT="command" WIDTH="180"><FONT POINT-SIZE="14"><B>控制接口</B></FONT><BR/><FONT POINT-SIZE="10">/control/takeoff<BR/>/control/land / RTL<BR/>轨迹 Action</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  modules [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#B8C9D3" CELLBORDER="0" CELLSPACING="7" CELLPADDING="11" BGCOLOR="#E7EDF1">
+      <TR><TD COLSPAN="5" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>业务节点</B></FONT></TD></TR>
+      <TR>
+        <TD PORT="perception" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>感知</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">YOLO / VLM<BR/>拍照 / 摘要</FONT></TD>
+        <TD PORT="autonomy" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>自主规划</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">融合 / 避障<BR/>局部重规划</FONT></TD>
+        <TD PORT="control" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>飞行控制</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">Action Server<BR/>Offboard 跟踪</FONT></TD>
+        <TD PORT="agent" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>任务 Agent</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">Skills / Workflow<BR/>状态验证</FONT></TD>
+        <TD PORT="web" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>Web 网关</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">HTTP / WebSocket<BR/>图像压缩传输</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  output [shape=plain, label=<
+    <TABLE BORDER="1" COLOR="#AEC5C1" CELLBORDER="0" CELLSPACING="10" CELLPADDING="12" BGCOLOR="#E1EEEB">
+      <TR><TD COLSPAN="3" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>输出与闭环</B></FONT></TD></TR>
+      <TR>
+        <TD WIDTH="230" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>PX4 控制设定值</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">位置 / 速度 / 航向 setpoint</FONT></TD>
+        <TD WIDTH="230" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>地面站实时态势</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">状态、告警、RGB、深度、点云</FONT></TD>
+        <TD WIDTH="230" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>任务证据与报告</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">执行结果、截图、日志、Mission 报告</FONT></TD>
+      </TR>
+    </TABLE>
+  >];
+
+  title -> source [style=invis, weight=10];
+  source:airsim:s -> transport:bridge:n;
+  source:px4:s -> transport:xrce:n;
+  transport:bridge:s -> bus:image:n;
+  transport:xrce:s -> bus:flight:n;
+  bus:image:s -> modules:perception:n;
+  bus:image:s -> modules:autonomy:n;
+  bus:flight:s -> modules:control:n;
+  bus:mission:s -> modules:autonomy:n;
+  bus:command:s -> modules:agent:n;
+  bus:image:s -> modules:web:n;
+  modules:perception:s -> output;
+  modules:autonomy:s -> output;
+  modules:control:s -> output;
+  modules:agent:s -> output;
+  modules:web:s -> output;
+}

@@ -6,7 +6,8 @@ import unittest
 from aeromind_agent_gateway.ros_state import RosStateBridge
 from aeromind_agent_gateway.skill_registry import build_skill, skill_catalog
 from aeromind_agent_gateway.ros_state import _action_task
-from aeromind_agent_gateway.workflow import validate_workflow
+from aeromind_agent_gateway.capability_registry import capability_catalog
+from aeromind_agent_gateway.workflow import validate_workflow, workflow_json_schema
 
 
 class FakePublisher:
@@ -23,12 +24,9 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
             "flight.square",
             {"side_length": 8, "altitude": 6, "land_after": True},
         )
-        moves = [
-            step["args"]["direction"]
-            for step in workflow["steps"]
-            if step["action"] == "move"
-        ]
-        self.assertEqual(moves, ["forward", "right", "backward", "left"])
+        path = next(step for step in workflow["steps"] if step["action"] == "follow_waypoints")
+        self.assertEqual(len(path["args"]["points"]), 4)
+        self.assertEqual(path["args"]["points"][2]["forward_m"], -8.0)
         self.assertEqual(workflow["steps"][0]["condition"], "if_not_airborne")
         self.assertEqual(workflow["steps"][-1]["action"], "land")
         self.assertEqual(skill_catalog()[0]["name"], "flight.square")
@@ -68,7 +66,7 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
 
     def test_skill_catalog_is_loaded_from_manifests_with_parameters(self):
         skills = {item["name"]: item for item in skill_catalog()}
-        self.assertEqual(skills["flight.square"]["version"], "2.0.0")
+        self.assertEqual(skills["flight.square"]["version"], "3.0.0")
         self.assertIn("side_length", skills["flight.square"]["parameters"])
         with self.assertRaises(ValueError):
             build_skill("flight.square", {"side_length": 10, "unknown": True})
@@ -81,6 +79,93 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                     "steps": [{"id": "shell", "action": "bash", "args": {}}],
                 }
             )
+
+    def test_repeat_block_expands_into_bounded_sequential_steps(self):
+        workflow = validate_workflow(
+            {
+                "name": "重复巡检",
+                "steps": [
+                    {
+                        "id": "scan",
+                        "repeat": {
+                            "count": 2,
+                            "steps": [
+                                {
+                                    "id": "move",
+                                    "action": "move",
+                                    "args": {"direction": "forward", "distance": 5},
+                                },
+                                {"id": "capture", "action": "capture_image"},
+                            ],
+                        },
+                    },
+                    {
+                        "id": "report",
+                        "action": "mission_report",
+                        "depends_on": ["scan"],
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual(
+            [step["id"] for step in workflow["steps"]],
+            [
+                "scan-1-move",
+                "scan-1-capture",
+                "scan-2-move",
+                "scan-2-capture",
+                "report",
+            ],
+        )
+        self.assertEqual(
+            workflow["steps"][2]["depends_on"], ["scan-1-capture"]
+        )
+        self.assertEqual(
+            workflow["steps"][-1]["depends_on"], ["scan-2-capture"]
+        )
+
+    def test_waypoint_primitive_is_validated_and_cannot_auto_retry(self):
+        workflow = validate_workflow(
+            {
+                "name": "三角形",
+                "steps": [
+                    {
+                        "id": "path",
+                        "action": "follow_waypoints",
+                        "args": {
+                            "points": [
+                                {"forward_m": 8, "right_m": 4},
+                                {"forward_m": 0, "right_m": 8},
+                                {"forward_m": -8, "right_m": -4},
+                            ]
+                        },
+                    }
+                ],
+            }
+        )
+        self.assertEqual(len(workflow["steps"][0]["args"]["points"]), 3)
+        with self.assertRaisesRegex(ValueError, "不允许自动重试"):
+            validate_workflow(
+                {
+                    "name": "错误重试",
+                    "steps": [
+                        {
+                            "action": "follow_waypoints",
+                            "args": {"points": [{"forward_m": 2}]},
+                            "retries": 1,
+                        }
+                    ],
+                }
+            )
+
+    def test_model_schema_and_capability_catalog_share_action_definitions(self):
+        schema_text = str(workflow_json_schema())
+        self.assertIn("follow_waypoints", schema_text)
+        self.assertIn("analyze_image", schema_text)
+        capabilities = {item["name"]: item for item in capability_catalog()}
+        self.assertIn("parameters", capabilities["flight.follow_waypoints"])
+        self.assertIn("preconditions", capabilities["perception.semantic_image"])
         with self.assertRaises(ValueError):
             validate_workflow(
                 {
@@ -298,6 +383,144 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["success"])
         self.assertTrue(result["physical_complete"])
         self.assertEqual(events[-1][0], "completed")
+
+    async def test_generic_waypoint_vlm_wait_and_report_primitives_execute(self):
+        bridge = self._bridge()
+        waypoint_requests = []
+
+        async def execute_waypoints(args, progress):
+            waypoint_requests.append(args)
+            return {
+                "success": True,
+                "physical_complete": True,
+                "message": "Action done",
+                "completed_waypoints": len(args["points"]),
+            }
+
+        async def analyze(prompt):
+            return {
+                "success": True,
+                "message": "VLM 完成",
+                "source": "vlm",
+                "prompt": prompt,
+            }
+
+        bridge._execute_waypoint_action = execute_waypoints
+        bridge.analyze_current_image = analyze
+
+        async def progress(_phase, _details):
+            return None
+
+        result = await bridge._execute_workflow(
+            {
+                "name": "通用组合任务",
+                "steps": [
+                    {
+                        "id": "path",
+                        "action": "follow_waypoints",
+                        "args": {
+                            "points": [
+                                {"forward_m": 2},
+                                {"right_m": 2},
+                            ]
+                        },
+                    },
+                    {
+                        "id": "wait",
+                        "action": "wait",
+                        "args": {"duration_sec": 0.1},
+                        "depends_on": ["path"],
+                    },
+                    {
+                        "id": "vision",
+                        "action": "analyze_image",
+                        "args": {"prompt": "检查画面中是否有人"},
+                        "depends_on": ["wait"],
+                    },
+                    {
+                        "id": "report",
+                        "action": "mission_report",
+                        "depends_on": ["vision"],
+                    },
+                ],
+            },
+            progress,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(len(waypoint_requests), 1)
+        self.assertEqual(len(waypoint_requests[0]["points"]), 2)
+        self.assertEqual(result["step_results"]["vision"]["source"], "vlm")
+        self.assertIn("snapshot", result["step_results"]["report"])
+
+    async def test_vlm_semantic_and_risk_conditions_select_safe_branch(self):
+        bridge = self._bridge()
+        called = []
+
+        async def analyze(_prompt):
+            return {
+                "success": True,
+                "message": "分析完成",
+                "source": "vlm",
+                "risk_level": "high",
+                "objects": [{"name": "person", "confidence": 0.8}],
+            }
+
+        async def execute(action, args, progress):
+            called.append(action)
+            return {"success": True, "physical_complete": True, "message": "done"}
+
+        bridge.analyze_current_image = analyze
+        bridge.execute_confirmed_action = execute
+
+        async def progress(_phase, _details):
+            return None
+
+        result = await bridge._execute_workflow(
+            {
+                "name": "VLM 风险分支",
+                "steps": [
+                    {
+                        "id": "vision",
+                        "action": "analyze_image",
+                        "args": {"prompt": "分析人员与飞行风险"},
+                    },
+                    {
+                        "id": "hover-person",
+                        "action": "hover",
+                        "condition": {
+                            "type": "semantic_target_detected",
+                            "step_id": "vision",
+                            "target": "人",
+                        },
+                    },
+                    {
+                        "id": "capture-high-risk",
+                        "action": "capture_image",
+                        "condition": {
+                            "type": "risk_level_is",
+                            "step_id": "vision",
+                            "value": "high",
+                        },
+                    },
+                    {
+                        "id": "move-if-clear",
+                        "action": "move",
+                        "args": {"direction": "forward", "distance": 5},
+                        "condition": {
+                            "type": "semantic_target_not_detected",
+                            "step_id": "vision",
+                            "target": "person",
+                        },
+                    },
+                ],
+            },
+            progress,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(called, ["hover", "capture_image"])
+        self.assertTrue(result["step_results"]["move-if-clear"]["skipped"])
 
     async def test_failed_move_verification_cancels_active_autonomy_goal(self):
         bridge = self._bridge()

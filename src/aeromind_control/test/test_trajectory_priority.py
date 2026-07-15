@@ -7,7 +7,9 @@ from aeromind_control.control_node import (
     interpolate_trajectory,
     px4_gps_fix_to_drone_fix,
     should_accept_replan,
+    should_accept_trajectory_update,
     trajectory_handoff_elapsed,
+    trajectory_update_mode,
 )
 from aeromind_control.px4_control import _state_to_trajectory_setpoint
 
@@ -64,6 +66,32 @@ class TrajectoryPriorityTest(unittest.TestCase):
         self.assertTrue(should_accept_replan(False, 0.0, 0.4))
         self.assertFalse(should_accept_replan(True, 0.1, 0.4))
         self.assertTrue(should_accept_replan(True, 0.4, 0.4))
+
+    def test_same_long_trajectory_id_refreshes_without_resetting_time(self):
+        self.assertEqual(
+            trajectory_update_mode("mission-1", "mission-1", False),
+            "heartbeat",
+        )
+        self.assertEqual(
+            trajectory_update_mode("mission-1", "mission-1", True),
+            "replace",
+        )
+        self.assertEqual(
+            trajectory_update_mode("mission-1", "mission-2", False),
+            "replace",
+        )
+
+    def test_replan_reset_is_not_classified_as_heartbeat(self):
+        self.assertEqual(
+            trajectory_update_mode("mission-1", "mission-1", True),
+            "replace",
+        )
+        self.assertTrue(
+            should_accept_trajectory_update(True, True, 0.05, 0.6)
+        )
+        self.assertFalse(
+            should_accept_trajectory_update(False, True, 0.05, 0.6)
+        )
 
     def test_trajectory_is_interpolated_continuously(self):
         def point(t, position, velocity, acceleration, yaw=0.0):

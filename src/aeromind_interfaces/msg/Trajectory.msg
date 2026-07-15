@@ -4,4 +4,7 @@ aeromind_interfaces/TrajectoryPoint[] points
 bool collision_free
 string planner_mode
 string message
-
+# Stable identity for a long trajectory. A repeated message with the same ID
+# refreshes its heartbeat without resetting the controller time axis.
+string trajectory_id
+bool reset_time

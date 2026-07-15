@@ -142,6 +142,16 @@ def generate_launch_description():
         default_value="3.5",
         description="深度数据超时后禁止继续自主飞行的时间阈值",
     )
+    autonomy_waypoint_lookahead_arg = DeclareLaunchArgument(
+        "autonomy_waypoint_lookahead_sec",
+        default_value="3.0",
+        description="连续多航点轨迹用于触发局部重规划的前视时间窗",
+    )
+    autonomy_waypoint_max_replans_arg = DeclareLaunchArgument(
+        "autonomy_waypoint_max_replans",
+        default_value="12",
+        description="单次连续多航点任务允许的最大局部重规划次数",
+    )
     autonomy_odom_topic_arg = DeclareLaunchArgument(
         "autonomy_odom_topic",
         default_value="/sensor/odometry",
@@ -270,6 +280,8 @@ def generate_launch_description():
             {"map_decay_sec": ParameterValue(LaunchConfiguration("autonomy_map_decay_sec"), value_type=float)},
             {"odom_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_odom_timeout_sec"), value_type=float)},
             {"depth_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_depth_timeout_sec"), value_type=float)},
+            {"waypoint_collision_lookahead_sec": ParameterValue(LaunchConfiguration("autonomy_waypoint_lookahead_sec"), value_type=float)},
+            {"waypoint_max_replans": ParameterValue(LaunchConfiguration("autonomy_waypoint_max_replans"), value_type=int)},
             {"max_acceleration": ParameterValue(LaunchConfiguration("autonomy_accel_limit"), value_type=float)},
             {"min_flight_altitude": ParameterValue(LaunchConfiguration("autonomy_min_altitude"), value_type=float)},
             {"odom_topic": LaunchConfiguration("autonomy_odom_topic")},
@@ -347,6 +359,8 @@ def generate_launch_description():
         autonomy_map_decay_arg,
         autonomy_odom_timeout_arg,
         autonomy_depth_timeout_arg,
+        autonomy_waypoint_lookahead_arg,
+        autonomy_waypoint_max_replans_arg,
         autonomy_odom_topic_arg,
         autonomy_world_cloud_topic_arg,
         autonomy_max_position_variance_arg,

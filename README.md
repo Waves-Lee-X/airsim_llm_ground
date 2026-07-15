@@ -404,6 +404,7 @@ Web 后端 HTTP API：
 Depth / registered PointCloud2 / VIO Odometry / Goal
   → Rolling World-frame ESDF-style Voxel Map
   → Kinodynamic Replanning
+  → Single-goal Replan or Multi-waypoint ROS 2 Action
   → Seventh-order Minimum-Snap Trajectory
   → /autonomy/trajectory
   → control_node velocity / position setpoint
@@ -416,7 +417,7 @@ Depth / registered PointCloud2 / VIO Odometry / Goal
 | 定位 | 标准 `nav_msgs/Odometry`，默认 `/sensor/odometry`，可切换 VIO/SLAM topic | VINS-Fusion、OpenVINS、ORB-SLAM3 等外部定位器 |
 | 建图 | 深度点经机体姿态变换到世界系；滚动体素、射线清障、时间衰减；可融合世界系注册点云 | Voxblox / FIESTA / NVBlox 的预计算 ESDF |
 | 重规划 | 动力学受限角度扇区运动基元，优先选择安全候选，再按进度、clearance 和连续性评分 | Fast-Planner / EGO-Planner 全局一致重规划 |
-| 轨迹 | 七次单段 minimum-snap，端点速度、加速度和 jerk 为零 | 带连续航点约束的多段 minimum-snap/B-spline 优化 |
+| 轨迹 | 单目标局部重规划；ROS 2 Action 多航点轨迹具有连续位置、速度和加速度，中间航点不停车 | 全局耦合 minimum-snap 二次规划/B-spline 优化 |
 | 控制 | `control_node` 执行 `/autonomy/trajectory`，带速度限幅、加速度平滑、高度保护和控制互斥 | PX4 trajectory setpoint 轨迹跟踪 |
 
 当前已补齐的飞行保护逻辑：
@@ -435,6 +436,8 @@ Depth / registered PointCloud2 / VIO Odometry / Goal
 - 安全候选优先：直线路径碰撞时会优先选择通过 clearance 校验的侧绕或爬升候选，不再让危险直线分数压过安全绕行。
 - 控制保护：自主轨迹执行有速度上限、加速度平滑、最低高度保护；降落期间忽略自主轨迹，起飞期间不被 `hover_no_goal` 打断。
 - 取消任务：Web、Agent 或命令行可发布 `/autonomy/cancel`，清空当前自主目标并进入悬停。
+- 连续多航点：`/autonomy/follow_waypoints` 使用 ROS 2 Action 管理受理、实时反馈、取消和结果；轨迹 ID 心跳不会重置控制器时间轴。
+- 连续绕障拼接：Action 对未来 3 秒轨迹执行 ESDF 检查；发现碰撞风险后调用 kinodynamic 局部重规划，保留安全短航段，并从其末端向未完成原始航点重建 Minimum Snap 尾段。
 
 发布接口：
 
@@ -446,6 +449,22 @@ Depth / registered PointCloud2 / VIO Odometry / Goal
 | `/autonomy/cancel` | `std_msgs/Empty` | 取消当前自主目标，进入悬停保持 |
 | `/autonomy/esdf_obstacles` | `sensor_msgs/PointCloud2` | 规划器实际使用的世界系占据体素中心 |
 | `/control/cmd_vel` | `geometry_msgs/Twist` | 仅当 `autonomy_control:=true` 时由 autonomy 节点发布 |
+
+Action 接口：
+
+| Action | 类型 | 说明 |
+|------|------|------|
+| `/autonomy/follow_waypoints` | `aeromind_interfaces/action/FollowWaypoints` | 按任务开始时机头方向解释前/右/上相对航段，连续执行多航点 Minimum Snap 轨迹 |
+
+无人机已起飞、里程计和深度数据正常后，可独立测试一个 5 米正方形：
+
+```bash
+ros2 action send_goal --feedback /autonomy/follow_waypoints \
+  aeromind_interfaces/action/FollowWaypoints \
+  "{relative_waypoints: [{x: 5.0, y: 0.0, z: 0.0}, {x: 0.0, y: 5.0, z: 0.0}, {x: -5.0, y: 0.0, z: 0.0}, {x: 0.0, y: -5.0, z: 0.0}], cruise_speed: 1.2}"
+```
+
+这里 `x/y/z` 分别表示前/右/上，每个数组元素是相对上一航点的航段。Action 会持续检查 ESDF 与传感器新鲜度；发现前视时间窗内存在风险时，先生成安全局部绕行段，再重拼接剩余原始航点。只有找不到安全运动基元、传感器超时、任务超时或超过重规划次数时才中止并悬停。
 
 启动时默认会运行自主避障状态机，并让 `control_node` 订阅执行 `/autonomy/trajectory`。`autonomy_node` 默认不会直接发布 `/control/cmd_vel`，避免和轨迹执行通道抢控制：
 
@@ -468,6 +487,8 @@ ros2 launch aeromind_bringup aeromind_px4.launch.py
 | `autonomy_max_depth_m` | `18.0` | 深度避障最大有效距离 |
 | `autonomy_map_radius_m` | `24.0` | 世界坐标滚动地图半径，单位 m |
 | `autonomy_map_decay_sec` | `4.0` | 未再次观测障碍体素的保留时间 |
+| `autonomy_waypoint_lookahead_sec` | `3.0` | 连续多航点碰撞检测的前视时间窗，单位秒 |
+| `autonomy_waypoint_max_replans` | `12` | 单次 Action 最多允许的局部重规划次数 |
 | `autonomy_odom_timeout_sec` | `1.0` | 里程计超时后进入悬停的阈值 |
 | `autonomy_depth_timeout_sec` | `3.5` | 深度/注册点云超时后禁止盲飞的阈值 |
 | `autonomy_odom_topic` | `/sensor/odometry` | PX4、VIO 或 SLAM 的里程计输入 |
@@ -1534,6 +1555,8 @@ aeromind_ws/
 │   ├── Claude智能体与飞书升级方案.md  # Agent SDK 与飞书升级方案
 │   ├── 客户汇报项目说明.md           # 面向客户的项目汇报底稿
 │   ├── 大模型能力应用与升级路线.md    # LLM/VLM 已实现能力与后续路线
+│   ├── 项目总结、不足与大模型升级方向.md # 当前能力、成熟度、不足和分阶段路线
+│   ├── 项目详细架构图与模块图.md      # 部署、通信、数据流和任务时序图
 │   ├── 当前系统状态与升级交接说明.md  # 当前能力和后续升级基线
 │   ├── 智能无人机系统升级计划.md      # 智能化升级阶段计划
 │   ├── 系统使用手册.md                # 启动、操作、演示和故障排查
@@ -1548,6 +1571,8 @@ aeromind_ws/
 - [系统使用手册](doc/系统使用手册.md) — 完整启动、界面操作、对话确认、演示流程和故障排查
 - [项目原理、架构与操作手册](doc/项目原理架构与操作手册.md)
 - [大模型能力应用与升级路线](doc/大模型能力应用与升级路线.md) — 当前 LLM/VLM 应用、演示证据、安全边界和后续升级顺序
+- [项目总结、不足与大模型升级方向](doc/项目总结、不足与大模型升级方向.md) — 当前完整能力、成熟度、不足、风险和分阶段升级路线
+- [项目详细架构图与模块图](doc/项目详细架构图与模块图.md) — 部署、ROS 通信、传感器、Agent、自主规划、控制和任务时序图
 - [当前系统现状与升级交接说明](doc/当前系统状态与升级交接说明.md)
 - [PX4 + AirSim 配置详细说明](doc/PX4与AirSim配置说明.md) — 网络配置、AirSim settings.json、PX4 参数详解
 - [Claude Agent SDK 多端升级方案](doc/Claude智能体与飞书升级方案.md)

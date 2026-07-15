@@ -1,0 +1,15 @@
+# Relative waypoint segments in the user-facing body frame at goal start.
+# x: forward, y: right, z: up, all in metres.
+geometry_msgs/Vector3[] relative_waypoints
+float32 cruise_speed
+---
+bool success
+string message
+uint32 completed_waypoints
+geometry_msgs/Point final_position
+---
+uint32 current_waypoint
+float32 remaining_distance
+float32 progress
+string state
+float32 nearest_obstacle

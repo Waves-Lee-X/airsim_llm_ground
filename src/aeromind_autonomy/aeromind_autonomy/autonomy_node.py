@@ -16,9 +16,13 @@ from __future__ import annotations
 import json
 import math
 import struct
+import threading
 import time
+import uuid
 
 import rclpy
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
 from geometry_msgs.msg import PoseStamped, Twist, Vector3
 from nav_msgs.msg import Odometry
 from rclpy.duration import Duration
@@ -29,11 +33,13 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Empty, Header, String
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from aeromind_interfaces.action import FollowWaypoints
 from aeromind_interfaces.msg import AutonomyStatus, Trajectory, TrajectoryPoint
 
 from .frame_transform import body_to_world
-from .kinodynamic_replanner import KinodynamicReplanner
+from .kinodynamic_replanner import KinodynamicReplanner, ReplanResult
 from .local_esdf import LocalEsdfMap
+from .minimum_snap import sample_minimum_snap_waypoints, splice_replanned_trajectory
 from .odometry_quality import odometry_quality_issue
 
 
@@ -85,6 +91,11 @@ class AutonomyNode(Node):
         self.declare_parameter("odom_jump_reset_m", 3.0)
         self.declare_parameter("max_position_variance", 2.0)
         self.declare_parameter("max_orientation_variance", 0.5)
+        self.declare_parameter("waypoint_sample_dt", 0.1)
+        self.declare_parameter("waypoint_max_count", 64)
+        self.declare_parameter("waypoint_timeout_margin_sec", 20.0)
+        self.declare_parameter("waypoint_collision_lookahead_sec", 3.0)
+        self.declare_parameter("waypoint_max_replans", 12)
 
         self._enabled = bool(self.get_parameter("enabled").value)
         self._publish_control_cmd = bool(self.get_parameter("publish_control_cmd").value)
@@ -120,6 +131,10 @@ class AutonomyNode(Node):
         self._recovery_strategy = ""
         self._latest_image_analysis = None
         self._last_map_publish = 0.0
+        self._action_lock = threading.RLock()
+        self._map_lock = threading.RLock()
+        self._active_waypoint_action = None
+        self._waypoint_goal_reserved = False
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
@@ -189,6 +204,15 @@ class AutonomyNode(Node):
             10,
         )
         self._cmd_pub = self.create_publisher(Twist, control_topic, 10)
+        self._waypoint_action_server = ActionServer(
+            self,
+            FollowWaypoints,
+            "/autonomy/follow_waypoints",
+            execute_callback=self._execute_waypoints,
+            goal_callback=self._waypoint_goal_callback,
+            cancel_callback=self._waypoint_cancel_callback,
+            callback_group=ReentrantCallbackGroup(),
+        )
 
         self._timer = self.create_timer(0.1, self._timer_callback)
         self.get_logger().info(
@@ -217,13 +241,15 @@ class AutonomyNode(Node):
             self._previous_odom_position is not None
             and math.dist(position, self._previous_odom_position) > self._odom_jump_reset_m
         ):
-            self._esdf.clear()
+            with self._map_lock:
+                self._esdf.clear()
             self.get_logger().warn("检测到里程计位姿跳变，已清空局部障碍地图")
         self._latest_odom = msg
         self._latest_odom_received = time.monotonic()
         self._previous_odom_position = position
 
     def _goal_callback(self, msg: PoseStamped):
+        self._request_waypoint_action_stop("新的单点目标已接管控制")
         self._goal_world = (
             float(msg.pose.position.x),
             float(msg.pose.position.y),
@@ -242,6 +268,7 @@ class AutonomyNode(Node):
         )
 
     def _cancel_callback(self, _msg: Empty):
+        self._request_waypoint_action_stop("收到 /autonomy/cancel")
         self._goal_world = None
         self._primary_goal_world = None
         self._blocked_since = None
@@ -303,11 +330,12 @@ class AutonomyNode(Node):
                 if minimum_z <= point[2] <= maximum_z
             ]
         received = time.monotonic()
-        self._esdf.insert_points(
-            world_points,
-            stamp=received,
-            sensor_origin=sensor_origin,
-        )
+        with self._map_lock:
+            self._esdf.insert_points(
+                world_points,
+                stamp=received,
+                sensor_origin=sensor_origin,
+            )
         self._latest_depth_stamp = msg.header.stamp
         self._latest_depth_received = received
 
@@ -354,32 +382,47 @@ class AutonomyNode(Node):
                 point for point in points if minimum_z <= point[2] <= maximum_z
             ]
         received = time.monotonic()
-        self._esdf.insert_points(points, stamp=received)
+        with self._map_lock:
+            self._esdf.insert_points(points, stamp=received)
         self._latest_depth_received = received
 
     def _timer_callback(self):
         position = self._world_position()
         velocity = self._local_velocity()
         goal = self._goal_world
-        self._esdf.prune(position, stamp=time.monotonic())
         vertical_band = self._active_vertical_band(position, goal)
-        if vertical_band is not None:
-            self._esdf.prune_height_band(*vertical_band)
+        with self._map_lock:
+            self._esdf.prune(position, stamp=time.monotonic())
+            if vertical_band is not None:
+                self._esdf.prune_height_band(*vertical_band)
+
+        with self._action_lock:
+            waypoint_active = (
+                self._active_waypoint_action is not None
+                or self._waypoint_goal_reserved
+            )
+        if waypoint_active:
+            self._publish_map_if_due()
+            return
 
         if not self._enabled:
-            result = self._replanner.replan(self._esdf, position, velocity, None)
+            with self._map_lock:
+                result = self._replanner.replan(self._esdf, position, velocity, None)
             result.state = "DISABLED"
             result.message = "自主避障未启用，仅发布状态"
         elif not self._odom_fresh():
-            result = self._sensor_wait_result(
-                position, velocity, "里程计不可用或已超时，保持悬停"
-            )
+            with self._map_lock:
+                result = self._sensor_wait_result(
+                    position, velocity, "里程计不可用或已超时，保持悬停"
+                )
         elif goal is not None and self._require_depth and not self._depth_fresh():
-            result = self._sensor_wait_result(
-                position, velocity, "深度数据不可用或已超时，禁止盲飞"
-            )
+            with self._map_lock:
+                result = self._sensor_wait_result(
+                    position, velocity, "深度数据不可用或已超时，禁止盲飞"
+                )
         else:
-            result = self._replanner.replan(self._esdf, position, velocity, goal)
+            with self._map_lock:
+                result = self._replanner.replan(self._esdf, position, velocity, goal)
 
         result = self._apply_task_lifecycle(result)
         self._publish_trajectory(result)
@@ -579,13 +622,15 @@ class AutonomyNode(Node):
         msg.angular.z = 0.0
         self._cmd_pub.publish(msg)
 
-    def _publish_trajectory(self, result):
+    def _publish_trajectory(self, result, trajectory_id="", reset_time=False):
         msg = Trajectory()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self._latest_odom.header.frame_id if self._latest_odom else "map"
         msg.collision_free = bool(result.collision_free)
         msg.planner_mode = result.strategy
         msg.message = result.message
+        msg.trajectory_id = str(trajectory_id)
+        msg.reset_time = bool(reset_time)
         for sample in result.trajectory:
             point = TrajectoryPoint()
             sec = int(sample["t"])
@@ -602,13 +647,377 @@ class AutonomyNode(Node):
             msg.points.append(point)
         self._trajectory_pub.publish(msg)
 
+    def _waypoint_goal_callback(self, goal_request):
+        waypoint_count = len(goal_request.relative_waypoints)
+        maximum = int(self.get_parameter("waypoint_max_count").value)
+        with self._action_lock:
+            busy = self._active_waypoint_action is not None or self._waypoint_goal_reserved
+        if busy or waypoint_count < 1 or waypoint_count > maximum:
+            return GoalResponse.REJECT
+        if not math.isfinite(float(goal_request.cruise_speed)) or goal_request.cruise_speed <= 0.0:
+            return GoalResponse.REJECT
+        for waypoint in goal_request.relative_waypoints:
+            if not all(math.isfinite(value) for value in (waypoint.x, waypoint.y, waypoint.z)):
+                return GoalResponse.REJECT
+        with self._action_lock:
+            self._waypoint_goal_reserved = True
+        return GoalResponse.ACCEPT
+
+    def _waypoint_cancel_callback(self, _goal_handle):
+        self._request_waypoint_action_stop("Action 客户端请求取消")
+        return CancelResponse.ACCEPT
+
+    def _request_waypoint_action_stop(self, reason):
+        with self._action_lock:
+            if self._active_waypoint_action is not None:
+                self._active_waypoint_action["stop_reason"] = str(reason)
+
+    def _execute_waypoints(self, goal_handle):
+        result = FollowWaypoints.Result()
+        if not self._enabled or not self._odom_fresh():
+            result.message = "自主系统未启用或里程计不可用"
+            self._release_waypoint_reservation()
+            goal_handle.abort()
+            return result
+        if self._require_depth and not self._depth_fresh():
+            result.message = "深度数据不可用，拒绝连续多航点盲飞"
+            self._release_waypoint_reservation()
+            goal_handle.abort()
+            return result
+
+        start = self._world_position()
+        yaw = self._odom_yaw(self._latest_odom)
+        world_waypoints = self._relative_waypoints_to_world(
+            start, yaw, goal_handle.request.relative_waypoints
+        )
+        try:
+            samples, waypoint_times = sample_minimum_snap_waypoints(
+                start,
+                world_waypoints,
+                min(float(goal_handle.request.cruise_speed), self._replanner.max_speed),
+                sample_dt=float(self.get_parameter("waypoint_sample_dt").value),
+                start_velocity=self._local_velocity(),
+            )
+        except ValueError as exc:
+            result.message = str(exc)
+            self._release_waypoint_reservation()
+            goal_handle.abort()
+            return result
+
+        trajectory_id = f"waypoints-{uuid.uuid4().hex}"
+        started_at = time.monotonic()
+        planned_duration = waypoint_times[-1]
+        timeout_margin = float(self.get_parameter("waypoint_timeout_margin_sec").value)
+        mission_deadline = started_at + max(
+            planned_duration * 3.0,
+            planned_duration + timeout_margin,
+        )
+        state = {
+            "id": trajectory_id,
+            "stop_reason": "",
+            "samples": samples,
+            "waypoint_times": waypoint_times,
+            "world_waypoints": world_waypoints,
+            "cruise_speed": min(
+                float(goal_handle.request.cruise_speed), self._replanner.max_speed
+            ),
+            "started_at": started_at,
+            "mission_deadline": mission_deadline,
+            "completed": 0,
+            "timeline_completed": 0,
+            "progress": 0.0,
+            "replan_count": 0,
+            "strategy": "minimum_snap_waypoints",
+            "reset_time": True,
+        }
+        with self._action_lock:
+            self._active_waypoint_action = state
+            self._waypoint_goal_reserved = False
+        self._goal_world = world_waypoints[-1]
+        self._primary_goal_world = world_waypoints[-1]
+        self.get_logger().info(
+            f"开始连续多航点 Action: {len(world_waypoints)} 点, "
+            f"duration={waypoint_times[-1]:.2f}s, id={trajectory_id}"
+        )
+
+        try:
+            while rclpy.ok():
+                now = time.monotonic()
+                elapsed = now - state["started_at"]
+                samples = state["samples"]
+                with self._action_lock:
+                    stop_reason = state["stop_reason"]
+                if goal_handle.is_cancel_requested or stop_reason:
+                    result.message = stop_reason or "连续多航点任务已取消"
+                    result.completed_waypoints = state["completed"]
+                    self._set_result_position(result, self._world_position())
+                    if goal_handle.is_cancel_requested:
+                        goal_handle.canceled()
+                    else:
+                        goal_handle.abort()
+                    return result
+                if not self._odom_fresh() or (self._require_depth and not self._depth_fresh()):
+                    result.message = "执行中传感器数据超时，已切换悬停"
+                    result.completed_waypoints = state["completed"]
+                    self._set_result_position(result, self._world_position())
+                    goal_handle.abort()
+                    return result
+
+                position = self._world_position()
+                self._update_completed_waypoints(state, position)
+                clearance = self._trajectory_clearance_window(samples, position, elapsed)
+                if clearance < self._replanner.safety_radius:
+                    maximum = int(self.get_parameter("waypoint_max_replans").value)
+                    if state["replan_count"] >= maximum:
+                        result.message = f"局部重规划已达到上限 {maximum} 次，已悬停"
+                        result.completed_waypoints = state["completed"]
+                        self._set_result_position(result, position)
+                        goal_handle.abort()
+                        return result
+                    self._publish_waypoint_feedback(
+                        goal_handle,
+                        state,
+                        clearance,
+                        "REPLANNING",
+                    )
+                    self._publish_status(
+                        self._waypoint_status_result(
+                            state,
+                            clearance,
+                            math.dist(position, world_waypoints[-1]),
+                            "REPLANNING",
+                        )
+                    )
+                    replanned, message, new_clearance = self._replan_waypoint_route(state)
+                    if not replanned:
+                        result.message = message
+                        result.completed_waypoints = state["completed"]
+                        self._set_result_position(result, position)
+                        goal_handle.abort()
+                        return result
+                    self._publish_waypoint_trajectory(
+                        state["samples"],
+                        trajectory_id,
+                        reset_time=True,
+                        clearance=new_clearance,
+                        strategy=state["strategy"],
+                    )
+                    state["reset_time"] = False
+                    continue
+
+                self._publish_waypoint_trajectory(
+                    samples,
+                    trajectory_id,
+                    reset_time=state["reset_time"],
+                    clearance=clearance,
+                    strategy=state["strategy"],
+                )
+                state["reset_time"] = False
+                final_distance = math.dist(self._world_position(), world_waypoints[-1])
+                self._publish_waypoint_feedback(
+                    goal_handle, state, clearance, "TRACKING", final_distance
+                )
+
+                status = self._waypoint_status_result(
+                    state, clearance, final_distance, "TRACKING"
+                )
+                self._publish_status(status)
+
+                speed = math.sqrt(sum(value * value for value in self._local_velocity()))
+                if (
+                    state["completed"] >= len(world_waypoints)
+                    and final_distance <= self._replanner.arrival_distance
+                    and speed <= self._replanner.arrival_speed
+                ):
+                    result.success = True
+                    result.message = f"连续多航点任务完成，共 {len(world_waypoints)} 个航点"
+                    result.completed_waypoints = len(world_waypoints)
+                    self._set_result_position(result, self._world_position())
+                    goal_handle.succeed()
+                    return result
+                if now > state["mission_deadline"]:
+                    result.message = "连续多航点任务超过执行时限"
+                    result.completed_waypoints = state["completed"]
+                    self._set_result_position(result, self._world_position())
+                    goal_handle.abort()
+                    return result
+                time.sleep(0.2)
+        finally:
+            with self._action_lock:
+                if self._active_waypoint_action is state:
+                    self._active_waypoint_action = None
+                self._waypoint_goal_reserved = False
+            self._goal_world = None
+            self._primary_goal_world = None
+
+    def _publish_waypoint_trajectory(
+        self, samples, trajectory_id, reset_time, clearance, strategy
+    ):
+        result = ReplanResult(
+            state="TRACKING",
+            strategy=strategy,
+            collision_free=True,
+            target_distance=math.dist(self._world_position(), self._goal_world),
+            nearest_obstacle=clearance,
+            command_velocity=(0.0, 0.0, 0.0),
+            trajectory=samples,
+            message="连续多航点 Minimum Snap 轨迹",
+        )
+        self._publish_trajectory(result, trajectory_id, reset_time)
+
+    def _replan_waypoint_route(self, state):
+        completed = state["completed"]
+        remaining_waypoints = state["world_waypoints"][completed:]
+        if not remaining_waypoints:
+            return False, "没有可重规划的剩余航点", 0.0
+        position = self._world_position()
+        velocity = self._local_velocity()
+        with self._map_lock:
+            local_result = self._replanner.replan(
+                self._esdf, position, velocity, remaining_waypoints[0]
+            )
+        if local_result.state != "TRACKING" or not local_result.collision_free:
+            return (
+                False,
+                f"局部重规划未找到安全绕行轨迹：{local_result.message}",
+                float(local_result.nearest_obstacle),
+            )
+        try:
+            samples, waypoint_times = splice_replanned_trajectory(
+                local_result.trajectory,
+                remaining_waypoints,
+                state["cruise_speed"],
+                sample_dt=float(self.get_parameter("waypoint_sample_dt").value),
+                reached_tolerance=max(0.15, self._replanner.arrival_distance * 0.5),
+            )
+        except ValueError as exc:
+            return False, f"重拼接轨迹失败：{exc}", 0.0
+        clearance = self._trajectory_clearance_window(samples, position, 0.0)
+        if clearance < self._replanner.safety_radius:
+            return (
+                False,
+                f"重拼接轨迹安全距离仍只有 {clearance:.2f} m，已悬停",
+                clearance,
+            )
+        state["samples"] = samples
+        state["waypoint_times"] = waypoint_times
+        state["started_at"] = time.monotonic()
+        state["timeline_completed"] = completed
+        state["replan_count"] += 1
+        state["strategy"] = f"minimum_snap_replan:{local_result.strategy}"
+        state["reset_time"] = True
+        self.get_logger().warn(
+            f"连续航点局部重规划 #{state['replan_count']}: "
+            f"{local_result.strategy}, 剩余原始航点={len(remaining_waypoints)}, "
+            f"clearance={clearance:.2f}m"
+        )
+        return True, local_result.message, clearance
+
+    def _update_completed_waypoints(self, state, position):
+        tolerance = max(0.8, self._replanner.arrival_distance * 1.5)
+        waypoints = state["world_waypoints"]
+        while (
+            state["completed"] < len(waypoints)
+            and math.dist(position, waypoints[state["completed"]]) <= tolerance
+        ):
+            state["completed"] += 1
+
+    def _publish_waypoint_feedback(
+        self, goal_handle, state, clearance, feedback_state, final_distance=None
+    ):
+        total = len(state["world_waypoints"])
+        elapsed = max(0.0, time.monotonic() - state["started_at"])
+        duration = max(0.1, float(state["samples"][-1]["t"]))
+        base = state["timeline_completed"]
+        candidate = (base + min(1.0, elapsed / duration) * (total - base)) / total
+        state["progress"] = max(state["progress"], min(1.0, candidate))
+        feedback = FollowWaypoints.Feedback()
+        feedback.current_waypoint = min(state["completed"] + 1, total)
+        feedback.remaining_distance = float(
+            final_distance
+            if final_distance is not None
+            else math.dist(self._world_position(), state["world_waypoints"][-1])
+        )
+        feedback.progress = float(state["progress"])
+        feedback.state = feedback_state
+        feedback.nearest_obstacle = float(clearance)
+        goal_handle.publish_feedback(feedback)
+
+    def _waypoint_status_result(self, state, clearance, final_distance, status_state):
+        return ReplanResult(
+            state=status_state,
+            strategy=state["strategy"],
+            collision_free=True,
+            target_distance=final_distance,
+            nearest_obstacle=clearance,
+            command_velocity=(0.0, 0.0, 0.0),
+            trajectory=state["samples"],
+            message=(
+                f"连续多航点 {state['completed']}/{len(state['world_waypoints'])}，"
+                f"局部重规划 {state['replan_count']} 次"
+            ),
+        )
+
+    def _release_waypoint_reservation(self):
+        with self._action_lock:
+            self._waypoint_goal_reserved = False
+
+    def _trajectory_clearance_window(self, samples, position, elapsed):
+        lookahead = max(
+            0.5,
+            float(self.get_parameter("waypoint_collision_lookahead_sec").value),
+        )
+        points = [
+            sample["position"]
+            for sample in samples
+            if elapsed - 0.1 <= float(sample["t"]) <= elapsed + lookahead
+            if math.dist(sample["position"], position) >= self._replanner.start_ignore_radius
+        ]
+        with self._map_lock:
+            return self._esdf.trajectory_clearance(
+                points or [position], max_radius=max(4.0, self._replanner.safety_radius * 2.5)
+            )
+
+    @staticmethod
+    def _relative_waypoints_to_world(start, yaw, waypoints):
+        current = tuple(start)
+        result = []
+        forward = (-math.sin(yaw), math.cos(yaw))
+        right = (math.cos(yaw), math.sin(yaw))
+        for point in waypoints:
+            current = (
+                current[0] + forward[0] * point.x + right[0] * point.y,
+                current[1] + forward[1] * point.x + right[1] * point.y,
+                current[2] + point.z,
+            )
+            result.append(current)
+        return result
+
+    @staticmethod
+    def _odom_yaw(msg):
+        orientation = msg.pose.pose.orientation
+        siny = 2.0 * (orientation.w * orientation.z + orientation.x * orientation.y)
+        cosy = 1.0 - 2.0 * (orientation.y * orientation.y + orientation.z * orientation.z)
+        return math.atan2(siny, cosy)
+
+    @staticmethod
+    def _set_result_position(result, position):
+        result.final_position.x = float(position[0])
+        result.final_position.y = float(position[1])
+        result.final_position.z = float(position[2])
+
     def _publish_status(self, result):
         msg = AutonomyStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "base_link"
         msg.enabled = self._enabled
         msg.state = result.state
-        msg.replanning = result.state in ("TRACKING", "BLOCKED", "RECOVERY")
+        msg.replanning = result.state in (
+            "TRACKING",
+            "REPLANNING",
+            "BLOCKED",
+            "RECOVERY",
+        )
         msg.nearest_obstacle_m = float(result.nearest_obstacle)
         msg.target_distance_m = float(result.target_distance)
         msg.active_strategy = result.strategy
@@ -629,9 +1038,9 @@ class AutonomyNode(Node):
         header.frame_id = (
             self._latest_odom.header.frame_id if self._latest_odom else "odom"
         )
-        self._map_pub.publish(
-            point_cloud2.create_cloud_xyz32(header, self._esdf.points())
-        )
+        with self._map_lock:
+            points = self._esdf.points()
+        self._map_pub.publish(point_cloud2.create_cloud_xyz32(header, points))
 
     def _lookup_depth_transform(self, msg: Image):
         target_frame = str(self._latest_odom.header.frame_id).strip()
@@ -730,11 +1139,14 @@ class AutonomyNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = AutonomyNode()
+    executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

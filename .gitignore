@@ -17,7 +17,7 @@ venv/
 build/
 install/
 log/
-
+missions/
 # Logs
 logs/
 *.log

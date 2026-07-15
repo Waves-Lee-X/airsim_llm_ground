@@ -339,11 +339,12 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(action, "workflow")
         self.assertEqual(workflow["steps"][0]["action"], "takeoff")
-        moves = [
-            step for step in workflow["steps"] if step["action"] == "move"
-        ]
-        self.assertEqual(len(moves), 4)
-        self.assertTrue(all(step["args"]["distance"] == 10.0 for step in moves))
+        path = next(
+            step for step in workflow["steps"] if step["action"] == "follow_waypoints"
+        )
+        self.assertEqual(len(path["args"]["points"]), 4)
+        self.assertEqual(path["args"]["points"][0]["forward_m"], 10.0)
+        self.assertEqual(path["args"]["points"][1]["right_m"], 10.0)
 
     def test_square_question_does_not_create_control_fallback(self):
         self.assertIsNone(_deterministic_control_fallback("什么是正方形轨迹？"))

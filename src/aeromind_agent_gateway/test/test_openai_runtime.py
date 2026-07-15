@@ -133,7 +133,7 @@ class OpenAICompatibleRuntimeTest(unittest.IsolatedAsyncioTestCase):
         workflow = controls[0][1]
         self.assertEqual(
             [step["action"] for step in workflow["steps"]],
-            ["takeoff", "move", "move", "move", "move", "land"],
+            ["takeoff", "follow_waypoints", "land"],
         )
 
     async def test_safe_takeoff_creates_check_then_takeoff_workflow(self):

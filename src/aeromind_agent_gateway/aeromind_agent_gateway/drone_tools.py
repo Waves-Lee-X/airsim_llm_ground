@@ -10,7 +10,7 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from .ros_state import RosStateBridge
 from .capability_registry import capability_catalog
 from .skill_registry import build_skill, skill_catalog
-from .workflow import validate_workflow
+from .workflow import validate_workflow, workflow_json_schema
 
 
 def _text_result(value: object) -> dict:
@@ -244,16 +244,8 @@ def create_drone_mcp_server(
 
     @tool(
         "request_workflow",
-        "创建经过白名单校验的多步骤飞行工作流确认请求，最多20步。",
-        {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "steps": {"type": "array", "items": {"type": "object"}},
-            },
-            "required": ["name", "steps"],
-            "additionalProperties": False,
-        },
+        "使用基础动作动态组合任务，支持条件、依赖、循环块和失败策略；创建一次人工确认请求。",
+        workflow_json_schema(),
     )
     async def request_workflow(args):
         return await request("workflow", validate_workflow(args))
@@ -497,16 +489,8 @@ OPENAI_DRONE_TOOLS = [
         "type": "function",
         "function": {
             "name": "request_workflow",
-            "description": "创建最多20步的白名单飞行工作流确认请求。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "steps": {"type": "array", "items": {"type": "object"}},
-                },
-                "required": ["name", "steps"],
-                "additionalProperties": False,
-            },
+            "description": "使用基础动作动态组合任务，支持条件、依赖、循环块和失败策略，并创建一次确认请求。",
+            "parameters": workflow_json_schema(),
         },
     },
 ]

@@ -1,8 +1,8 @@
 name: flight.square
 label: 正方形轨迹
-version: 2.0.0
+version: 3.0.0
 risk_level: high
-description: 必要时起飞，依次飞行四条边，可选择结束后降落。
+description: 必要时起飞，通过 ROS 2 Action 和连续 Minimum Snap 轨迹飞行四条边，可选择结束后降落。
 example_task: 飞一个边长 10 米的正方形轨迹
 workflow_name: "${side_length} 米正方形轨迹"
 parameters:
@@ -18,28 +18,19 @@ workflow:
     condition: if_not_airborne
     retries: 1
     include_if: takeoff_if_needed
-  - id: edge-1
-    label: "正方形第一条边：前进 ${side_length} 米"
-    action: move
-    args: {direction: forward, distance: "${side_length}"}
-  - id: edge-2
-    label: "正方形第二条边：右移 ${side_length} 米"
-    action: move
-    args: {direction: right, distance: "${side_length}"}
-    depends_on: [edge-1]
-  - id: edge-3
-    label: "正方形第三条边：后退 ${side_length} 米"
-    action: move
-    args: {direction: backward, distance: "${side_length}"}
-    depends_on: [edge-2]
-  - id: edge-4
-    label: "正方形第四条边：左移 ${side_length} 米"
-    action: move
-    args: {direction: left, distance: "${side_length}"}
-    depends_on: [edge-3]
+  - id: square-path
+    label: 连续飞行正方形四条边
+    action: follow_waypoints
+    args:
+      cruise_speed: 1.5
+      points:
+        - {forward_m: "${side_length}"}
+        - {right_m: "${side_length}"}
+        - {forward_m: "${-side_length}"}
+        - {right_m: "${-side_length}"}
   - id: land
     label: 正方形轨迹完成后降落
     action: land
-    depends_on: [edge-4]
+    depends_on: [square-path]
     condition: if_airborne
     include_if: land_after

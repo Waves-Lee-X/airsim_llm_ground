@@ -2,6 +2,7 @@ import unittest
 
 from aeromind_autonomy.kinodynamic_replanner import KinodynamicReplanner
 from aeromind_autonomy.local_esdf import LocalEsdfMap
+from aeromind_autonomy.minimum_snap import splice_replanned_trajectory
 
 
 class KinodynamicReplannerTest(unittest.TestCase):
@@ -49,6 +50,20 @@ class KinodynamicReplannerTest(unittest.TestCase):
         self.assertTrue(result.collision_free)
         self.assertNotIn(result.strategy, {"direct_goal", "slow_goal"})
         self.assertGreater(abs(result.command_velocity[1]), 0.2)
+
+        combined, waypoint_times = splice_replanned_trajectory(
+            result.trajectory,
+            [(10.0, 0.0, 2.0)],
+            cruise_speed=1.5,
+            sample_dt=0.1,
+        )
+        lookahead = [
+            sample["position"]
+            for sample in combined
+            if 0.2 <= sample["t"] <= 3.0
+        ]
+        self.assertGreaterEqual(esdf.trajectory_clearance(lookahead), 0.8)
+        self.assertEqual(len(waypoint_times), 1)
 
     def test_arrival_requires_low_speed(self):
         planner = KinodynamicReplanner(min_altitude=0.5)

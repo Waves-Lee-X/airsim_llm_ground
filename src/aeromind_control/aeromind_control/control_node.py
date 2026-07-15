@@ -161,6 +161,24 @@ def should_accept_replan(has_active: bool, active_age_sec: float, interval_sec: 
     return not has_active or active_age_sec >= interval_sec
 
 
+def trajectory_update_mode(active_id: str, incoming_id: str, reset_time: bool) -> str:
+    """Classify a trajectory message as a heartbeat or a new time axis."""
+    if incoming_id and incoming_id == active_id and not reset_time:
+        return "heartbeat"
+    return "replace"
+
+
+def should_accept_trajectory_update(
+    reset_time: bool,
+    has_active: bool,
+    active_age_sec: float,
+    interval_sec: float,
+) -> bool:
+    return bool(reset_time) or should_accept_replan(
+        has_active, active_age_sec, interval_sec
+    )
+
+
 def trajectory_handoff_elapsed(points, reference_state, max_elapsed_sec: float):
     """Find a nearby point on a replacement trajectory for a continuous handoff."""
     if not points or reference_state is None:
@@ -275,6 +293,7 @@ class ControlNode(Node):
         self._active_trajectory = None
         self._active_trajectory_started_at = 0.0
         self._active_trajectory_updated_at = 0.0
+        self._active_trajectory_id = ""
         self._last_autonomy_setpoint = None
         self._last_autonomy_hold_mode = None
         self._last_autonomy_strategy = None
@@ -679,8 +698,16 @@ class ControlNode(Node):
         self._last_autonomy_hold_mode = None
         now = time.monotonic()
         duration = self._trajectory_duration(msg)
+        incoming_id = str(getattr(msg, "trajectory_id", "") or "")
+        reset_time = bool(getattr(msg, "reset_time", False))
+        if trajectory_update_mode(
+            self._active_trajectory_id, incoming_id, reset_time
+        ) == "heartbeat":
+            self._active_trajectory_updated_at = now
+            return
         if self._px4_mode == "px4":
-            if not should_accept_replan(
+            if not should_accept_trajectory_update(
+                reset_time,
                 self._active_trajectory is not None,
                 now - self._active_trajectory_updated_at,
                 self._autonomy_replan_accept_interval_sec,
@@ -692,6 +719,7 @@ class ControlNode(Node):
                 self._autonomy_handoff_max_sec,
             )
             self._active_trajectory = msg
+            self._active_trajectory_id = incoming_id
             self._active_trajectory_started_at = now - handoff_elapsed
             self._active_trajectory_updated_at = now
             self._control_mode = "AUTONOMY"
@@ -728,6 +756,7 @@ class ControlNode(Node):
         self._active_trajectory = None
         self._active_trajectory_started_at = 0.0
         self._active_trajectory_updated_at = 0.0
+        self._active_trajectory_id = ""
         self._last_autonomy_setpoint = None
 
     def _trajectory_tracking_callback(self):
