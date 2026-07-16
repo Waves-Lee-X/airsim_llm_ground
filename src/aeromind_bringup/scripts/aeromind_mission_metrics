@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from aeromind_bringup_tools.mission_metrics import main
+
+raise SystemExit(main())

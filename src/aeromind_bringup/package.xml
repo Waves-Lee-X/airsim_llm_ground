@@ -8,6 +8,8 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <test_depend>ament_cmake_test</test_depend>
 
   <exec_depend>aeromind_bridge</exec_depend>
   <exec_depend>aeromind_perception</exec_depend>
