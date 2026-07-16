@@ -1293,6 +1293,66 @@ select:focus {
   padding: 4px 0;
 }
 
+.tool-row-body {
+  min-width: 0;
+}
+
+.tool-row-body > strong,
+.tool-row-body > small {
+  display: block;
+}
+
+.tool-evidence {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.evidence-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 8px;
+  padding: 6px 8px;
+  border-left: 2px solid rgb(56 189 248 / 0.38);
+  background: rgb(8 15 27 / 0.62);
+}
+
+.evidence-line small {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.evidence-state {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.evidence-fresh {
+  color: var(--success);
+}
+
+.evidence-stale {
+  color: var(--warning);
+}
+
+.evidence-source {
+  min-width: 0;
+  color: #bae6fd;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-age {
+  color: var(--text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .ok {
   color: var(--success);
 }

@@ -8,6 +8,9 @@ from aeromind_agent_gateway.ros_state import (
     _extract_ros_mission_id,
     _parse_agent_payload,
     _record_with_freshness,
+    _select_evidence,
+    _snapshot_evidence,
+    _verification_evidence,
 )
 
 
@@ -140,6 +143,70 @@ class RosTaskMappingTest(unittest.TestCase):
         self.assertTrue(fresh["fresh"])
         self.assertEqual(stale["age_sec"], 5.0)
         self.assertFalse(stale["fresh"])
+
+    def test_snapshot_evidence_records_source_and_freshness(self):
+        snapshot = {
+            "state": {
+                "stamp": 104.0,
+                "age_sec": 1.0,
+                "fresh": True,
+                "armed": True,
+                "mode": "OFFBOARD",
+                "ekf_healthy": True,
+            },
+            "odometry": {
+                "stamp": 104.0,
+                "age_sec": 1.0,
+                "fresh": True,
+                "position_m": {"x": 1.0, "y": 2.0, "z": 5.0},
+            },
+            "autonomy": {
+                "stamp": 100.0,
+                "age_sec": 5.0,
+                "fresh": False,
+                "state": "HOLD",
+                "nearest_obstacle_m": 3.2,
+            },
+            "detections": [{"class_name": "person", "confidence": 0.8}],
+            "detections_stamp": 103.5,
+            "detections_age_sec": 1.5,
+            "detections_fresh": True,
+        }
+
+        evidence = _snapshot_evidence(snapshot)
+        by_id = {item["id"]: item for item in evidence}
+        self.assertEqual(by_id["flight_state"]["source"], "/control/drone_state")
+        self.assertTrue(by_id["flight_state"]["fresh"])
+        self.assertFalse(by_id["autonomy"]["fresh"])
+        self.assertEqual(by_id["detections"]["kind"], "model_inference")
+        self.assertEqual(by_id["detections"]["stamp"], 103.5)
+        self.assertIn("person", by_id["detections"]["summary"])
+
+    def test_missing_records_are_explicitly_stale(self):
+        evidence = _snapshot_evidence({})
+        by_id = {item["id"]: item for item in evidence}
+        self.assertFalse(by_id["flight_state"]["fresh"])
+        self.assertIsNone(by_id["flight_state"]["age_sec"])
+        self.assertEqual(by_id["flight_state"]["summary"], "数据尚未收到")
+
+    def test_tools_can_select_only_relevant_evidence(self):
+        snapshot = {
+            "evidence": [
+                {"id": "flight_state", "source": "/control/drone_state"},
+                {"id": "odometry", "source": "/sensor/odometry"},
+                {"id": "detections", "source": "/perception/detections"},
+            ]
+        }
+        selected = _select_evidence(snapshot, {"flight_state", "odometry"})
+        self.assertEqual([item["id"] for item in selected], ["flight_state", "odometry"])
+
+    def test_verification_evidence_keeps_provenance_records(self):
+        snapshot = self._snapshot(armed=True, altitude=9.5, stamp=101.0)
+        snapshot["evidence"] = _snapshot_evidence(snapshot)
+        evidence = _verification_evidence(snapshot)
+        self.assertTrue(evidence["armed"])
+        self.assertEqual(evidence["position_m"]["z"], 9.5)
+        self.assertEqual(evidence["records"][0]["source"], "/control/drone_state")
 
     @staticmethod
     def _snapshot(

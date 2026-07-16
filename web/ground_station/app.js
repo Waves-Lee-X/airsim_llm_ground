@@ -270,6 +270,62 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function normalizeToolResult(value, depth = 0) {
+  if (depth > 4 || value == null) return null;
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return null;
+    try {
+      return normalizeToolResult(JSON.parse(text), depth + 1) || { message: text };
+    } catch (_error) {
+      return { message: text };
+    }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const normalized = normalizeToolResult(item, depth + 1);
+      if (normalized?.evidence?.length) return normalized;
+    }
+    return null;
+  }
+  if (typeof value !== "object") return null;
+  if (Array.isArray(value.evidence)) return value;
+  if (Array.isArray(value.content)) {
+    return normalizeToolResult(value.content, depth + 1) || value;
+  }
+  if (typeof value.text === "string") {
+    return normalizeToolResult(value.text, depth + 1) || value;
+  }
+  return value;
+}
+
+function toolEvidence(value) {
+  const normalized = normalizeToolResult(value);
+  return Array.isArray(normalized?.evidence) ? normalized.evidence : [];
+}
+
+function evidenceAgeLabel(value) {
+  const age = Number(value);
+  if (!Number.isFinite(age)) return "无时间戳";
+  return age < 10 ? `${age.toFixed(1)}s` : `${Math.round(age)}s`;
+}
+
+function evidenceHtml(records) {
+  if (!records.length) return "";
+  return `<div class="tool-evidence">${records.slice(0, 4).map((item) => {
+    const fresh = item?.fresh === true;
+    const inference = item?.kind === "model_inference";
+    const state = fresh ? "实时" : "过期";
+    const kind = inference ? "模型推断" : "ROS 事实";
+    return `<div class="evidence-line">
+      <span class="evidence-state ${fresh ? "evidence-fresh" : "evidence-stale"}">${state}</span>
+      <span class="evidence-source">${escapeHtml(item?.source || "未知来源")}</span>
+      <span class="evidence-age">${escapeHtml(evidenceAgeLabel(item?.age_sec))} · ${kind}</span>
+      <small>${escapeHtml(item?.summary || "无摘要")}</small>
+    </div>`;
+  }).join("")}</div>`;
+}
+
 function setupResizableCards() {
   document.querySelectorAll(".resizable-card[data-resize-key]").forEach((card) => {
     const key = card.getAttribute("data-resize-key");
@@ -2133,16 +2189,33 @@ function handleAgentEvent(event) {
     els.toolStatusText.textContent = "MCP CALL";
     els.missionPhase.textContent = "读取 ROS 状态";
     setTaskLifecycle("execute", `正在调用 ${event.tool || "ROS 工具"}`, {skipped: ["confirm"]});
-    els.toolCalls.innerHTML += `
-      <div class="tool-row">
+    if (els.toolCalls.textContent.trim() === "暂无工具调用") {
+      els.toolCalls.innerHTML = "";
+    }
+    els.toolCalls.insertAdjacentHTML("beforeend", `
+      <div class="tool-row" data-tool-call-id="${escapeHtml(event.tool_call_id || "")}">
         <span class="muted">•</span>
-        <span><strong>${escapeHtml(event.tool || "MCP Tool")}</strong><small>调用中</small></span>
-      </div>`;
+        <span class="tool-row-body"><strong>${escapeHtml(event.tool || "MCP Tool")}</strong><small class="tool-call-state">调用中</small></span>
+      </div>`);
     pushEvent("service", `Agent 工具调用: ${event.tool || "--"}`);
     return;
   }
   if (event.type === "tool.completed") {
     els.toolStatusText.textContent = event.success === false ? "MCP ERROR" : "MCP DONE";
+    const callId = String(event.tool_call_id || "");
+    const row = Array.from(els.toolCalls.querySelectorAll(".tool-row")).find(
+      (item) => item.dataset.toolCallId === callId,
+    );
+    if (row) {
+      const state = row.querySelector(".tool-call-state");
+      if (state) {
+        state.textContent = event.success === false ? "调用失败" : "调用完成";
+        state.classList.toggle("fail", event.success === false);
+        state.classList.toggle("ok", event.success !== false);
+      }
+      const body = row.querySelector(".tool-row-body");
+      if (body) body.insertAdjacentHTML("beforeend", evidenceHtml(toolEvidence(event.result)));
+    }
     return;
   }
   if (event.type === "assistant.completed") {

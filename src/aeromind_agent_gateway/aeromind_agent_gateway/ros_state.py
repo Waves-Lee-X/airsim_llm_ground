@@ -155,7 +155,8 @@ class RosStateBridge(Node):
             odometry = _record_with_freshness(self._odom, 2.0)
             autonomy = _record_with_freshness(self._autonomy, 2.0)
             detections_age = _age_seconds(self._detections_stamp)
-            return {
+            detections_fresh = detections_age is not None and detections_age <= 2.0
+            snapshot = {
                 "available": bool(state and state["fresh"]),
                 "state": state,
                 "odometry": odometry,
@@ -166,12 +167,15 @@ class RosStateBridge(Node):
                     else None
                 ),
                 "detections": [dict(item) for item in self._detections]
-                if detections_age is not None and detections_age <= 2.0
+                if detections_fresh
                 else [],
-                "detections_fresh": detections_age is not None and detections_age <= 2.0,
+                "detections_fresh": detections_fresh,
                 "detections_age_sec": detections_age,
+                "detections_stamp": self._detections_stamp,
                 "mission": dict(self._mission) if self._mission else None,
             }
+            snapshot["evidence"] = _snapshot_evidence(snapshot)
+            return snapshot
 
     def drone_state(self) -> dict[str, Any]:
         snapshot = self.snapshot()
@@ -179,6 +183,7 @@ class RosStateBridge(Node):
             "available": snapshot["available"],
             "state": snapshot["state"],
             "odometry": snapshot["odometry"],
+            "evidence": _select_evidence(snapshot, {"flight_state", "odometry"}),
         }
 
     def perception_summary(self) -> dict[str, Any]:
@@ -189,6 +194,7 @@ class RosStateBridge(Node):
             "detections_fresh": snapshot["detections_fresh"],
             "detections_age_sec": snapshot["detections_age_sec"],
             "autonomy": snapshot["autonomy"],
+            "evidence": _select_evidence(snapshot, {"detections", "autonomy"}),
         }
 
     async def analyze_current_image(self, prompt: str = "") -> dict[str, Any]:
@@ -228,6 +234,20 @@ class RosStateBridge(Node):
                         "encoding": response.encoding,
                     },
                 }
+                observed_at = time.time()
+                value["observed_at"] = observed_at
+                value["evidence"] = [
+                    {
+                        "id": "image_analysis",
+                        "kind": "model_inference",
+                        "source": "/perception/analyze_image",
+                        "model_source": value["source"],
+                        "stamp": observed_at,
+                        "age_sec": 0.0,
+                        "fresh": bool(response.success),
+                        "summary": response.message or response.scene,
+                    }
+                ]
                 if raw.get("vlm_error"):
                     value["vlm_error"] = str(raw["vlm_error"])
                 loop.call_soon_threadsafe(_set_result_if_pending, result_future, value)
@@ -722,6 +742,7 @@ class RosStateBridge(Node):
                 "state_age_sec": state.get("age_sec"),
                 "autonomy_age_sec": autonomy.get("age_sec"),
             },
+            "evidence": _select_evidence(snapshot, {"flight_state", "autonomy"}),
         }
 
     def _perception_check(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -756,6 +777,7 @@ class RosStateBridge(Node):
             "target": target,
             "detections": matched if target else detections,
             "autonomy": snapshot.get("autonomy"),
+            "evidence": _select_evidence(snapshot, {"detections", "autonomy"}),
         }
 
     async def _emit_workflow_progress(
@@ -1078,6 +1100,94 @@ def _verification_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
             "strategy": autonomy_terminal.get("active_strategy"),
             "message": autonomy_terminal.get("message"),
         } if autonomy_terminal else None,
+        "records": snapshot.get("evidence") or _snapshot_evidence(snapshot),
+    }
+
+
+def _select_evidence(
+    snapshot: dict[str, Any], identifiers: set[str]
+) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in snapshot.get("evidence", [])
+        if item.get("id") in identifiers
+    ]
+
+
+def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    state = snapshot.get("state") or {}
+    odometry = snapshot.get("odometry") or {}
+    autonomy = snapshot.get("autonomy") or {}
+    detections = snapshot.get("detections") or []
+    records = [
+        _evidence_record(
+            "flight_state",
+            "sensor_fact",
+            "/control/drone_state",
+            state,
+            (
+                f"armed={state.get('armed')} mode={state.get('mode', 'unknown')} "
+                f"ekf={state.get('ekf_healthy')}"
+            ),
+        ),
+        _evidence_record(
+            "odometry",
+            "sensor_fact",
+            "/sensor/odometry",
+            odometry,
+            f"position={odometry.get('position_m')}",
+        ),
+        _evidence_record(
+            "autonomy",
+            "system_fact",
+            "/autonomy/status",
+            autonomy,
+            (
+                f"state={autonomy.get('state', 'unknown')} "
+                f"obstacle={autonomy.get('nearest_obstacle_m')}m"
+            ),
+        ),
+        {
+            "id": "detections",
+            "kind": "model_inference",
+            "source": "/perception/detections",
+            "stamp": snapshot.get("detections_stamp"),
+            "age_sec": snapshot.get("detections_age_sec"),
+            "fresh": bool(snapshot.get("detections_fresh")),
+            "summary": (
+                f"detections={len(detections)} "
+                f"classes={[item.get('class_name') for item in detections[:5]]}"
+            ),
+        },
+    ]
+    return [item for item in records if item is not None]
+
+
+def _evidence_record(
+    identifier: str,
+    kind: str,
+    source: str,
+    record: dict[str, Any],
+    summary: str,
+) -> dict[str, Any]:
+    if not record:
+        return {
+            "id": identifier,
+            "kind": kind,
+            "source": source,
+            "stamp": None,
+            "age_sec": None,
+            "fresh": False,
+            "summary": "数据尚未收到",
+        }
+    return {
+        "id": identifier,
+        "kind": kind,
+        "source": source,
+        "stamp": record.get("stamp"),
+        "age_sec": record.get("age_sec"),
+        "fresh": bool(record.get("fresh")),
+        "summary": summary,
     }
 
 
