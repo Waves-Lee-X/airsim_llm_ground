@@ -53,9 +53,11 @@
 
 4 路相机：front_center（前视 RGB + Depth + Segmentation）、bottom_center（下视 RGB）、front_left/front_right（前侧视 RGB）。
 
-## 2. PX4 必需参数
+## 2. PX4 SITL 参数说明
 
-以下参数解决 AirSim 仿真环境中传感器缺失导致的安全检查失败。在 PX4 终端（`pxh>`）执行后保存。
+以下参数仅用于解释 AirSim SITL 中可能遇到的预检问题，不是每次启动都必须设置的“一键答案”。应先使用 `commander check`、`listener vehicle_status` 和具体告警定位原因，再修改对应参数。
+
+> 严禁把关闭电池、遥控器、数据链或 Offboard 保护的参数直接复制到真机。真机必须保留并验证遥控接管、失联、低电量和地理围栏策略。
 
 ### 2.1 传感器相关
 
@@ -65,15 +67,15 @@
 | `COM_ARM_WO_GPS` | 1 | 允许无 GPS 锁定时解锁（SITL 室内场景） |
 | `SENS_BARO_QNH` | 1013.25 | 修正海平面气压 (hPa)，配合 AirSim 气压计配置 |
 
-### 2.2 电池保护（AirSim 不提供电池仿真）
+### 2.2 电池保护诊断
 
 | 参数 | 值 | 原因 |
 |------|-----|------|
-| `BAT_CRIT_THR` | -1 | 关闭严重低电量保护 |
-| `BAT_LOW_THR` | -1 | 关闭低电量警告 |
-| `BAT_EMERGEN_THR` | -1 | 关闭紧急电量保护 |
+| `BAT_CRIT_THR` | 版本相关 | 仅在 SITL 电池源确实缺失且阻塞测试时诊断 |
+| `BAT_LOW_THR` | 版本相关 | 优先修复 battery_status 数据链，不应直接关闭 |
+| `BAT_EMERGEN_THR` | 版本相关 | 仅用于隔离仿真问题，真机禁止关闭 |
 
-### 2.3 失控保护
+### 2.3 失控保护诊断
 
 | 参数 | 值 | 原因 |
 |------|-----|------|
@@ -82,40 +84,34 @@
 | `NAV_DLL_ACT` | 0 | 关闭数据链丢失动作 |
 | `COM_RCL_EXCEPT` | 4 | Offboard 模式下遥控器丢失不触发返航 |
 
-### 2.4 一键配置命令
+### 2.4 最小化配置原则
 
-在 PX4 终端 `pxh>` 中执行：
+优先只修改当前 SITL 场景确实缺失的硬件项。例如 AirSim 没有可靠磁罗盘且 PX4 明确因此拒绝初始化时，才考虑：
 
 ```
 param set SYS_HAS_MAG 0
-param set COM_ARM_WO_GPS 1
 param set SENS_BARO_QNH 1013.25
-param set BAT_CRIT_THR -1
-param set BAT_LOW_THR -1
-param set BAT_EMERGEN_THR -1
-param set COM_OF_LOSS_T 0
-param set NAV_RCL_ACT 0
-param set NAV_DLL_ACT 0
-param set COM_RCL_EXCEPT 4
 param save
 ```
+
+无 GPS 解锁、无遥控 Offboard 和失联动作应根据当前 PX4 版本文档与 `commander check` 单项配置。完成仿真排障后记录改动，不要长期保留来源不明的参数集合。
 
 > `param save` 会将参数写入 `PX4-Autopilot/build/px4_sitl_default/tmp/rootfs/parameters.bson`，下次 `make px4_sitl_default` 时自动加载。
 
 ## 3. 启动顺序
 
-正确的启动顺序（**关键：AirSim 必须先于 PX4**）：
+推荐启动顺序如下。PX4 的 `none_iris` 会等待 AirSim 建立模拟器连接，因此先启动 PX4、再启动 AirSim 更便于观察连接日志；DDS Agent 在 ROS 节点之前就绪即可。
 
 ```
-终端 1 (Windows):  启动 AirSim（UE 编辑器或打包 .exe）
-                   等待无人机模型加载完成，可见
-
-终端 2 (WSL):      启动 MicroXRCE-DDS Agent
+终端 1 (WSL):      启动 MicroXRCE-DDS Agent
                    micro-xrce-dds-agent udp4 -p 8888
 
-终端 3 (WSL):      启动 PX4 SITL
+终端 2 (WSL):      启动 PX4 SITL
                    cd ~/PX4-Autopilot
                    make px4_sitl_default none_iris
+
+终端 3 (Windows):  启动 AirSim（UE 编辑器或打包 .exe）
+                   等待无人机模型加载，并观察 PX4 出现 simulator connected
 
 终端 4 (WSL):      启动 ROS 2 节点
                    cd ~/aeromind_ws
@@ -171,7 +167,7 @@ AirSim 的 settings.json 中 `SitlIp` 填 WSL IP，`LocalHostIp` 填 Windows IP�
 
 1. 检查 Windows 防火墙：管理员 PowerShell 执行 `New-NetFirewallRule -DisplayName "AirSim PX4" -Direction Inbound -Protocol TCP -LocalPort 4560 -Action Allow`
 2. 检查 IP：WSL 重启后 IP 可能变化，更新 settings.json 中 `SitlIp`
-3. 检查启动顺序：AirSim 必须先启动
+3. 检查 PX4 与 AirSim 两侧是否都在运行；必要时保持 PX4 运行并重启 AirSim
 
 ### ROS 2 收不到 PX4 数据
 

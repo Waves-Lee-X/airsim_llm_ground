@@ -1,5 +1,7 @@
 # WSL2 使用 Windows 宿主机代理/VPN
 
+> 当 WSL 提示“检测到 localhost 代理配置，但未镜像到 WSL；NAT 模式不支持 localhost 代理”时，含义是 Windows 代理只监听 `127.0.0.1`，而 NAT 模式下的 WSL 是另一台虚拟网络主机。可以让代理监听局域网地址并使用 Windows 网关 IP；若本机 WSL 支持并已启用镜像网络，也可使用其 localhost 转发能力。不要把代理告警误认为 ROS 或 PX4 故障。
+
 ## 原理
 
 WSL2 运行在独立的虚拟网络中，通过 NAT 与 Windows 通信。要让 WSL 里的终端走 Windows 上的代理（Clash、V2Ray、SSR 等），需要把 HTTP/HTTPS 请求转发到 Windows 宿主机的代理端口。
