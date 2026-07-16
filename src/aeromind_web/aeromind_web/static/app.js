@@ -863,10 +863,17 @@ async function refreshStatus() {
 function renderStatus(data, source = "HTTP") {
   const state = data.state;
   const odom = data.odom;
+  const telemetry = data.telemetry_meta || null;
+  const stateFresh = telemetry ? telemetry.state_fresh === true : Boolean(state);
+  const odomFresh = telemetry ? telemetry.odom_fresh === true : Boolean(odom);
   const depth = data.depth;
   const pointcloud = data.pointcloud;
   const autonomy = data.autonomy;
-  updateMissionMap(odom, data.autonomy_goal, data.autonomy_trajectory);
+  updateMissionMap(
+    odomFresh ? odom : null,
+    data.autonomy_goal,
+    data.autonomy_trajectory,
+  );
   renderLiveMission(data.mission);
   renderImageAnalysis(data.image_analysis);
   const reportedDetections = Array.isArray(data.detections)
@@ -887,9 +894,18 @@ function renderStatus(data, source = "HTTP") {
     redrawCameraDetections();
   }
 
-  els.systemLine.textContent = `ROS 网关已连接 · ${source}`;
-  updateBadge(els.linkBadge, source === "WS" ? "实时连接" : "HTTP 轮询", "badge");
-  if (state) {
+  if (telemetry && !telemetry.active) {
+    const age = Math.max(
+      Number(telemetry.state_age_s) || 0,
+      Number(telemetry.odom_age_s) || 0,
+    );
+    els.systemLine.textContent = `ROS 网关在线 · 飞控遥测超时 ${fmt(age, 1)}s`;
+    updateBadge(els.linkBadge, "遥测失联", "badge bad");
+  } else {
+    els.systemLine.textContent = `ROS 网关已连接 · ${source}`;
+    updateBadge(els.linkBadge, source === "WS" ? "实时连接" : "HTTP 轮询", "badge");
+  }
+  if (state && stateFresh) {
     updateBadge(els.armedBadge, state.armed ? "已解锁" : "未解锁", state.armed ? "badge" : "badge bad");
     updateBadge(els.modeBadge, state.mode || "未知模式", state.mode === "OFFBOARD" ? "badge" : "badge neutral");
     updateBadge(els.ekfBadge, state.ekf_healthy ? "EKF 正常" : "EKF 异常", state.ekf_healthy ? "badge" : "badge bad");
@@ -912,9 +928,26 @@ function renderStatus(data, source = "HTTP") {
     els.chatGpsValue.textContent = gpsLabels[Number(state.gps_fix)] || "--";
     els.chatEkfValue.textContent = state.ekf_healthy ? "正常" : "异常";
     els.chatEkfValue.className = state.ekf_healthy ? "status-ok" : "status-bad";
+  } else {
+    updateBadge(els.armedBadge, "状态未知", "badge bad");
+    updateBadge(els.modeBadge, "遥测超时", "badge neutral");
+    updateBadge(els.ekfBadge, "EKF 未知", "badge bad");
+    els.armedValue.textContent = "--";
+    els.modeValue.textContent = "--";
+    els.batteryValue.textContent = "--";
+    els.gpsValue.textContent = "--";
+    els.ekfValue.textContent = "--";
+    els.hudMode.textContent = "MODE --";
+    els.chatArmedValue.textContent = "状态未知";
+    els.chatArmedValue.className = "status-bad";
+    els.chatModeValue.textContent = "--";
+    els.chatBatteryValue.textContent = "--";
+    els.chatGpsValue.textContent = "--";
+    els.chatEkfValue.textContent = "未知";
+    els.chatEkfValue.className = "status-bad";
   }
 
-  if (odom) {
+  if (odom && odomFresh) {
     els.frameValue.textContent = odom.frame_id || "--";
     els.posX.textContent = fmt(odom.position.x);
     els.posY.textContent = fmt(odom.position.y);
@@ -927,9 +960,22 @@ function renderStatus(data, source = "HTTP") {
       fmt(odom.position.y, 1),
       fmt(odom.position.z, 1),
     ].join(" / ");
+  } else {
+    els.frameValue.textContent = "--";
+    els.posX.textContent = "--";
+    els.posY.textContent = "--";
+    els.posZ.textContent = "--";
+    els.velX.textContent = "--";
+    els.velY.textContent = "--";
+    els.velZ.textContent = "--";
+    els.chatPositionValue.textContent = "-- / -- / --";
   }
 
-  updateActiveVerification(state, odom, autonomy);
+  updateActiveVerification(
+    stateFresh ? state : null,
+    odomFresh ? odom : null,
+    autonomy,
+  );
 
   if (depth) {
     els.depthMeta.textContent = `${depth.width}x${depth.height} ${depth.encoding}`;

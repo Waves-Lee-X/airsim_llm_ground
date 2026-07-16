@@ -11,7 +11,7 @@ from aeromind_control.control_node import (
     trajectory_handoff_elapsed,
     trajectory_update_mode,
 )
-from aeromind_control.px4_control import _state_to_trajectory_setpoint
+from aeromind_control.px4_control import PX4Controller, _state_to_trajectory_setpoint
 
 
 class TrajectoryPriorityTest(unittest.TestCase):
@@ -154,6 +154,18 @@ class TrajectoryPriorityTest(unittest.TestCase):
         self.assertAlmostEqual(setpoint.acceleration[0], 0.2, places=6)
         self.assertAlmostEqual(setpoint.acceleration[1], 0.1, places=6)
         self.assertAlmostEqual(setpoint.acceleration[2], -0.3, places=6)
+
+    def test_rtl_keeps_offboard_until_mode_handoff_is_confirmed(self):
+        controller = PX4Controller.__new__(PX4Controller)
+        controller._offboard_active = True
+        controller._publish_vehicle_command = lambda _command: None
+        controller._logger = SimpleNamespace(info=lambda _message: None)
+
+        self.assertTrue(controller.return_home())
+        self.assertTrue(controller._offboard_active)
+
+        controller.stop_offboard_stream()
+        self.assertFalse(controller._offboard_active)
 
 
 if __name__ == "__main__":

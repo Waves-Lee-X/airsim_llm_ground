@@ -197,7 +197,9 @@ class WebConsoleNode(Node):
 
         self._lock = threading.Lock()
         self._state = None
+        self._state_received_at = 0.0
         self._odom = None
+        self._odom_received_at = 0.0
         self._image = None
         self._depth = None
         self._depthcloud = None
@@ -257,6 +259,7 @@ class WebConsoleNode(Node):
     # ------------------------------------------------------------------
 
     def _state_cb(self, msg: DroneState):
+        received_at = time.time()
         with self._lock:
             self._state = {
                 "armed": bool(msg.armed),
@@ -265,10 +268,12 @@ class WebConsoleNode(Node):
                 "gps_fix": int(msg.gps_fix),
                 "ekf_healthy": bool(msg.ekf_healthy),
             }
+            self._state_received_at = received_at
 
     def _odom_cb(self, msg: Odometry):
         pos = msg.pose.pose.position
         vel = msg.twist.twist.linear
+        received_at = time.time()
         with self._lock:
             self._odom = {
                 "stamp": _stamp_to_float(msg.header.stamp),
@@ -276,6 +281,7 @@ class WebConsoleNode(Node):
                 "position": {"x": pos.x, "y": pos.y, "z": pos.z},
                 "velocity": {"x": vel.x, "y": vel.y, "z": vel.z},
             }
+            self._odom_received_at = received_at
 
     def _image_cb(self, msg: Image):
         data = bytes(msg.data)
@@ -396,8 +402,21 @@ class WebConsoleNode(Node):
 
     def snapshot(self):
         with self._lock:
+            now = time.time()
+            state_age = (
+                max(0.0, now - self._state_received_at)
+                if self._state_received_at > 0.0
+                else None
+            )
+            odom_age = (
+                max(0.0, now - self._odom_received_at)
+                if self._odom_received_at > 0.0
+                else None
+            )
+            state_fresh = state_age is not None and state_age <= 2.5
+            odom_fresh = odom_age is not None and odom_age <= 2.5
             detection_age = (
-                max(0.0, time.time() - self._detections_received_at)
+                max(0.0, now - self._detections_received_at)
                 if self._detections_received_at > 0.0
                 else None
             )
@@ -405,6 +424,15 @@ class WebConsoleNode(Node):
             return {
                 "state": self._state,
                 "odom": self._odom,
+                "telemetry_meta": {
+                    "state_received_at": self._state_received_at,
+                    "state_age_s": state_age,
+                    "state_fresh": state_fresh,
+                    "odom_received_at": self._odom_received_at,
+                    "odom_age_s": odom_age,
+                    "odom_fresh": odom_fresh,
+                    "active": state_fresh and odom_fresh,
+                },
                 "depth": self._depth,
                 "pointcloud": self._pointcloud_meta(),
                 "detection": self._detection if detections_active else None,

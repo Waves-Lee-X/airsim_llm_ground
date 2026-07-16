@@ -319,14 +319,21 @@ class PX4Controller:
         return True
 
     def return_home(self) -> bool:
-        """执行 PX4 原生 RTL（Return To Launch）"""
+        """请求 PX4 原生 RTL（Return To Launch）。
+
+        Offboard 心跳会继续发送，直到 VehicleStatus 确认 PX4 已进入
+        AUTO_RTL。这样 RTL 被拒绝时，无人机仍保持最后一个悬停目标。
+        """
         if not HAS_PX4_MSGS:
             return False
-        self._offboard_active = False
         cmd = _make_return_home_command()
         self._publish_vehicle_command(cmd)
-        self._logger.info("PX4: RTL 返航指令已发送")
+        self._logger.info("PX4: RTL 返航请求已发送，等待 AUTO_RTL 接管")
         return True
+
+    def stop_offboard_stream(self):
+        """Stop publishing Offboard heartbeat after another mode takes control."""
+        self._offboard_active = False
 
     # ============================================================
     # 位置控制（路径跟随）

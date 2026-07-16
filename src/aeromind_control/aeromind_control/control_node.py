@@ -226,6 +226,8 @@ class ControlNode(Node):
         self.declare_parameter("autonomy_replan_accept_interval_sec", 0.6)
         self.declare_parameter("autonomy_trajectory_stale_sec", 1.0)
         self.declare_parameter("autonomy_handoff_max_sec", 0.6)
+        self.declare_parameter("px4_telemetry_timeout_sec", 2.0)
+        self.declare_parameter("rtl_mode_confirm_timeout_sec", 3.0)
         self._px4_mode = self.get_parameter("px4_mode").value
         self._airsim_ip = self.get_parameter("airsim_ip").value
         self._execute_autonomy_trajectory = bool(
@@ -251,6 +253,12 @@ class ControlNode(Node):
         self._autonomy_handoff_max_sec = max(
             0.0,
             float(self.get_parameter("autonomy_handoff_max_sec").value),
+        )
+        self._px4_telemetry_timeout_sec = max(
+            0.5, float(self.get_parameter("px4_telemetry_timeout_sec").value)
+        )
+        self._rtl_mode_confirm_timeout_sec = max(
+            1.0, float(self.get_parameter("rtl_mode_confirm_timeout_sec").value)
         )
         self.get_logger().info(f"控制模式: {self._px4_mode}")
 
@@ -285,10 +293,12 @@ class ControlNode(Node):
         # 状态变量
         self._armed = False
         self._latest_vehicle_status = None
+        self._latest_vehicle_status_received_at = 0.0
         self._battery_voltage = 0.0
         self._gps_fix = 0
         self._ekf_healthy = None
         self._latest_odom = None
+        self._latest_odom_received_at = 0.0
         self._active_trajectory_until = 0.0
         self._active_trajectory = None
         self._active_trajectory_started_at = 0.0
@@ -302,6 +312,8 @@ class ControlNode(Node):
         self._last_autonomy_velocity_time = time.monotonic()
         self._control_mode = "IDLE"
         self._takeoff_target_altitude = None
+        self._rtl_requested_at = 0.0
+        self._rtl_mode_confirmed = False
 
         # 根据模式初始化后端
         self._client = None      # AirSim 客户端
@@ -316,6 +328,7 @@ class ControlNode(Node):
             1.0 / self._autonomy_tracking_rate_hz,
             self._trajectory_tracking_callback,
         )
+        self._rtl_monitor_timer = self.create_timer(0.2, self._rtl_monitor_callback)
 
         self.get_logger().info("控制节点已启动")
 
@@ -413,7 +426,23 @@ class ControlNode(Node):
     def _px4_status_callback(self, msg):
         """PX4 状态更新：同步 armed 和发布 drone_state"""
         self._latest_vehicle_status = msg
+        self._latest_vehicle_status_received_at = time.monotonic()
         self._armed = (msg.arming_state == 2)
+
+        if (
+            self._control_mode == "RETURN_HOME"
+            and int(msg.nav_state) == 5
+            and not self._rtl_mode_confirmed
+        ):
+            self._rtl_mode_confirmed = True
+            if self._px4_ctrl is not None:
+                self._px4_ctrl.stop_offboard_stream()
+            self.get_logger().info(
+                "PX4 已确认进入 AUTO_RTL，Offboard 控制已安全移交"
+            )
+        elif self._control_mode == "RETURN_HOME" and not self._armed:
+            self._control_mode = "IDLE"
+            self._rtl_requested_at = 0.0
 
         state = DroneState()
         state.armed = self._armed
@@ -436,6 +465,7 @@ class ControlNode(Node):
 
     def _odom_callback(self, msg: Odometry):
         self._latest_odom = msg
+        self._latest_odom_received_at = time.monotonic()
         if self._control_mode != "TAKEOFF" or self._takeoff_target_altitude is None:
             return
         altitude = float(msg.pose.pose.position.z)
@@ -558,11 +588,40 @@ class ControlNode(Node):
 
     def _return_home_callback(self, request, response):
         self.get_logger().info("收到返航请求")
-        self._clear_active_trajectory()
-        self._control_mode = "RETURN_HOME"
 
         if self._px4_mode == "px4":
+            now = time.monotonic()
+            status_age = now - self._latest_vehicle_status_received_at
+            odom_age = now - self._latest_odom_received_at
+            if (
+                self._latest_vehicle_status is None
+                or status_age > self._px4_telemetry_timeout_sec
+            ):
+                response.success = False
+                response.message = "拒绝 RTL：飞控状态遥测不可用或已超时"
+                self.get_logger().error(response.message)
+                return response
+            if self._latest_odom is None or odom_age > self._px4_telemetry_timeout_sec:
+                response.success = False
+                response.message = "拒绝 RTL：里程计不可用或已超时"
+                self.get_logger().error(response.message)
+                return response
+            if not self._armed:
+                response.success = False
+                response.message = "拒绝 RTL：无人机当前未解锁"
+                self.get_logger().warn(response.message)
+                return response
+
+            self._clear_active_trajectory()
+            position = self._latest_odom.pose.pose.position
+            if self._px4_ctrl is not None:
+                self._px4_ctrl.set_position(position.x, position.y, position.z)
+            self._control_mode = "RETURN_HOME"
+            self._rtl_requested_at = now
+            self._rtl_mode_confirmed = False
             return self._return_home_px4(response)
+        self._clear_active_trajectory()
+        self._control_mode = "RETURN_HOME"
         return self._return_home_airsim(response)
 
     def _return_home_px4(self, response):
@@ -573,12 +632,40 @@ class ControlNode(Node):
         try:
             self._px4_ctrl.return_home()
             response.success = True
-            response.message = "PX4 RTL 返航指令已发送"
+            response.message = "PX4 RTL 请求已发送，等待 AUTO_RTL 模式确认"
         except Exception as e:
             response.success = False
             response.message = f"PX4 RTL 返航失败: {e}"
         self.get_logger().info(response.message)
         return response
+
+    def _rtl_monitor_callback(self):
+        if self._control_mode != "RETURN_HOME" or self._rtl_requested_at <= 0.0:
+            return
+
+        now = time.monotonic()
+        status_age = now - self._latest_vehicle_status_received_at
+        odom_age = now - self._latest_odom_received_at
+        if self._rtl_mode_confirmed:
+            if (
+                status_age > self._px4_telemetry_timeout_sec
+                or odom_age > self._px4_telemetry_timeout_sec
+            ):
+                self.get_logger().error(
+                    "RTL 过程中飞控/里程计遥测中断；无法确认真实位置，"
+                    "请立即检查 AirSim-PX4 MAVLink 链路"
+                )
+                self._rtl_requested_at = 0.0
+            return
+
+        if now - self._rtl_requested_at <= self._rtl_mode_confirm_timeout_sec:
+            return
+
+        self._control_mode = "READY"
+        self._rtl_requested_at = 0.0
+        self.get_logger().error(
+            "PX4 未在超时时间内确认 AUTO_RTL；保留 Offboard 悬停，返航未接管"
+        )
 
     def _return_home_airsim(self, response):
         if self._client is None:
