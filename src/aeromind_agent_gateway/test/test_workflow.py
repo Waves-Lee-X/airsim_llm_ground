@@ -564,7 +564,7 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                 "gps_fix": 1,
             },
             "odometry": {"position_m": {"z": 0.0}},
-            "autonomy": {"nearest_obstacle_m": 0.8},
+            "autonomy": {"stamp": time.time(), "nearest_obstacle_m": 0.8},
             "detections": [],
         }
         called = []
@@ -595,6 +595,8 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(result["success"])
         self.assertEqual(called, [])
+        self.assertIn("最近障碍物 0.80 米", result["message"])
+        self.assertIn("安全距离 2.00 米", result["message"])
 
     def test_workflow_control_state_machine(self):
         bridge = self._bridge()

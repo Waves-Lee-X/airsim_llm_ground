@@ -458,12 +458,18 @@ class RosStateBridge(Node):
                     progress, workflow, index, results, "workflow_step"
                 )
                 if step["status"] == "failed" and step["on_failure"] == "stop":
+                    failed_result = results.get(step["id"]) or {}
+                    failure_detail = str(
+                        failed_result.get("message")
+                        or failed_result.get("error")
+                        or "未提供具体原因"
+                    )
                     return {
                         "success": False,
                         "status": "failed",
                         "physical_complete": False,
                         "workflow_id": workflow_id,
-                        "message": f"组合任务失败：{step['label']}",
+                        "message": f"组合任务失败：{step['label']}；{failure_detail}",
                         "workflow": workflow,
                         "step_results": results,
                     }
@@ -727,7 +733,10 @@ class RosStateBridge(Node):
             issues.append("自主避障状态不可用或已过期")
         elif obstacle is not None and math.isfinite(float(obstacle)):
             if float(obstacle) < minimum:
-                issues.append(f"最近障碍物仅 {float(obstacle):.2f} 米")
+                issues.append(
+                    f"最近障碍物 {float(obstacle):.2f} 米，"
+                    f"小于安全距离 {minimum:.2f} 米"
+                )
         success = not issues
         return {
             "success": success,
