@@ -60,6 +60,7 @@ class AgentNode(Node):
         self._mission_log_dir = os.path.expanduser(str(self.get_parameter("mission_log_dir").value))
         self._llm_api_key = (
             str(self.get_parameter("llm_api_key").value).strip()
+            or os.environ.get("AEROMIND_LLM_API_KEY", "").strip()
             or os.environ.get("DEEPSEEK_API_KEY", "").strip()
             or os.environ.get("OPENAI_API_KEY", "").strip()
         )

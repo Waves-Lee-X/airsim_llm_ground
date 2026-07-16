@@ -10,6 +10,7 @@ airsim_ip 默认自动读取 /etc/resolv.conf 获取 Windows 宿主 IP。
   ros2 launch aeromind_bringup aeromind_all.launch.py airsim_ip:=192.168.1.100
 """
 
+import os
 import socket
 import struct
 
@@ -19,6 +20,10 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+
+def _env(name, default=""):
+    return os.environ.get(name, "").strip() or default
 
 
 def _get_windows_ip():
@@ -59,18 +64,18 @@ def generate_launch_description():
     )
     llm_api_url_arg = DeclareLaunchArgument(
         "llm_api_url",
-        default_value="http://localhost:11434/v1",
-        description="OpenAI-compatible LLM API 地址，例如 Ollama /v1",
+        default_value=_env("AEROMIND_LLM_API_URL", "https://api.deepseek.com/v1"),
+        description="LLM API 地址；默认读取 AEROMIND_LLM_API_URL",
     )
     llm_model_arg = DeclareLaunchArgument(
         "llm_model",
-        default_value="llama3",
-        description="LLM 模型名",
+        default_value=_env("AEROMIND_LLM_MODEL", "deepseek-chat"),
+        description="LLM 模型名；默认读取 AEROMIND_LLM_MODEL",
     )
     llm_api_key_arg = DeclareLaunchArgument(
         "llm_api_key",
         default_value="",
-        description="LLM API Key；也可使用 DEEPSEEK_API_KEY 或 OPENAI_API_KEY 环境变量",
+        description="可选的临时 LLM Key；留空时节点从环境变量安全读取",
     )
     llm_timeout_arg = DeclareLaunchArgument(
         "llm_timeout_sec",
@@ -194,18 +199,18 @@ def generate_launch_description():
     )
     vlm_api_url_arg = DeclareLaunchArgument(
         "vlm_api_url",
-        default_value="",
-        description="OpenAI-compatible Vision API 地址，例如 https://api.openai.com/v1",
+        default_value=_env("AEROMIND_VLM_API_URL"),
+        description="VLM API 地址；默认读取 AEROMIND_VLM_API_URL",
     )
     vlm_model_arg = DeclareLaunchArgument(
         "vlm_model",
-        default_value="",
-        description="视觉语言模型名，例如 gpt-4o-mini / qwen-vl-plus",
+        default_value=_env("AEROMIND_VLM_MODEL"),
+        description="视觉语言模型名；默认读取 AEROMIND_VLM_MODEL",
     )
     vlm_api_key_arg = DeclareLaunchArgument(
         "vlm_api_key",
         default_value="",
-        description="VLM API Key；也可使用 AEROMIND_VLM_API_KEY 环境变量",
+        description="可选的临时 VLM Key；留空时节点从环境变量安全读取",
     )
     auto_analyze_enabled_arg = DeclareLaunchArgument(
         "auto_analyze_enabled",
