@@ -193,6 +193,14 @@ class FeishuAdapterTest(unittest.IsolatedAsyncioTestCase):
         await self.adapter.handle_event(make_event("m2", "ou_other", "p2p", "起飞"))
         self.assertEqual(self.sessions.submitted, [])
 
+    async def test_status_exposes_operator_channel_metadata(self):
+        status = self.adapter.status()
+        self.assertTrue(status["enabled"])
+        self.assertFalse(status["running"])
+        self.assertEqual(status["allowed_user_count"], 1)
+        self.assertEqual(status["allowed_open_ids"], ["ou_allowed"])
+        self.assertFalse(status["vision_enabled"])
+
     async def test_image_is_archived_analyzed_and_recorded(self):
         await self.adapter.handle_event(
             make_image_event("m-image", "ou_allowed", "p2p", "img_test")

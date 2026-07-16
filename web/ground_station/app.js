@@ -133,6 +133,7 @@ let latestCameraFrame = null;
 let lastLiveMissionKey = "";
 let lastImageAnalysisKey = "";
 let lastReportListKey = "";
+let lastChannelStatusKey = "";
 let cameraViewerZoom = 1;
 let pointcloudOptions = {
   colorMode: "axis",
@@ -2018,6 +2019,7 @@ function connectAgentSocket() {
 function handleAgentEvent(event) {
   const requestId = event.request_id || "agent-stream";
   if (event.type === "session.ready") {
+    renderChannelStatus(event.channels || {});
     renderProviderOptions(event.providers || [], event.session);
     gatewaySkills = Array.isArray(event.skills) ? event.skills : [];
     gatewayCapabilities = Array.isArray(event.capabilities) ? event.capabilities : [];
@@ -2271,6 +2273,42 @@ function handleAgentEvent(event) {
     setTaskLifecycle("execute", event.message || "Agent 执行失败", {outcome: "error", activeText: "执行失败"});
     pushEvent("error", `Agent Runtime: ${event.message || "未知错误"}`);
   }
+}
+
+function renderChannelStatus(channels) {
+  const feishu = channels?.feishu;
+  if (!feishu) return;
+  const openIds = Array.isArray(feishu.allowed_open_ids)
+    ? feishu.allowed_open_ids.filter(Boolean)
+    : [];
+  const statusKey = JSON.stringify({
+    enabled: Boolean(feishu.enabled),
+    running: Boolean(feishu.running),
+    count: Number(feishu.allowed_user_count || 0),
+    openIds,
+    vision: Boolean(feishu.vision_enabled),
+  });
+  if (statusKey === lastChannelStatusKey) return;
+  lastChannelStatusKey = statusKey;
+
+  if (!feishu.enabled) {
+    pushEvent("system", "飞书通道未启用");
+    return;
+  }
+  const count = Number(feishu.allowed_user_count || openIds.length || 0);
+  if (feishu.running) {
+    pushEvent("system", `飞书长连接已启用，白名单用户数: ${count}`);
+    pushEvent("system", `Feishu adapter started with ${count} allowed users`);
+  } else {
+    pushEvent("error", `飞书长连接未运行，白名单用户数: ${count}`);
+  }
+  if (openIds.length) {
+    pushEvent("system", `飞书白名单 Open ID: ${openIds.join(", ")}`);
+  }
+  pushEvent(
+    "system",
+    `飞书图片 VLM: ${feishu.vision_enabled ? "已启用" : "未配置"}`,
+  );
 }
 
 function providerModelValue(provider, model) {

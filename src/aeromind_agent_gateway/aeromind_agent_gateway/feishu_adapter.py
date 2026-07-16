@@ -49,6 +49,8 @@ MODEL_ALIASES = {
 
 
 class FeishuAdapter:
+    channel_name = "feishu"
+
     def __init__(
         self,
         config: GatewayConfig,
@@ -81,6 +83,7 @@ class FeishuAdapter:
     async def start(self):
         if not self._config.feishu_enabled:
             return
+        self._stopping = False
         self._validate_config()
         self._loop = asyncio.get_running_loop()
         if self._api_client is None:
@@ -151,6 +154,22 @@ class FeishuAdapter:
     @property
     def _allowed(self) -> set[str]:
         return set(self._config.feishu_allowed_open_ids)
+
+    def status(self) -> dict[str, Any]:
+        """Return operator-facing channel state without exposing app credentials."""
+        return {
+            "enabled": bool(self._config.feishu_enabled),
+            "running": bool(
+                self._thread is not None
+                and self._thread.is_alive()
+                and not self._stopping
+            ),
+            "allowed_user_count": len(self._allowed),
+            "allowed_open_ids": sorted(self._allowed),
+            "vision_enabled": bool(
+                self._config.vlm_api_url and self._config.vlm_model
+            ),
+        }
 
     def _validate_config(self):
         if not self._config.feishu_app_id or not self._config.feishu_app_secret:

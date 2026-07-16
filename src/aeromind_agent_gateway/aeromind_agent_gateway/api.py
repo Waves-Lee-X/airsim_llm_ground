@@ -16,6 +16,16 @@ from .ros_state import RosStateBridge
 from .session_manager import SessionManager
 
 
+def _channel_status(adapters: Iterable[Any]) -> dict[str, dict[str, Any]]:
+    result = {}
+    for adapter in adapters:
+        channel_name = str(getattr(adapter, "channel_name", "")).strip()
+        status_provider = getattr(adapter, "status", None)
+        if channel_name and callable(status_provider):
+            result[channel_name] = status_provider()
+    return result
+
+
 def create_app(
     config: GatewayConfig,
     sessions: SessionManager,
@@ -215,6 +225,7 @@ def create_app(
                     "providers": sessions.provider_catalog(),
                     "skills": sessions.skill_catalog(),
                     "capabilities": sessions.capability_catalog(),
+                    "channels": _channel_status(channel_adapters),
                     "pending_confirmations": operator["pending_confirmations"],
                     "missions": operator["missions"],
                 }
