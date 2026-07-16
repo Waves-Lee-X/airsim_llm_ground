@@ -1,76 +1,57 @@
 digraph MissionLoop {
-  graph [rankdir=TB, bgcolor="#F4F7FA", pad="0.28", nodesep="0.3", ranksep="0.48", splines=ortho, fontname="Microsoft YaHei"];
-  node [fontname="Microsoft YaHei"];
-  edge [color="#6F8496", penwidth=2.2, arrowsize=0.85];
+  graph [rankdir=TB, bgcolor="#08111F", pad="0.4", nodesep="0.34", ranksep="0.58", splines=spline, fontname="Microsoft YaHei", size="13.333,7.5!", ratio="fill", dpi=180];
+  node [shape=rect, style="rounded,filled", fontname="Microsoft YaHei", fontcolor="#EAF2FF", color="#263B55", fillcolor="#101D2D", penwidth=1.3, margin="0.18,0.12", width=2.05, height=0.78];
+  edge [fontname="Microsoft YaHei", color="#54708E", penwidth=2.2, arrowsize=0.78, fontsize=9, fontcolor="#8FA6C1"];
 
-  title [shape=plain, label=<
-    <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
-      <TR><TD><FONT POINT-SIZE="25" COLOR="#162638"><B>智能任务执行闭环</B></FONT></TD></TR>
-      <TR><TD><FONT POINT-SIZE="12" COLOR="#637486">从自然语言到物理飞行，再由真实遥测验证结果</FONT></TD></TR>
-    </TABLE>
-  >];
+  title [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+    <TR><TD><FONT POINT-SIZE="24" COLOR="#F4F8FF"><B>智能任务执行闭环</B></FONT></TD></TR>
+    <TR><TD><FONT POINT-SIZE="11" COLOR="#7F93AD">从自然语言目标到真实物理动作，并由遥测与感知持续验证</FONT></TD></TR>
+  </TABLE>>];
 
-  planning [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#C4D1DA" CELLBORDER="0" CELLSPACING="7" CELLPADDING="11" BGCOLOR="#E5EDF3">
-      <TR><TD COLSPAN="9" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#263D50"><B>01 任务理解与决策</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="user" WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>用户任务</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">自然语言目标<BR/>约束与条件</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>LLM 理解</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">识别意图<BR/>补全上下文</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>Workflow 规划</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">组合 Skills<BR/>生成条件分支</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>结构化校验</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">能力白名单<BR/>参数范围</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD PORT="confirm" WIDTH="145" BGCOLOR="#FFF6DF"><FONT POINT-SIZE="14"><B>风险确认</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#765B20">人工确认<BR/>或策略放行</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  input [label=<<FONT POINT-SIZE="15"><B>01 任务输入</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#8FA6C1">Web / 飞书自然语言</FONT>>, fillcolor="#14243A", color="#355E91"];
+  understand [label=<<FONT POINT-SIZE="15"><B>02 多模态理解</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#A9BFFF">LLM + VLM + 实时状态</FONT>>, fillcolor="#172A4B", color="#4B73BE"];
+  plan [label=<<FONT POINT-SIZE="15"><B>03 Workflow 规划</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#A9BFFF">Skills 组合 · 条件分支</FONT>>, fillcolor="#172A4B", color="#4B73BE"];
+  validate [label=<<FONT POINT-SIZE="15"><B>04 安全校验</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#E4C179">白名单 · 参数 · 风险确认</FONT>>, fillcolor="#312719", color="#8C6A2F"];
+  execute [label=<<FONT POINT-SIZE="15"><B>05 ROS 2 执行</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#8EDBCF">Service · Action · Topic</FONT>>, fillcolor="#113832", color="#2F8D7C"];
+  vehicle [label=<<FONT POINT-SIZE="15"><B>06 无人机物理动作</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#A9D7B5">PX4 · Offboard · 轨迹跟踪</FONT>>, fillcolor="#173823", color="#398452"];
 
-  execution [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#B7CDCF" CELLBORDER="0" CELLSPACING="7" CELLPADDING="11" BGCOLOR="#DDEBEC">
-      <TR><TD COLSPAN="9" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#263D50"><B>02 机器人执行与物理反馈</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="dispatch" WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>ROS 2 调度</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">Service / Action<BR/>Topic / TF</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>实时感知</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">RGB、深度<BR/>点云、检测</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD PORT="replan" WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>自主规划</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">避障重规划<BR/>Minimum Snap</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD WIDTH="145" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>轨迹跟踪</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">连续 Offboard<BR/>位置速度设定值</FONT></TD>
-        <TD WIDTH="28"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD PORT="vehicle" WIDTH="145" BGCOLOR="#E6F3EA"><FONT POINT-SIZE="14"><B>PX4 与无人机</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#3D6B50">姿态控制<BR/>执行物理动作</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  telemetry [label=<<FONT POINT-SIZE="14"><B>实时反馈</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#82AFFF">位置 · 高度 · 模式 · 进度</FONT>>, fillcolor="#152B4B", color="#3F6DAF", width=2.35];
+  perception [label=<<FONT POINT-SIZE="14"><B>环境反馈</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#76D3C7">RGB · 深度 · 点云 · 检测</FONT>>, fillcolor="#10332F", color="#2C8275", width=2.35];
+  judge [shape=diamond, label=<<B>目标是否完成？</B>>, fillcolor="#18283A", color="#496782", width=2.1, height=1.0];
+  done [label=<<FONT POINT-SIZE="14"><B>完成与归档</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#A9D7B5">结果 · 截图 · 报告 · 对话反馈</FONT>>, fillcolor="#173823", color="#398452", width=2.6];
+  recover [label=<<FONT POINT-SIZE="14"><B>可恢复异常</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#E4C179">暂停 · 重试 · 局部重规划</FONT>>, fillcolor="#312719", color="#8C6A2F", width=2.55];
+  emergency [label=<<FONT POINT-SIZE="14"><B>安全终止</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#E5A3A1">悬停 · 降落 · PX4 RTL</FONT>>, fillcolor="#351D22", color="#8E424A", width=2.55];
 
-  verification [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#C8D0D9" CELLBORDER="0" CELLSPACING="8" CELLPADDING="11" BGCOLOR="#E7EBF0">
-      <TR><TD COLSPAN="7" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#263D50"><B>03 结果验证与任务恢复</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="telemetry" WIDTH="185" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>遥测与 Mission 状态</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">高度、位置、模式、进度、完成原因</FONT></TD>
-        <TD WIDTH="32"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD WIDTH="185" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>条件判定</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">是否达到目标？<BR/>是否需要恢复？</FONT></TD>
-        <TD WIDTH="32"><FONT POINT-SIZE="19" COLOR="#708596">→</FONT></TD>
-        <TD PORT="report" WIDTH="185" BGCOLOR="#E6F3EA"><FONT POINT-SIZE="14"><B>完成与归档</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#3D6B50">对话反馈、截图、日志、任务报告</FONT></TD>
-        <TD PORT="recovery" WIDTH="185" BGCOLOR="#FFF6DF"><FONT POINT-SIZE="14"><B>可恢复异常</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#765B20">暂停、重试、局部重规划</FONT></TD>
-        <TD PORT="stop" WIDTH="185" BGCOLOR="#FCE9E7"><FONT POINT-SIZE="14"><B>不可接受风险</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#7F4440">悬停、降落或 RTL</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  center [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="8" BGCOLOR="#111C2A">
+    <TR><TD><FONT POINT-SIZE="13" COLOR="#DCE8F7"><B>Agent 决策中枢</B></FONT></TD></TR>
+    <TR><TD><FONT POINT-SIZE="9" COLOR="#8FA6C1">理解与规划由模型参与<BR/>执行与安全由确定性系统约束</FONT></TD></TR>
+  </TABLE>>];
 
-  guard [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#D3BC80" CELLBORDER="1" CELLSPACING="0" CELLPADDING="10" BGCOLOR="#FFF9EA">
-      <TR>
-        <TD WIDTH="260"><FONT POINT-SIZE="12"><B>决策边界</B><BR/>LLM 只生成结构化任务，不直接控制电机</FONT></TD>
-        <TD WIDTH="260"><FONT POINT-SIZE="12"><B>执行边界</B><BR/>ROS 2 Action 持续反馈并支持取消和超时</FONT></TD>
-        <TD WIDTH="260"><FONT POINT-SIZE="12"><B>安全边界</B><BR/>飞控状态、障碍距离与人工确认共同约束</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  guard [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="8" CELLPADDING="7"><TR>
+    <TD BGCOLOR="#172538"><FONT COLOR="#7DAAFF"><B>模型层</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A8B8CB">生成结构化任务</FONT></TD>
+    <TD BGCOLOR="#2B2418"><FONT COLOR="#E6B95F"><B>网关层</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#CFC1A3">校验、确认、审计</FONT></TD>
+    <TD BGCOLOR="#14291F"><FONT COLOR="#70D496"><B>控制层</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A9C7B4">实时闭环控制</FONT></TD>
+  </TR></TABLE>>];
 
-  title -> planning [style=invis, weight=10];
-  planning -> execution;
-  execution -> verification;
-  verification -> guard [style=invis, weight=8];
+  title -> input [style=invis];
+  {rank=same; input; understand; plan; validate; execute; vehicle;}
+  input -> understand [color="#5A8DE3"];
+  understand -> plan [color="#5A8DE3"];
+  plan -> validate [color="#D29A3A"];
+  validate -> execute [color="#35B9A8", label="确认通过"];
+  execute -> vehicle [color="#50B56C"];
+
+  vehicle -> telemetry [color="#6E9CF2"];
+  vehicle -> perception [color="#35B9A8"];
+  {rank=same; telemetry; center; perception;}
+  telemetry -> judge [color="#6E9CF2"];
+  perception -> judge [color="#35B9A8"];
+  center -> judge [style=invis];
+  judge -> done [color="#50B56C", label="是"];
+  judge -> recover [color="#D29A3A", label="未完成 / 可恢复"];
+  judge -> emergency [color="#C75A65", label="风险不可接受"];
+  {rank=same; done; recover; emergency;}
+  recover -> plan [color="#D29A3A", constraint=false, label="重规划剩余任务"];
+  emergency -> vehicle [color="#C75A65", constraint=false, label="安全动作"];
+  done -> guard [style=invis];
 }

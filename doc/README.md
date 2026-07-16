@@ -28,6 +28,15 @@
 - [智能任务执行闭环 PNG](架构图/03-智能任务执行闭环.png)
 - `架构图/*.dot` 为 Graphviz 源文件，可继续编辑并导出。
 
+在 WSL 中重新导出时使用项目字体配置，避免中文显示为方框：
+
+```bash
+export FONTCONFIG_FILE="$PWD/doc/架构图/fontconfig.xml"
+for source in doc/架构图/*.dot; do
+  dot -Tpng "$source" -o "${source%.dot}.png"
+done
+```
+
 ## 信息维护规则
 
 1. README 只保留项目入口和最短启动方式，不再堆放完整参数表。

@@ -1,86 +1,125 @@
 digraph SystemArchitecture {
   graph [
     rankdir=TB,
-    bgcolor="#F4F7FA",
-    pad="0.28",
-    nodesep="0.35",
-    ranksep="0.52",
+    bgcolor="#08111F",
+    pad="0.38",
+    nodesep="0.34",
+    ranksep="0.78",
     splines=ortho,
-    fontname="Microsoft YaHei"
+    fontname="Microsoft YaHei",
+    size="13.333,7.5!",
+    ratio="fill",
+    dpi=180
   ];
-  node [fontname="Microsoft YaHei"];
-  edge [color="#6F8496", penwidth=2.0, arrowsize=0.8];
+  node [
+    shape=rect,
+    style="rounded,filled",
+    fontname="Microsoft YaHei",
+    fontcolor="#EAF2FF",
+    color="#263B55",
+    fillcolor="#101D2D",
+    penwidth=1.2,
+    margin="0.18,0.12"
+  ];
+  edge [fontname="Microsoft YaHei", color="#4F6A86", penwidth=2.0, arrowsize=0.75];
 
-  title [shape=plain, label=<
-    <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
-      <TR><TD><FONT POINT-SIZE="25" COLOR="#162638"><B>无人机智能控制平台：系统总架构</B></FONT></TD></TR>
-      <TR><TD><FONT POINT-SIZE="12" COLOR="#637486">自然语言任务规划、ROS 2 能力编排、感知决策与 PX4 飞行控制</FONT></TD></TR>
-    </TABLE>
-  >];
+  title [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+    <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="25" COLOR="#F4F8FF"><B>无人机智能控制平台</B></FONT></TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="11" COLOR="#7F93AD">自然语言驱动的任务理解、具身感知、自主规划与安全飞行闭环</FONT></TD></TR>
+  </TABLE>>];
 
-  interaction [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#C8D5DF" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#E9F0F5">
-      <TR><TD COLSPAN="3" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>01 交互与展示层</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="web" WIDTH="245" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Web 智能地面站</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">对话、确认、态势、RGB、深度、点云</FONT></TD>
-        <TD PORT="remote" WIDTH="245" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>远程消息入口</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">飞书 / 移动端任务下发与通知</FONT></TD>
-        <TD PORT="engineering" WIDTH="245" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>工程调试入口</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">RViz2、ROS CLI、PX4 Console</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_access {
+    label="01  操作与交互";
+    labelloc=t;
+    labeljust=l;
+    fontsize=14;
+    fontcolor="#8FA6C1";
+    color="#1A2A3E";
+    fillcolor="#0B1625";
+    style="rounded,filled";
+    margin=18;
+    web [label=<<B>Web 智能地面站</B><BR/><FONT POINT-SIZE="10" COLOR="#8FA6C1">对话 · 确认 · 态势 · 多传感器</FONT>>, width=2.35];
+    feishu [label=<<B>飞书移动入口</B><BR/><FONT POINT-SIZE="10" COLOR="#8FA6C1">远程任务 · 图片分析 · 通知</FONT>>, width=2.35];
+    tools [label=<<B>工程调试入口</B><BR/><FONT POINT-SIZE="10" COLOR="#8FA6C1">RViz2 · ROS CLI · PX4 Console</FONT>>, width=2.35];
+    {rank=same; web; feishu; tools;}
+  }
 
-  intelligence [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#BFCFDC" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#E5EDF4">
-      <TR><TD COLSPAN="4" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>02 智能任务与网关层</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="gateway" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Agent Gateway</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">流式会话、历史记忆、模型切换</FONT></TD>
-        <TD PORT="models" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>LLM / VLM</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">意图理解、规划、图像语义分析</FONT></TD>
-        <TD PORT="skills" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Skills / Workflow</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">基础能力组合、条件分支、任务恢复</FONT></TD>
-        <TD PORT="safety" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>控制安全网关</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">白名单、风险分级、人工确认、审计</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_brain {
+    label="02  智能任务中枢";
+    labelloc=t;
+    labeljust=l;
+    fontsize=14;
+    fontcolor="#9DBBFF";
+    color="#284D8A";
+    fillcolor="#0D1B31";
+    style="rounded,filled";
+    penwidth=1.5;
+    margin=18;
+    gateway [label=<<FONT POINT-SIZE="16"><B>Agent Gateway</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">流式会话 · 多轮记忆 · 模型切换 · 跨端同步</FONT>>, fillcolor="#153561", color="#3C77D8", width=3.05, height=0.85];
+    models [label=<<B>LLM / VLM</B><BR/><FONT POINT-SIZE="10" COLOR="#92A8C4">任务理解 · 推理规划 · 图像语义</FONT>>, width=2.55];
+    skills [label=<<B>Skills / Workflow</B><BR/><FONT POINT-SIZE="10" COLOR="#92A8C4">基础动作 · 条件分支 · 动态组合</FONT>>, width=2.55];
+    safety [label=<<B>安全与治理</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">白名单 · 参数校验 · 人工确认 · 审计</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.55];
+    {rank=same; gateway; models; skills; safety;}
+    gateway -> models [color="#598EF0"];
+    gateway -> skills [color="#598EF0"];
+    skills -> safety [color="#D29A3A"];
+  }
 
-  ros [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#B5C9D5" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#DCE9EE">
-      <TR><TD COLSPAN="4" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>03 ROS 2 机器人能力层</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="bridge" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>桥接节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">AirSim / PX4 数据标准化发布</FONT></TD>
-        <TD PORT="perception" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>感知节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">图像、YOLO、VLM、深度、点云</FONT></TD>
-        <TD PORT="autonomy" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>自主规划节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">目标、局部重规划、Minimum Snap</FONT></TD>
-        <TD PORT="control" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>控制节点</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">Action、轨迹跟踪、Offboard 控制</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_robot {
+    label="03  ROS 2 具身能力";
+    labelloc=t;
+    labeljust=l;
+    fontsize=14;
+    fontcolor="#7FE1D1";
+    color="#1F675F";
+    fillcolor="#0A1D21";
+    style="rounded,filled";
+    margin=18;
+    bus [label=<<FONT POINT-SIZE="15"><B>ROS 2 DDS 能力总线</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">Topic · Service · Action · TF</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.75, height=0.8];
+    perception [label=<<B>感知</B><BR/><FONT POINT-SIZE="10" COLOR="#8FB7B4">RGB · 深度 · 点云 · YOLO</FONT>>, width=2.45];
+    autonomy [label=<<B>自主规划</B><BR/><FONT POINT-SIZE="10" COLOR="#8FB7B4">避障 · 局部重规划 · Minimum Snap</FONT>>, width=2.45];
+    control [label=<<B>轨迹与飞行控制</B><BR/><FONT POINT-SIZE="10" COLOR="#8FB7B4">Action · 跟踪器 · Offboard</FONT>>, width=2.45];
+    {rank=same; bus; perception; autonomy; control;}
+    bus -> perception [color="#35B9A8"];
+    perception -> autonomy [color="#35B9A8"];
+    autonomy -> control [color="#35B9A8"];
+  }
 
-  platform [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#AFC4C7" CELLBORDER="0" CELLSPACING="8" CELLPADDING="12" BGCOLOR="#DCEAEA">
-      <TR><TD COLSPAN="4" ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#1F3446"><B>04 仿真、飞控与机载平台层</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="airsim" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>AirSim 仿真</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">RGB、深度、LiDAR、仿真环境</FONT></TD>
-        <TD PORT="xrce" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>Micro XRCE-DDS</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">PX4 uORB 与 ROS 2 DDS 桥梁</FONT></TD>
-        <TD PORT="px4" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>PX4 飞控</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">状态估计、模式管理、姿态控制</FONT></TD>
-        <TD PORT="hardware" WIDTH="180" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>真机与传感器</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">计算平台、相机、雷达、动力系统</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_vehicle {
+    label="04  仿真与物理平台";
+    labelloc=t;
+    labeljust=l;
+    fontsize=14;
+    fontcolor="#9DD8B0";
+    color="#275C3D";
+    fillcolor="#0C1B18";
+    style="rounded,filled";
+    margin=18;
+    px4 [label=<<FONT POINT-SIZE="15"><B>PX4 飞控</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#A6C8AF">状态估计 · 模式管理 · 姿态控制</FONT>>, fillcolor="#173823", color="#398452", width=2.7, height=0.8];
+    xrce [label=<<B>Micro XRCE-DDS</B><BR/><FONT POINT-SIZE="10" COLOR="#91AF99">uORB ↔ ROS 2 DDS</FONT>>, width=2.45];
+    airsim [label=<<B>AirSim / 传感器</B><BR/><FONT POINT-SIZE="10" COLOR="#91AF99">RGB · Depth · LiDAR · 仿真环境</FONT>>, width=2.45];
+    vehicle [label=<<B>真机执行平台</B><BR/><FONT POINT-SIZE="10" COLOR="#91AF99">机载计算 · 动力系统 · 载荷</FONT>>, width=2.45];
+    {rank=same; airsim; xrce; px4; vehicle;}
+    xrce -> px4 [dir=both, color="#50B56C"];
+    px4 -> vehicle [color="#50B56C"];
+  }
 
-  guard [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#E0B765" CELLBORDER="0" CELLPADDING="10" BGCOLOR="#FFF8E8">
-      <TR><TD><FONT POINT-SIZE="12" COLOR="#765B20"><B>贯穿全链路的安全原则：</B> 大模型不直接输出电机控制量；所有动作必须经过结构化能力、参数校验、确认策略和飞控状态反馈。</FONT></TD></TR>
-    </TABLE>
-  >];
+  principle [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="8" CELLPADDING="8" BGCOLOR="#111C2A">
+    <TR>
+      <TD BGCOLOR="#172538"><FONT COLOR="#7DAAFF"><B>智能边界</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A8B8CB">模型输出结构化任务</FONT></TD>
+      <TD BGCOLOR="#2B2418"><FONT COLOR="#E6B95F"><B>安全边界</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#CFC1A3">高风险动作必须确认</FONT></TD>
+      <TD BGCOLOR="#14291F"><FONT COLOR="#70D496"><B>控制边界</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A9C7B4">PX4 执行实时控制</FONT></TD>
+    </TR>
+    <TR><TD COLSPAN="3"><FONT POINT-SIZE="10" COLOR="#A8B8CB"><B>核心原则：</B>大模型参与理解、规划和分析，但不直接输出电机控制量</FONT></TD></TR>
+  </TABLE>>];
 
-  title -> interaction [style=invis, weight=10];
-  interaction:web:s -> intelligence:gateway:n;
-  interaction:remote:s -> intelligence:gateway:n;
-  interaction:engineering:s -> ros:bridge:n;
-  intelligence:gateway:s -> ros:bridge:n;
-  intelligence:models:s -> ros:perception:n;
-  intelligence:skills:s -> ros:autonomy:n;
-  intelligence:safety:s -> ros:control:n;
-  ros:bridge:s -> platform:xrce:n [dir=both];
-  ros:autonomy:s -> platform:px4:n;
-  ros:control:s -> platform:px4:n;
-  platform -> guard [style=invis, weight=10];
+  title -> web [style=invis];
+  web -> gateway [color="#598EF0"];
+  feishu -> gateway [color="#598EF0"];
+  tools -> bus [color="#506983"];
+  safety -> bus [color="#D29A3A", label="  结构化动作", fontcolor="#B89A61", fontsize=9];
+  control -> px4 [color="#50B56C", label="  setpoint", fontcolor="#79B88C", fontsize=9];
+  airsim -> perception [dir=both, color="#35B9A8", label="  传感器数据", fontcolor="#70BDB4", fontsize=9, constraint=false];
+  xrce -> bus [dir=both, color="#35B9A8", constraint=false];
+  vehicle -> principle [style=invis];
 }

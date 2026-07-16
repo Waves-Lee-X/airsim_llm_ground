@@ -1,85 +1,72 @@
 digraph RosDataFlow {
-  graph [rankdir=TB, bgcolor="#F4F7FA", pad="0.28", nodesep="0.38", ranksep="0.48", splines=ortho, fontname="Microsoft YaHei"];
-  node [fontname="Microsoft YaHei"];
-  edge [color="#6F8496", penwidth=2.0, arrowsize=0.8];
+  graph [rankdir=TB, bgcolor="#08111F", pad="0.4", nodesep="0.34", ranksep="0.55", splines=ortho, fontname="Microsoft YaHei", size="13.333,7.5!", ratio="fill", dpi=180];
+  node [shape=rect, style="rounded,filled", fontname="Microsoft YaHei", fontcolor="#EAF2FF", color="#263B55", fillcolor="#101D2D", penwidth=1.2, margin="0.17,0.11"];
+  edge [fontname="Microsoft YaHei", color="#4F6A86", penwidth=2.0, arrowsize=0.72, fontsize=9, fontcolor="#8FA6C1"];
 
-  title [shape=plain, label=<
-    <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
-      <TR><TD><FONT POINT-SIZE="25" COLOR="#162638"><B>ROS 2 模块与数据流</B></FONT></TD></TR>
-      <TR><TD><FONT POINT-SIZE="12" COLOR="#637486">传感器数据如何进入 ROS、被处理，并最终形成飞行指令与 Web 可视化</FONT></TD></TR>
-    </TABLE>
-  >];
+  title [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+    <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="24" COLOR="#F4F8FF"><B>ROS 2 模块与实时数据流</B></FONT></TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="11" COLOR="#7F93AD">感知流、状态流、任务流和控制流在统一 DDS 总线上解耦协作</FONT></TD></TR>
+  </TABLE>>];
 
-  source [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#B9CCD8" CELLBORDER="0" CELLSPACING="10" CELLPADDING="12" BGCOLOR="#E3EDF3">
-      <TR><TD COLSPAN="2" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>数据源</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="airsim" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>AirSim 传感器</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">Scene RGB · DepthPlanar · LiDAR 点云</FONT></TD>
-        <TD PORT="px4" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>PX4 飞控</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">里程计 · 电池 · GPS · 模式 · 解锁状态</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_source {
+    label="数据源"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#8FA6C1"; color="#1A2A3E"; fillcolor="#0B1625"; style="rounded,filled"; margin=16;
+    airsim [label=<<FONT POINT-SIZE="14"><B>AirSim 传感器</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#8FA6C1">Scene RGB · DepthPlanar · LiDAR</FONT>>, width=2.5];
+    px4 [label=<<FONT POINT-SIZE="14"><B>PX4 uORB</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#8FA6C1">里程计 · 电池 · GPS · 飞行模式</FONT>>, width=2.5];
+    {rank=same; airsim; px4;}
+  }
 
-  transport [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#B7C9D5" CELLBORDER="0" CELLSPACING="10" CELLPADDING="12" BGCOLOR="#E0EAF1">
-      <TR><TD COLSPAN="2" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>接入与转换</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="bridge" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>airsim_bridge_node</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">RPC 拉取数据，转换为 ROS 标准消息并发布 TF</FONT></TD>
-        <TD PORT="xrce" WIDTH="350" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="16"><B>Micro XRCE-DDS Agent</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">UDP 8888 接收 PX4 uXRCE Client 数据并接入 DDS</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_ingress {
+    label="接入与标准化"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#8FA6C1"; color="#1A2A3E"; fillcolor="#0B1625"; style="rounded,filled"; margin=16;
+    bridge [label=<<B>airsim_bridge_node</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">RPC 拉取 → ROS 消息 / TF</FONT>>, fillcolor="#102B31", color="#286E73", width=2.55];
+    xrce [label=<<B>Micro XRCE-DDS Agent</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">UDP 8888 · uORB ↔ DDS</FONT>>, fillcolor="#102B31", color="#286E73", width=2.55];
+    {rank=same; bridge; xrce;}
+  }
 
-  bus [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#9DBBC5" CELLBORDER="1" CELLSPACING="0" CELLPADDING="11" BGCOLOR="#FFFFFF">
-      <TR><TD COLSPAN="4" BGCOLOR="#D8E8EB"><FONT POINT-SIZE="18"><B>ROS 2 DDS 数据总线：Topic / Service / Action / TF</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="image" WIDTH="180"><FONT POINT-SIZE="14"><B>图像与点云</B></FONT><BR/><FONT POINT-SIZE="10">/sensor/camera/rgb<BR/>/sensor/camera/depth<BR/>/sensor/lidar/points</FONT></TD>
-        <TD PORT="flight" WIDTH="180"><FONT POINT-SIZE="14"><B>飞控状态</B></FONT><BR/><FONT POINT-SIZE="10">/fmu/out/*<BR/>/control/drone_state<BR/>/local_position/odom</FONT></TD>
-        <TD PORT="mission" WIDTH="180"><FONT POINT-SIZE="14"><B>自主任务</B></FONT><BR/><FONT POINT-SIZE="10">/autonomy/goal<BR/>/autonomy/trajectory<BR/>/autonomy/status</FONT></TD>
-        <TD PORT="command" WIDTH="180"><FONT POINT-SIZE="14"><B>控制接口</B></FONT><BR/><FONT POINT-SIZE="10">/control/takeoff<BR/>/control/land / RTL<BR/>轨迹 Action</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  bus [label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="5">
+    <TR><TD><FONT POINT-SIZE="16" COLOR="#FFFFFF"><B>ROS 2 DDS</B></FONT></TD></TR>
+    <TR><TD><FONT POINT-SIZE="10" COLOR="#A7C6E8">Topic · Service · Action · TF</FONT></TD></TR>
+    <TR><TD BGCOLOR="#143A4B"><FONT POINT-SIZE="9" COLOR="#66D3E1">图像 / 深度 / 点云</FONT></TD></TR>
+    <TR><TD BGCOLOR="#172D50"><FONT POINT-SIZE="9" COLOR="#81AFFF">飞控状态 / 里程计</FONT></TD></TR>
+    <TR><TD BGCOLOR="#26321C"><FONT POINT-SIZE="9" COLOR="#AFCF76">目标 / 轨迹 / 任务状态</FONT></TD></TR>
+    <TR><TD BGCOLOR="#3A2718"><FONT POINT-SIZE="9" COLOR="#E8B05E">Service / Action 控制</FONT></TD></TR>
+  </TABLE>>, fillcolor="#12243B", color="#3A6CA8", penwidth=1.7, width=2.35, height=2.5];
 
-  modules [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#B8C9D3" CELLBORDER="0" CELLSPACING="7" CELLPADDING="11" BGCOLOR="#E7EDF1">
-      <TR><TD COLSPAN="5" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>业务节点</B></FONT></TD></TR>
-      <TR>
-        <TD PORT="perception" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>感知</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">YOLO / VLM<BR/>拍照 / 摘要</FONT></TD>
-        <TD PORT="autonomy" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>自主规划</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">融合 / 避障<BR/>局部重规划</FONT></TD>
-        <TD PORT="control" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>飞行控制</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">Action Server<BR/>Offboard 跟踪</FONT></TD>
-        <TD PORT="agent" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>任务 Agent</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">Skills / Workflow<BR/>状态验证</FONT></TD>
-        <TD PORT="web" WIDTH="140" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="14"><B>Web 网关</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#617383">HTTP / WebSocket<BR/>图像压缩传输</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_nodes {
+    label="机器人业务节点"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#8FA6C1"; color="#1A2A3E"; fillcolor="#0B1625"; style="rounded,filled"; margin=16;
+    perception [label=<<B>感知节点</B><BR/><FONT POINT-SIZE="10" COLOR="#88C6CF">YOLO · VLM · 深度 · 点云</FONT>>, fillcolor="#102833", color="#27677A", width=2.5];
+    autonomy [label=<<B>自主规划节点</B><BR/><FONT POINT-SIZE="10" COLOR="#A5C77A">避障 · 重规划 · Minimum Snap</FONT>>, fillcolor="#1B2919", color="#55763B", width=2.5];
+    control [label=<<B>控制节点</B><BR/><FONT POINT-SIZE="10" COLOR="#E0B66E">Action · 轨迹跟踪 · Offboard</FONT>>, fillcolor="#2D2417", color="#85652F", width=2.5];
+    agent [label=<<B>Agent / Workflow</B><BR/><FONT POINT-SIZE="10" COLOR="#9DBBFF">Skills 编排 · 条件判断 · 验证</FONT>>, fillcolor="#172846", color="#426AAE", width=2.5];
+    web [label=<<B>Web 网关</B><BR/><FONT POINT-SIZE="10" COLOR="#B1A4D8">HTTP · WebSocket · 图像压缩</FONT>>, fillcolor="#241F39", color="#67558D", width=2.5];
+    {rank=same; perception; autonomy; control; agent; web;}
+  }
 
-  output [shape=plain, label=<
-    <TABLE BORDER="1" COLOR="#AEC5C1" CELLBORDER="0" CELLSPACING="10" CELLPADDING="12" BGCOLOR="#E1EEEB">
-      <TR><TD COLSPAN="3" ALIGN="LEFT"><FONT POINT-SIZE="18"><B>输出与闭环</B></FONT></TD></TR>
-      <TR>
-        <TD WIDTH="230" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>PX4 控制设定值</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">位置 / 速度 / 航向 setpoint</FONT></TD>
-        <TD WIDTH="230" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>地面站实时态势</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">状态、告警、RGB、深度、点云</FONT></TD>
-        <TD WIDTH="230" BGCOLOR="#FFFFFF"><FONT POINT-SIZE="15"><B>任务证据与报告</B></FONT><BR/><FONT POINT-SIZE="11" COLOR="#617383">执行结果、截图、日志、Mission 报告</FONT></TD>
-      </TR>
-    </TABLE>
-  >];
+  subgraph cluster_result {
+    label="闭环输出"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#8FA6C1"; color="#1A2A3E"; fillcolor="#0B1625"; style="rounded,filled"; margin=16;
+    setpoint [label=<<B>PX4 控制设定值</B><BR/><FONT POINT-SIZE="10" COLOR="#9CC4A9">位置 · 速度 · 航向</FONT>>, fillcolor="#14291F", color="#3F7652", width=2.35];
+    console [label=<<B>实时任务态势</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">状态 · 告警 · RGB · 点云</FONT>>, width=2.35];
+    archive [label=<<B>任务证据归档</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">截图 · 日志 · Mission 报告</FONT>>, width=2.35];
+    {rank=same; setpoint; console; archive;}
+  }
 
-  title -> source [style=invis, weight=10];
-  source:airsim:s -> transport:bridge:n;
-  source:px4:s -> transport:xrce:n;
-  transport:bridge:s -> bus:image:n;
-  transport:xrce:s -> bus:flight:n;
-  bus:image:s -> modules:perception:n;
-  bus:image:s -> modules:autonomy:n;
-  bus:flight:s -> modules:control:n;
-  bus:mission:s -> modules:autonomy:n;
-  bus:command:s -> modules:agent:n;
-  bus:image:s -> modules:web:n;
-  modules:perception:s -> output;
-  modules:autonomy:s -> output;
-  modules:control:s -> output;
-  modules:agent:s -> output;
-  modules:web:s -> output;
+  legend [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="12" CELLPADDING="4"><TR>
+    <TD><FONT COLOR="#43C8D8">━━ 感知数据</FONT></TD><TD><FONT COLOR="#6E9CF2">━━ 状态反馈</FONT></TD><TD><FONT COLOR="#9CC95D">━━ 任务轨迹</FONT></TD><TD><FONT COLOR="#E0A34D">━━ 控制命令</FONT></TD>
+  </TR></TABLE>>];
+
+  title -> airsim [style=invis];
+  airsim -> bridge [color="#43C8D8", label="RGB / Depth / LiDAR"];
+  px4 -> xrce [dir=both, color="#6E9CF2", label="uXRCE-DDS"];
+  bridge -> bus [color="#43C8D8"];
+  xrce -> bus [dir=both, color="#6E9CF2"];
+  bus -> perception [color="#43C8D8"];
+  perception -> autonomy [color="#43C8D8", label="障碍物 / 语义"];
+  bus -> agent [dir=both, color="#6E9CF2", label="状态 / 工具"];
+  agent -> autonomy [color="#9CC95D", label="结构化目标"];
+  autonomy -> control [color="#9CC95D", label="连续轨迹"];
+  control -> bus [color="#E0A34D", constraint=false];
+  bus -> web [color="#6E9CF2"];
+  control -> setpoint [color="#E0A34D"];
+  web -> console [color="#735E9E"];
+  agent -> archive [color="#735E9E"];
+  archive -> legend [style=invis];
 }
