@@ -33,6 +33,56 @@ except Exception:
     PilImage = None
 
 
+def _strip_json_fence(content: str) -> str:
+    text = str(content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
+def extract_vlm_json(content: str) -> dict:
+    text = _strip_json_fence(content)
+    candidates = [text]
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(text[start : end + 1])
+    for candidate in candidates:
+        for normalized in (
+            candidate,
+            re.sub(r",\s*([}\]])", r"\1", candidate),
+        ):
+            try:
+                result = json.loads(normalized)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(result, dict):
+                return result
+    raise ValueError("VLM 返回内容不是合法 JSON 对象")
+
+
+def normalize_vlm_content(content: str, fallback: dict) -> dict:
+    try:
+        result = extract_vlm_json(content)
+    except ValueError as exc:
+        scene = _strip_json_fence(content)
+        if not scene:
+            raise ValueError("VLM 返回内容为空") from exc
+        return {
+            "message": "图像语义分析完成（结构化格式已降级）",
+            "scene": scene,
+            "risk_level": fallback.get("risk_level", "low"),
+            "suggestion": fallback.get("suggestion", "请结合深度和点云复核"),
+            "objects": fallback.get("objects", []),
+            "format_warning": str(exc),
+        }
+    risk_level = str(result.get("risk_level", "")).lower()
+    if risk_level not in {"low", "medium", "high"}:
+        result["risk_level"] = fallback.get("risk_level", "low")
+    return result
+
+
 class PerceptionNode(Node):
     """感知节点"""
 
@@ -310,6 +360,8 @@ class PerceptionNode(Node):
             f"{prompt}\n"
             "请返回 JSON，对象字段必须包含：message, scene, risk_level, suggestion, objects。"
             "risk_level 只能是 low/medium/high。"
+            "只输出一个合法 JSON 对象，不要使用 Markdown 代码块，不要输出解释或推理过程；"
+            "字符串内部的双引号、换行和反斜杠必须按 JSON 规范转义。"
             f"当前 YOLO/规则摘要：{json.dumps(fallback, ensure_ascii=False)}"
         )
         body = json.dumps(
@@ -328,6 +380,7 @@ class PerceptionNode(Node):
                     }
                 ],
                 "temperature": 0.2,
+                "response_format": {"type": "json_object"},
             },
             ensure_ascii=False,
         ).encode("utf-8")
@@ -343,7 +396,12 @@ class PerceptionNode(Node):
         with urllib.request.urlopen(request, timeout=self._vlm_timeout_sec) as http_response:
             payload = json.loads(http_response.read().decode("utf-8"))
         content = payload["choices"][0]["message"]["content"]
-        return self._extract_json_object(content)
+        result = normalize_vlm_content(content, fallback)
+        if result.get("format_warning"):
+            self.get_logger().warn(
+                "VLM 返回非标准 JSON，已保留语义文本并使用规则字段兜底"
+            )
+        return result
 
     def _image_png_base64(self, msg: Image):
         if PilImage is None:
@@ -362,18 +420,7 @@ class PerceptionNode(Node):
         return base64.b64encode(buffer.getvalue()).decode("ascii")
 
     def _extract_json_object(self, content: str):
-        text = content.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?", "", text).strip()
-            text = re.sub(r"```$", "", text).strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start < 0 or end <= start:
-                raise ValueError("VLM 未返回 JSON 对象")
-            return json.loads(text[start : end + 1])
+        return extract_vlm_json(content)
 
     def _save_image_file(self, msg: Image, label: str, timestamp: str):
         encoding = msg.encoding.lower()
