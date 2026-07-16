@@ -313,6 +313,40 @@ class FeishuAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.adapter.updated[-1][2], "状态正常")
         self.assertNotIn(key, self.adapter._active_messages)
 
+    async def test_stream_preview_has_bounded_edit_budget(self):
+        key = ("feishu-ou_allowed", "request-budget")
+        self.adapter._active_messages[key] = "om-stream"
+        for index in range(20):
+            self.adapter._last_updates[key] = 0.0
+            await self.adapter._handle_stream_event(
+                key[0],
+                {
+                    "type": "assistant.delta",
+                    "request_id": key[1],
+                    "delta": str(index),
+                },
+            )
+        self.assertEqual(len(self.adapter.updated), 6)
+
+    async def test_stream_edit_limit_sends_final_reply_as_new_message(self):
+        key = ("feishu-ou_allowed", "request-fallback")
+        self.adapter._active_messages[key] = "om-stream"
+        self.adapter._targets[key[0]] = "oc_private"
+        self.adapter._stream_edit_exhausted.add(key)
+
+        await self.adapter._handle_stream_event(
+            key[0],
+            {
+                "type": "assistant.completed",
+                "request_id": key[1],
+                "message": {"content": "最终完整回复"},
+            },
+        )
+
+        self.assertEqual(self.adapter.sent[-1], ("text", "oc_private", "最终完整回复"))
+        self.assertNotIn(key, self.adapter._active_messages)
+        self.assertNotIn(key, self.adapter._stream_edit_exhausted)
+
     async def test_private_confirmation_uses_card_and_updates_status(self):
         session_id = "feishu-ou_allowed"
         item = {

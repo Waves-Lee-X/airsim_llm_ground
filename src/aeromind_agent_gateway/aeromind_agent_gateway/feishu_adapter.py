@@ -46,6 +46,8 @@ MODEL_ALIASES = {
     "deepseek": "deepseek:deepseek-chat",
     "qwen": "qwen:qwen-plus",
 }
+STREAM_UPDATE_INTERVAL_SECONDS = 2.5
+STREAM_PREVIEW_EDIT_LIMIT = 6
 
 
 class FeishuAdapter:
@@ -76,6 +78,8 @@ class FeishuAdapter:
         self._active_messages: dict[tuple[str, str], str] = {}
         self._stream_buffers: dict[tuple[str, str], str] = {}
         self._last_updates: dict[tuple[str, str], float] = {}
+        self._stream_edit_counts: dict[tuple[str, str], int] = {}
+        self._stream_edit_exhausted: set[tuple[str, str]] = set()
         self._confirmation_messages: dict[str, str] = {}
         self._confirmation_chats: dict[str, str] = {}
         self._stopping = False
@@ -567,23 +571,80 @@ class FeishuAdapter:
             content = self._stream_buffers.get(key, "") + str(event.get("delta", ""))
             self._stream_buffers[key] = content
             now = time.monotonic()
-            if now - self._last_updates.get(key, 0.0) >= 0.8:
+            if (
+                now - self._last_updates.get(key, 0.0)
+                >= STREAM_UPDATE_INTERVAL_SECONDS
+            ):
                 self._last_updates[key] = now
-                await self.update_text(message_id, f"正在分析...\n\n{content}")
+                await self._update_stream_preview(
+                    key, message_id, f"正在分析...\n\n{content}"
+                )
             return True
         if event_type == "tool.started":
             content = self._stream_buffers.get(key, "")
             tool = event.get("tool", "unknown")
-            await self.update_text(message_id, f"{content}\n\n正在调用工具：{tool}")
+            await self._update_stream_preview(
+                key, message_id, f"{content}\n\n正在调用工具：{tool}"
+            )
             return True
         if event_type in {"assistant.completed", "error"}:
             text = format_event(event) or "任务处理结束。"
-            await self.update_text(message_id, text)
-            self._active_messages.pop(key, None)
-            self._stream_buffers.pop(key, None)
-            self._last_updates.pop(key, None)
+            try:
+                if key in self._stream_edit_exhausted:
+                    await self._send_stream_fallback(session_id, text)
+                else:
+                    try:
+                        await self.update_text(message_id, text)
+                    except RuntimeError as exc:
+                        if not self._is_edit_limit_error(exc):
+                            raise
+                        await self._send_stream_fallback(session_id, text)
+            finally:
+                self._clear_stream_state(key)
             return True
         return event_type in {"chat.accepted", "assistant.started", "runtime.session"}
+
+    async def _update_stream_preview(
+        self,
+        key: tuple[str, str],
+        message_id: str,
+        text: str,
+    ):
+        if key in self._stream_edit_exhausted:
+            return
+        count = self._stream_edit_counts.get(key, 0)
+        if count >= STREAM_PREVIEW_EDIT_LIMIT:
+            return
+        try:
+            await self.update_text(message_id, text)
+        except RuntimeError as exc:
+            if not self._is_edit_limit_error(exc):
+                raise
+            self._stream_edit_exhausted.add(key)
+            LOGGER.warning(
+                "Feishu stream preview reached its edit limit; final reply will "
+                "be sent as a new message"
+            )
+            return
+        self._stream_edit_counts[key] = count + 1
+
+    async def _send_stream_fallback(self, session_id: str, text: str):
+        target = self._targets.get(session_id)
+        if not target:
+            raise RuntimeError("飞书流式消息达到编辑上限，且会话目标不可用")
+        await self.send_text(target, text)
+
+    def _clear_stream_state(self, key: tuple[str, str]):
+        self._active_messages.pop(key, None)
+        self._stream_buffers.pop(key, None)
+        self._last_updates.pop(key, None)
+        self._stream_edit_counts.pop(key, None)
+        self._stream_edit_exhausted.discard(key)
+
+    @staticmethod
+    def _is_edit_limit_error(exc: Exception) -> bool:
+        message = str(exc)
+        return "code=230072" in message or "number of times it can be edited" in message
 
     async def _send_confirmation(self, session_id: str, item: dict[str, Any]):
         chat_id = self._targets.get(session_id)
