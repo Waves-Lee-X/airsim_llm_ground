@@ -31,6 +31,7 @@ setup(
     entry_points={
         "console_scripts": [
             "agent_gateway = aeromind_agent_gateway.main:main",
+            "agent_evaluate = aeromind_agent_gateway.evaluation:main",
         ],
     },
 )
