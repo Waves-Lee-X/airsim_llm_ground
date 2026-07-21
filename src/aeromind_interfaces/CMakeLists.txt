@@ -18,6 +18,7 @@ set(msg_files
   msg/DetectionArray.msg
   msg/SemanticObject.msg
   msg/SemanticObjectArray.msg
+  msg/WorldModelHealth.msg
   msg/ObstacleMap.msg
   msg/Path.msg
   msg/TrajectoryPoint.msg

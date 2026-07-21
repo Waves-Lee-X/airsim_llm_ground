@@ -6,6 +6,31 @@ import math
 from typing import Iterable
 
 
+def camera_intrinsics_valid(
+    camera_matrix: Iterable[float],
+    info_width: int,
+    info_height: int,
+    image_width: int | None = None,
+    image_height: int | None = None,
+):
+    matrix = list(camera_matrix)
+    if len(matrix) != 9:
+        return False
+    fx, fy = float(matrix[0]), float(matrix[4])
+    cx, cy = float(matrix[2]), float(matrix[5])
+    width = int(info_width)
+    height = int(info_height)
+    if fx <= 0.0 or fy <= 0.0 or width <= 0 or height <= 0:
+        return False
+    if not (0.0 <= cx < width and 0.0 <= cy < height):
+        return False
+    if image_width is not None and int(image_width) != width:
+        return False
+    if image_height is not None and int(image_height) != height:
+        return False
+    return True
+
+
 def project_pixel(u: float, v: float, depth: float, camera_matrix: Iterable[float]):
     matrix = list(camera_matrix)
     fx, fy = float(matrix[0]), float(matrix[4])
@@ -54,4 +79,3 @@ def associate_track(class_name, position, tracks, maximum_distance: float):
             best_id = track_id
             best_distance = distance
     return best_id
-

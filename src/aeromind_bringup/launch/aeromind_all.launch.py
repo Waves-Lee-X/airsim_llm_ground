@@ -300,6 +300,13 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("semantic_world_enabled")),
         parameters=[{"world_frame": LaunchConfiguration("semantic_world_frame")}],
     )
+    object_tracker_node = Node(
+        package="aeromind_perception",
+        executable="object_tracker_node",
+        name="object_tracker_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("semantic_world_enabled")),
+    )
 
     planning_node = Node(
         package="aeromind_planning",
@@ -427,6 +434,7 @@ def generate_launch_description():
         perception_node,
         yolo_detection_node,
         semantic_fusion_node,
+        object_tracker_node,
         planning_node,
         autonomy_node,
         control_node,

@@ -33,6 +33,7 @@ from aeromind_interfaces.msg import (
     DetectionArray,
     DroneState,
     SemanticObjectArray,
+    WorldModelHealth,
     Trajectory,
 )
 from aeromind_interfaces.srv import ArmDrone, ExecuteTask, Land, ReturnHome, Takeoff
@@ -191,6 +192,16 @@ def _finite_json_number(value):
     return number if math.isfinite(number) else None
 
 
+def _position_standard_deviation(covariance):
+    values = list(covariance)
+    if len(values) != 9:
+        return None
+    diagonal = [float(values[index]) for index in (0, 4, 8)]
+    if any(not math.isfinite(value) or value < 0.0 for value in diagonal):
+        return None
+    return math.sqrt(sum(diagonal) / 3.0)
+
+
 class WebConsoleNode(Node):
     """ROS node + embedded HTTP server for the browser console."""
 
@@ -223,6 +234,7 @@ class WebConsoleNode(Node):
         self._world_objects = []
         self._world_objects_received_at = 0.0
         self._world_objects_frame_id = ""
+        self._world_health = None
         self._autonomy = None
         self._autonomy_goal = None
         self._autonomy_trajectory = None
@@ -241,6 +253,12 @@ class WebConsoleNode(Node):
             SemanticObjectArray,
             "/world_model/objects",
             self._world_objects_cb,
+            10,
+        )
+        self.create_subscription(
+            WorldModelHealth,
+            "/world_model/health",
+            self._world_health_cb,
             10,
         )
         self.create_subscription(AutonomyStatus, "/autonomy/status", self._autonomy_cb, 10)
@@ -377,16 +395,40 @@ class WebConsoleNode(Node):
                     "z": float(item.velocity.z),
                 },
                 "dynamic": bool(item.dynamic),
+                "position_covariance": list(item.position_covariance),
+                "position_std_m": _position_standard_deviation(
+                    item.position_covariance
+                ),
                 "depth_m": _finite_json_number(item.depth_m),
                 "age_s": float(item.age_sec),
                 "state": item.state,
                 "evidence_type": item.evidence_type,
                 "sources": list(item.sources),
+                "hit_count": int(item.hit_count),
+                "miss_count": int(item.miss_count),
             })
         with self._lock:
             self._world_objects = objects
             self._world_objects_received_at = time.time()
             self._world_objects_frame_id = msg.header.frame_id
+
+    def _world_health_cb(self, msg: WorldModelHealth):
+        with self._lock:
+            self._world_health = {
+                "received_at": time.time(),
+                "frame_id": msg.header.frame_id,
+                "healthy": bool(msg.healthy),
+                "state": msg.state,
+                "detections_fresh": bool(msg.detections_fresh),
+                "depth_fresh": bool(msg.depth_fresh),
+                "camera_info_valid": bool(msg.camera_info_valid),
+                "tf_available": bool(msg.tf_available),
+                "sync_delta_s": _finite_json_number(msg.sync_delta_sec),
+                "observation_count": int(msg.observation_count),
+                "track_count": int(msg.track_count),
+                "confirmed_track_count": int(msg.confirmed_track_count),
+                "message": msg.message,
+            }
 
     def _autonomy_cb(self, msg: AutonomyStatus):
         with self._lock:
@@ -515,6 +557,7 @@ class WebConsoleNode(Node):
                     "received_at": self._world_objects_received_at,
                     "age_s": world_objects_age,
                     "active": world_objects_active,
+                    "health": dict(self._world_health) if self._world_health else None,
                 },
                 "autonomy": self._autonomy,
                 "autonomy_goal": self._autonomy_goal,

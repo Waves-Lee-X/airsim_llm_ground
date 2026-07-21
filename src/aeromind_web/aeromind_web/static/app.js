@@ -18,6 +18,8 @@ const els = {
   detectionStatus: document.getElementById("detectionStatus"),
   detectionCount: document.getElementById("detectionCount"),
   detectionList: document.getElementById("detectionList"),
+  worldHealthStatus: document.getElementById("worldHealthStatus"),
+  worldTrackCount: document.getElementById("worldTrackCount"),
   cameraZoomBtn: document.getElementById("cameraZoomBtn"),
   cameraViewer: document.getElementById("cameraViewer"),
   cameraViewerStage: document.getElementById("cameraViewerStage"),
@@ -925,6 +927,7 @@ function renderStatus(data, source = "HTTP") {
   const depth = data.depth;
   const pointcloud = data.pointcloud;
   const autonomy = data.autonomy;
+  renderWorldModelHealth(data.world_model_meta || null);
   updateMissionMap(
     odomFresh ? odom : null,
     data.autonomy_goal,
@@ -1064,6 +1067,20 @@ function renderStatus(data, source = "HTTP") {
   els.serviceBadge.textContent = `${ready}/${Object.keys(services).length} 服务`;
   els.agentBadge.textContent = services.agent ? "任务服务就绪" : "任务服务离线";
   renderEvents(data.events || []);
+}
+
+function renderWorldModelHealth(meta) {
+  if (!els.worldHealthStatus || !els.worldTrackCount) return;
+  const health = meta?.health;
+  if (!health) {
+    els.worldHealthStatus.textContent = "语义融合等待数据";
+    els.worldTrackCount.textContent = "0 稳定目标";
+    return;
+  }
+  const sync = Number(health.sync_delta_s);
+  const syncText = Number.isFinite(sync) ? ` · 同步差 ${fmt(sync * 1000, 0)}ms` : "";
+  els.worldHealthStatus.textContent = `${health.healthy ? "语义融合正常" : "语义融合降级"}${syncText}`;
+  els.worldTrackCount.textContent = `${Number(health.confirmed_track_count) || 0} 稳定目标`;
 }
 
 function updateMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = null) {

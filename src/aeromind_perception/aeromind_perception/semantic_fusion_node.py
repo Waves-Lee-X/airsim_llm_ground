@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import math
 import threading
 import time
 
@@ -19,8 +18,9 @@ from aeromind_interfaces.msg import (
     DetectionArray,
     SemanticObject,
     SemanticObjectArray,
+    WorldModelHealth,
 )
-from .semantic_geometry import associate_track, project_pixel, transform_point
+from .semantic_geometry import camera_intrinsics_valid, project_pixel, transform_point
 
 
 class SemanticFusionNode(Node):
@@ -35,24 +35,34 @@ class SemanticFusionNode(Node):
         )
         self.declare_parameter("minimum_depth_m", 0.3)
         self.declare_parameter("maximum_depth_m", 80.0)
-        self.declare_parameter("track_timeout_sec", 3.0)
-        self.declare_parameter("association_distance_m", 2.0)
-        self.declare_parameter("dynamic_speed_mps", 0.35)
         self.declare_parameter("depth_window_fraction", 0.35)
+        self.declare_parameter("maximum_sync_delta_sec", 0.15)
+        self.declare_parameter("sensor_timeout_sec", 2.0)
 
         self._world_frame = str(self.get_parameter("world_frame").value)
         self._lock = threading.RLock()
         self._depth = None
         self._depth_received = 0.0
+        self._depth_stamp_sec = None
         self._camera_info = None
         self._rgb_size = None
         self._detections_received = False
-        self._tracks = {}
-        self._next_track = 1
+        self._last_detection_received = 0.0
+        self._last_health = {
+            "sync_delta_sec": float("nan"),
+            "depth_fresh": False,
+            "camera_info_valid": False,
+            "tf_available": False,
+            "observation_count": 0,
+            "message": "等待检测数据",
+        }
         self._tf_buffer = Buffer(cache_time=Duration(seconds=10.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._publisher = self.create_publisher(
-            SemanticObjectArray, "/world_model/objects", 10
+            SemanticObjectArray, "/world_model/observations", 10
+        )
+        self._health_publisher = self.create_publisher(
+            WorldModelHealth, "/world_model/fusion_health", 10
         )
         self.create_subscription(
             Image, str(self.get_parameter("rgb_topic").value), self._rgb_callback, 10
@@ -72,7 +82,7 @@ class SemanticFusionNode(Node):
             self._detections_callback,
             10,
         )
-        self.create_timer(0.5, self._publish_snapshot)
+        self.create_timer(0.5, self._publish_health)
         self.get_logger().info(
             f"语义世界融合节点已启动: world_frame={self._world_frame}"
         )
@@ -89,31 +99,63 @@ class SemanticFusionNode(Node):
             )
             return
         with self._lock:
-            self._depth = (depth, msg.header.frame_id)
+            self._depth = (depth, msg.header.frame_id, msg.header.stamp)
             self._depth_received = time.monotonic()
+            self._depth_stamp_sec = _stamp_seconds(msg.header.stamp)
 
     def _camera_info_callback(self, msg: CameraInfo):
-        if float(msg.k[0]) <= 0.0 or float(msg.k[4]) <= 0.0:
+        if not camera_intrinsics_valid(msg.k, msg.width, msg.height):
+            self.get_logger().warning(
+                "CameraInfo 内参或分辨率无效", throttle_duration_sec=5.0
+            )
             return
         with self._lock:
             self._camera_info = msg
 
     def _detections_callback(self, msg: DetectionArray):
         now = time.monotonic()
+        detection_stamp_sec = _stamp_seconds(msg.header.stamp)
         with self._lock:
             self._detections_received = True
+            self._last_detection_received = now
+            sensor_timeout = float(self.get_parameter("sensor_timeout_sec").value)
             if (
                 self._depth is None
                 or self._camera_info is None
-                or now - self._depth_received > 2.0
+                or now - self._depth_received > sensor_timeout
             ):
-                self._update_without_depth(msg, now)
+                reason = "深度数据超时或 CameraInfo 无效"
+                self._publish_2d_observations(msg, reason)
                 return
-            depth, depth_frame = self._depth
+            depth, depth_frame, depth_stamp = self._depth
             camera_info = self._camera_info
             rgb_size = self._rgb_size or (depth.shape[1], depth.shape[0])
+            depth_stamp_sec = self._depth_stamp_sec
 
-        transform = self._lookup_transform(depth_frame or camera_info.header.frame_id)
+        if not camera_intrinsics_valid(
+            camera_info.k,
+            camera_info.width,
+            camera_info.height,
+            depth.shape[1],
+            depth.shape[0],
+        ):
+            self._publish_2d_observations(msg, "CameraInfo 与深度图分辨率不一致")
+            return
+
+        sync_delta = (
+            abs(detection_stamp_sec - depth_stamp_sec)
+            if detection_stamp_sec is not None and depth_stamp_sec is not None
+            else float("inf")
+        )
+        if sync_delta > float(self.get_parameter("maximum_sync_delta_sec").value):
+            self._publish_2d_observations(
+                msg, f"RGB/Depth 时间差 {sync_delta:.3f}s 超过门限", sync_delta
+            )
+            return
+
+        transform = self._lookup_transform(
+            depth_frame or camera_info.header.frame_id, depth_stamp
+        )
         observations = []
         for detection in msg.detections:
             depth_m, pixel = self._detection_depth(detection, depth, rgb_size)
@@ -144,10 +186,19 @@ class SemanticFusionNode(Node):
                 )
             observations.append(observation)
         with self._lock:
-            self._update_tracks(observations, now)
-        self._publish_snapshot()
+            self._last_health = {
+                "sync_delta_sec": sync_delta,
+                "depth_fresh": True,
+                "camera_info_valid": True,
+                "tf_available": transform is not None,
+                "observation_count": len(observations),
+                "message": "三维融合正常" if transform is not None else "TF 不可用，降级为二维观测",
+            }
+        self._publish_observations(msg, observations)
 
-    def _update_without_depth(self, msg: DetectionArray, now: float):
+    def _publish_2d_observations(
+        self, msg: DetectionArray, reason: str, sync_delta: float = float("nan")
+    ):
         observations = [
             {
                 "class_name": item.class_name,
@@ -158,7 +209,16 @@ class SemanticFusionNode(Node):
             }
             for item in msg.detections
         ]
-        self._update_tracks(observations, now)
+        with self._lock:
+            self._last_health = {
+                "sync_delta_sec": sync_delta,
+                "depth_fresh": False,
+                "camera_info_valid": self._camera_info is not None,
+                "tf_available": False,
+                "observation_count": len(observations),
+                "message": reason,
+            }
+        self._publish_observations(msg, observations)
 
     def _detection_depth(self, detection, depth, rgb_size):
         rgb_width, rgb_height = rgb_size
@@ -181,12 +241,15 @@ class SemanticFusionNode(Node):
             return None, (center_x, center_y)
         return float(np.median(valid)), (center_x, center_y)
 
-    def _lookup_transform(self, source_frame: str):
+    def _lookup_transform(self, source_frame: str, stamp):
         if not source_frame:
             return None
         try:
             return self._tf_buffer.lookup_transform(
-                self._world_frame, source_frame, Time(), timeout=Duration(seconds=0.1)
+                self._world_frame,
+                source_frame,
+                Time.from_msg(stamp),
+                timeout=Duration(seconds=0.1),
             )
         except TransformException as exc:
             self.get_logger().warning(
@@ -195,96 +258,68 @@ class SemanticFusionNode(Node):
             )
             return None
 
-    def _update_tracks(self, observations, now: float):
-        timeout = float(self.get_parameter("track_timeout_sec").value)
-        self._tracks = {
-            track_id: track
-            for track_id, track in self._tracks.items()
-            if now - track["last_seen"] <= timeout
-        }
-        used = set()
-        for observation in observations:
-            track_id = None
-            if observation["position_valid"]:
-                candidates = {
-                    key: value for key, value in self._tracks.items() if key not in used
-                }
-                track_id = associate_track(
-                    observation["class_name"],
-                    observation["position"],
-                    candidates,
-                    float(self.get_parameter("association_distance_m").value),
-                )
-            else:
-                track_id = next(
-                    (
-                        key
-                        for key, value in self._tracks.items()
-                        if key not in used
-                        and value["class_name"] == observation["class_name"]
-                        and not value["position_valid"]
-                    ),
-                    None,
-                )
-            if track_id is None:
-                track_id = f"{_safe_id(observation['class_name'])}_{self._next_track:04d}"
-                self._next_track += 1
-                previous = None
-            else:
-                previous = self._tracks[track_id]
-            used.add(track_id)
-            velocity = (0.0, 0.0, 0.0)
-            if previous and observation["position_valid"] and previous["position_valid"]:
-                delta = max(1e-3, now - previous["last_seen"])
-                measured = tuple(
-                    (observation["position"][index] - previous["position"][index]) / delta
-                    for index in range(3)
-                )
-                velocity = tuple(
-                    0.65 * previous["velocity"][index] + 0.35 * measured[index]
-                    for index in range(3)
-                )
-            self._tracks[track_id] = {
-                **observation,
-                "id": track_id,
-                "velocity": velocity,
-                "first_seen": previous["first_seen"] if previous else now,
-                "last_seen": now,
-            }
-
-    def _publish_snapshot(self):
-        now = time.monotonic()
-        timeout = float(self.get_parameter("track_timeout_sec").value)
+    def _publish_observations(self, source: DetectionArray, observations):
         message = SemanticObjectArray()
-        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.stamp = source.header.stamp
         message.header.frame_id = self._world_frame
-        with self._lock:
-            if not self._detections_received:
-                return
-            tracks = [
-                dict(track)
-                for track in self._tracks.values()
-                if now - track["last_seen"] <= timeout
-            ]
-        for track in tracks:
+        for index, observation in enumerate(observations):
             item = SemanticObject()
-            item.id = track["id"]
-            item.class_name = track["class_name"]
-            item.confidence = track["confidence"]
-            item.position_valid = bool(track["position_valid"])
+            item.id = f"observation_{index:04d}"
+            item.class_name = observation["class_name"]
+            item.confidence = observation["confidence"]
+            item.position_valid = bool(observation["position_valid"])
             if item.position_valid:
-                item.position.x, item.position.y, item.position.z = track["position"]
-            item.velocity.x, item.velocity.y, item.velocity.z = track["velocity"]
-            item.dynamic = math.sqrt(sum(value * value for value in track["velocity"])) >= float(
-                self.get_parameter("dynamic_speed_mps").value
-            )
-            item.depth_m = float(track["depth_m"])
-            item.age_sec = float(now - track["last_seen"])
-            item.state = "observed" if item.age_sec <= 1.0 else "stale"
+                item.position.x, item.position.y, item.position.z = observation["position"]
+                variance = max(0.04, 0.01 * float(observation["depth_m"]) ** 2)
+                item.position_covariance = [
+                    variance, 0.0, 0.0,
+                    0.0, variance, 0.0,
+                    0.0, 0.0, variance,
+                ]
+            item.dynamic = False
+            item.depth_m = float(observation["depth_m"])
+            item.age_sec = 0.0
+            item.state = "observation"
             item.evidence_type = "fused" if item.position_valid else "observed_2d"
-            item.sources = track["sources"]
+            item.sources = observation["sources"]
+            item.hit_count = 1
+            item.miss_count = 0
             message.objects.append(item)
         self._publisher.publish(message)
+
+    def _publish_health(self):
+        now = time.monotonic()
+        with self._lock:
+            values = dict(self._last_health)
+            detection_age = (
+                now - self._last_detection_received
+                if self._last_detection_received > 0.0
+                else float("inf")
+            )
+        message = WorldModelHealth()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.frame_id = self._world_frame
+        message.detections_fresh = detection_age <= float(
+            self.get_parameter("sensor_timeout_sec").value
+        )
+        message.depth_fresh = bool(values["depth_fresh"])
+        message.camera_info_valid = bool(values["camera_info_valid"])
+        message.tf_available = bool(values["tf_available"])
+        message.sync_delta_sec = float(values["sync_delta_sec"])
+        message.observation_count = int(values["observation_count"])
+        message.healthy = bool(
+            message.detections_fresh
+            and message.depth_fresh
+            and message.camera_info_valid
+            and message.tf_available
+            and math_is_finite_within(
+                message.sync_delta_sec,
+                float(self.get_parameter("maximum_sync_delta_sec").value),
+            )
+        )
+        message.state = "FUSING" if message.healthy else "DEGRADED"
+        message.message = str(values["message"])
+        self._health_publisher.publish(message)
 
 
 def _depth_image(msg: Image):
@@ -307,9 +342,13 @@ def _depth_image(msg: Image):
     return values.reshape((int(msg.height), row_values))[:, : int(msg.width)].astype(np.float32) * scale
 
 
-def _safe_id(value: str):
-    normalized = "".join(char.lower() if char.isalnum() else "_" for char in value)
-    return normalized.strip("_") or "object"
+def _stamp_seconds(stamp):
+    value = float(stamp.sec) + float(stamp.nanosec) / 1e9
+    return value if value > 0.0 else None
+
+
+def math_is_finite_within(value: float, maximum: float):
+    return bool(np.isfinite(value) and 0.0 <= value <= maximum)
 
 
 def main(args=None):

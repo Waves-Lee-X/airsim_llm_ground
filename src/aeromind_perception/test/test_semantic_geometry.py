@@ -2,9 +2,21 @@ import math
 
 from aeromind_perception.semantic_geometry import (
     associate_track,
+    camera_intrinsics_valid,
     project_pixel,
     transform_point,
 )
+
+
+def test_camera_intrinsics_require_matching_dimensions_and_valid_principal_point():
+    matrix = [500.0, 0.0, 320.0, 0.0, 500.0, 240.0, 0.0, 0.0, 1.0]
+    assert camera_intrinsics_valid(matrix, 640, 480, 640, 480)
+    assert not camera_intrinsics_valid(matrix, 640, 480, 1280, 720)
+    assert not camera_intrinsics_valid(
+        [500.0, 0.0, 700.0, 0.0, 500.0, 240.0, 0.0, 0.0, 1.0],
+        640,
+        480,
+    )
 
 
 def test_project_pixel_uses_camera_intrinsics():

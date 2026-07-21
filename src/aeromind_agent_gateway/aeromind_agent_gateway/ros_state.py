@@ -21,6 +21,7 @@ from aeromind_interfaces.msg import (
     DetectionArray,
     DroneState,
     SemanticObjectArray,
+    WorldModelHealth,
 )
 from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction
 from .workflow import validate_workflow
@@ -52,6 +53,7 @@ class RosStateBridge(Node):
         self._detections_stamp: float | None = None
         self._world_objects: list[dict[str, Any]] = []
         self._world_objects_stamp: float | None = None
+        self._world_health: dict[str, Any] | None = None
         self._mission: dict[str, Any] | None = None
         self._workflow_controls: dict[str, str] = {}
         self._action_client = self.create_client(
@@ -81,6 +83,12 @@ class RosStateBridge(Node):
             SemanticObjectArray,
             "/world_model/objects",
             self._world_objects_cb,
+            10,
+        )
+        self.create_subscription(
+            WorldModelHealth,
+            "/world_model/health",
+            self._world_health_cb,
             10,
         )
         self.create_subscription(String, "/agent/mission_status", self._mission_cb, 10)
@@ -178,16 +186,40 @@ class RosStateBridge(Node):
                         "z": float(item.velocity.z),
                     },
                     "dynamic": bool(item.dynamic),
+                    "position_covariance": list(item.position_covariance),
+                    "position_std_m": _position_standard_deviation(
+                        item.position_covariance
+                    ),
                     "depth_m": _finite_or_none(item.depth_m),
                     "age_sec": float(item.age_sec),
                     "state": item.state,
                     "evidence_type": item.evidence_type,
                     "sources": list(item.sources),
+                    "hit_count": int(item.hit_count),
+                    "miss_count": int(item.miss_count),
                 }
             )
         with self._lock:
             self._world_objects = values
             self._world_objects_stamp = time.time()
+
+    def _world_health_cb(self, msg: WorldModelHealth):
+        with self._lock:
+            self._world_health = {
+                "stamp": time.time(),
+                "frame_id": msg.header.frame_id,
+                "healthy": bool(msg.healthy),
+                "state": msg.state,
+                "detections_fresh": bool(msg.detections_fresh),
+                "depth_fresh": bool(msg.depth_fresh),
+                "camera_info_valid": bool(msg.camera_info_valid),
+                "tf_available": bool(msg.tf_available),
+                "sync_delta_sec": _finite_or_none(msg.sync_delta_sec),
+                "observation_count": int(msg.observation_count),
+                "track_count": int(msg.track_count),
+                "confirmed_track_count": int(msg.confirmed_track_count),
+                "message": msg.message,
+            }
 
     def _mission_cb(self, msg: String):
         try:
@@ -210,6 +242,7 @@ class RosStateBridge(Node):
             world_objects_fresh = (
                 world_objects_age is not None and world_objects_age <= 2.0
             )
+            world_health = _record_with_freshness(self._world_health, 2.0)
             snapshot = {
                 "available": bool(state and state["fresh"]),
                 "state": state,
@@ -232,6 +265,7 @@ class RosStateBridge(Node):
                 "world_objects_fresh": world_objects_fresh,
                 "world_objects_age_sec": world_objects_age,
                 "world_objects_stamp": self._world_objects_stamp,
+                "world_health": world_health,
                 "mission": dict(self._mission) if self._mission else None,
             }
             snapshot["evidence"] = _snapshot_evidence(snapshot)
@@ -256,6 +290,7 @@ class RosStateBridge(Node):
             "world_objects": snapshot["world_objects"],
             "world_objects_fresh": snapshot["world_objects_fresh"],
             "world_objects_age_sec": snapshot["world_objects_age_sec"],
+            "world_health": snapshot["world_health"],
             "autonomy": snapshot["autonomy"],
             "evidence": _select_evidence(
                 snapshot, {"detections", "world_objects", "autonomy"}
@@ -1156,6 +1191,16 @@ def _age_seconds(stamp: float | None) -> float | None:
 def _finite_or_none(value: Any) -> float | None:
     number = float(value)
     return number if math.isfinite(number) else None
+
+
+def _position_standard_deviation(covariance) -> float | None:
+    values = list(covariance)
+    if len(values) != 9:
+        return None
+    diagonal = [float(values[index]) for index in (0, 4, 8)]
+    if any(not math.isfinite(value) or value < 0.0 for value in diagonal):
+        return None
+    return math.sqrt(sum(diagonal) / 3.0)
 
 
 def _record_with_freshness(
