@@ -217,6 +217,21 @@ def generate_launch_description():
         default_value="odom",
         description="语义世界对象的目标坐标系；SLAM 模式使用 map",
     )
+    semantic_history_enabled_arg = DeclareLaunchArgument(
+        "semantic_history_enabled",
+        default_value="true",
+        description="是否将语义对象观测持久化到 SQLite",
+    )
+    semantic_history_db_path_arg = DeclareLaunchArgument(
+        "semantic_history_db_path",
+        default_value="~/.aeromind/world_model.db",
+        description="语义对象历史 SQLite 路径",
+    )
+    semantic_history_retention_hours_arg = DeclareLaunchArgument(
+        "semantic_history_retention_hours",
+        default_value="24.0",
+        description="语义对象历史保留时长",
+    )
     vlm_enabled_arg = DeclareLaunchArgument(
         "vlm_enabled",
         default_value="false",
@@ -306,6 +321,11 @@ def generate_launch_description():
         name="object_tracker_node",
         output="screen",
         condition=IfCondition(LaunchConfiguration("semantic_world_enabled")),
+        parameters=[
+            {"history_enabled": ParameterValue(LaunchConfiguration("semantic_history_enabled"), value_type=bool)},
+            {"history_db_path": LaunchConfiguration("semantic_history_db_path")},
+            {"history_retention_hours": ParameterValue(LaunchConfiguration("semantic_history_retention_hours"), value_type=float)},
+        ],
     )
 
     planning_node = Node(
@@ -423,6 +443,9 @@ def generate_launch_description():
         yolo_confidence_arg,
         semantic_world_enabled_arg,
         semantic_world_frame_arg,
+        semantic_history_enabled_arg,
+        semantic_history_db_path_arg,
+        semantic_history_retention_hours_arg,
         vlm_enabled_arg,
         vlm_api_url_arg,
         vlm_model_arg,

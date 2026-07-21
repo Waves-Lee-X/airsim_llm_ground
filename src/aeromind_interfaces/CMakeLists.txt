@@ -38,6 +38,7 @@ set(srv_files
   srv/ArmDrone.srv
   srv/ExecuteTask.srv
   srv/ExecuteAction.srv
+  srv/QueryWorldModel.srv
 )
 
 set(action_files

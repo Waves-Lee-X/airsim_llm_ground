@@ -14,6 +14,13 @@ class FakeRosState:
             "source": "vlm",
         }
 
+    async def query_world_model(self, filters):
+        return {
+            "success": True,
+            "query_type": filters["query_type"],
+            "objects": [{"id": "person_0001", "class_name": "person"}],
+        }
+
 
 class DroneToolsTest(unittest.IsolatedAsyncioTestCase):
     async def test_openai_image_tool_calls_ros_vlm_service(self):
@@ -32,6 +39,20 @@ class DroneToolsTest(unittest.IsolatedAsyncioTestCase):
             for item in OPENAI_DRONE_TOOLS
         }
         self.assertIn("analyze_current_image", names)
+
+    async def test_openai_world_query_calls_read_only_ros_service(self):
+        result = await execute_openai_drone_tool(
+            "query_world_model",
+            {"query_type": "nearest", "class_name": "person"},
+            FakeRosState(),
+            None,
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["objects"][0]["id"], "person_0001")
+
+    def test_openai_world_query_is_exposed(self):
+        names = {item["function"]["name"] for item in OPENAI_DRONE_TOOLS}
+        self.assertIn("query_world_model", names)
 
 
 if __name__ == "__main__":

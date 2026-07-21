@@ -23,7 +23,7 @@ from aeromind_interfaces.msg import (
     SemanticObjectArray,
     WorldModelHealth,
 )
-from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction
+from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction, QueryWorldModel
 from .workflow import validate_workflow
 
 
@@ -61,6 +61,9 @@ class RosStateBridge(Node):
         )
         self._analyze_image_client = self.create_client(
             AnalyzeImage, "/perception/analyze_image"
+        )
+        self._world_query_client = self.create_client(
+            QueryWorldModel, "/world_model/query"
         )
         self._waypoint_action_client = ActionClient(
             self, FollowWaypoints, "/autonomy/follow_waypoints"
@@ -363,6 +366,70 @@ class RosStateBridge(Node):
             return {
                 "success": False,
                 "message": "/perception/analyze_image 调用超时（35s）",
+                "source": "timeout",
+            }
+
+    async def query_world_model(self, filters: dict[str, Any]) -> dict[str, Any]:
+        """Query current or historical semantic objects through a read-only service."""
+        if (
+            not self._world_query_client.service_is_ready()
+            and not self._world_query_client.wait_for_service(timeout_sec=1.0)
+        ):
+            return {
+                "success": False,
+                "message": "/world_model/query 服务未就绪",
+                "source": "unavailable",
+            }
+        request = QueryWorldModel.Request()
+        request.query_type = str(filters.get("query_type") or "current")
+        request.object_id = str(filters.get("object_id") or "")
+        request.class_name = str(filters.get("class_name") or "")
+        request.dynamic_only = bool(filters.get("dynamic_only", False))
+        request.confirmed_only = bool(filters.get("confirmed_only", True))
+        request.max_distance_m = float(filters.get("max_distance_m") or 0.0)
+        request.fresh_within_sec = float(filters.get("fresh_within_sec") or 0.0)
+        request.limit = max(1, min(int(filters.get("limit") or 20), 100))
+        reference = filters.get("reference_position_m")
+        if isinstance(reference, dict):
+            request.reference_position.x = float(reference.get("x", 0.0))
+            request.reference_position.y = float(reference.get("y", 0.0))
+            request.reference_position.z = float(reference.get("z", 0.0))
+            request.reference_position_valid = True
+
+        ros_future = self._world_query_client.call_async(request)
+        loop = asyncio.get_running_loop()
+        result_future = loop.create_future()
+
+        def on_done(done_future):
+            try:
+                response = done_future.result()
+                metadata = _parse_json_object(response.result_json)
+                value = {
+                    "success": bool(response.success),
+                    "message": response.message,
+                    "frame_id": response.frame_id,
+                    "objects": [
+                        _semantic_object_dict(item, response.frame_id)
+                        for item in response.objects
+                    ],
+                    **metadata,
+                    "source": "/world_model/query",
+                }
+                loop.call_soon_threadsafe(
+                    _set_result_if_pending, result_future, value
+                )
+            except Exception as exc:
+                loop.call_soon_threadsafe(
+                    _set_exception_if_pending, result_future, exc
+                )
+
+        ros_future.add_done_callback(on_done)
+        try:
+            return await asyncio.wait_for(result_future, timeout=5.0)
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "message": "/world_model/query 调用超时（5s）",
                 "source": "timeout",
             }
 
@@ -1201,6 +1268,36 @@ def _position_standard_deviation(covariance) -> float | None:
     if any(not math.isfinite(value) or value < 0.0 for value in diagonal):
         return None
     return math.sqrt(sum(diagonal) / 3.0)
+
+
+def _semantic_object_dict(item, frame_id: str) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "class_name": item.class_name,
+        "confidence": float(item.confidence),
+        "frame_id": frame_id,
+        "position_valid": bool(item.position_valid),
+        "position_m": {
+            "x": float(item.position.x),
+            "y": float(item.position.y),
+            "z": float(item.position.z),
+        } if item.position_valid else None,
+        "velocity_mps": {
+            "x": float(item.velocity.x),
+            "y": float(item.velocity.y),
+            "z": float(item.velocity.z),
+        },
+        "dynamic": bool(item.dynamic),
+        "position_covariance": list(item.position_covariance),
+        "position_std_m": _position_standard_deviation(item.position_covariance),
+        "depth_m": _finite_or_none(item.depth_m),
+        "age_sec": float(item.age_sec),
+        "state": item.state,
+        "evidence_type": item.evidence_type,
+        "sources": list(item.sources),
+        "hit_count": int(item.hit_count),
+        "miss_count": int(item.miss_count),
+    }
 
 
 def _record_with_freshness(

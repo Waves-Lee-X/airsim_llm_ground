@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import json
 import math
 import threading
 import time
 
 import rclpy
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 
 from aeromind_interfaces.msg import (
@@ -15,7 +17,9 @@ from aeromind_interfaces.msg import (
     SemanticObjectArray,
     WorldModelHealth,
 )
+from aeromind_interfaces.srv import QueryWorldModel
 from .object_tracking import ConstantVelocityTrack, greedy_association
+from .world_model_store import WorldModelStore
 
 
 class ObjectTrackerNode(Node):
@@ -30,6 +34,11 @@ class ObjectTrackerNode(Node):
         self.declare_parameter("dynamic_speed_mps", 0.35)
         self.declare_parameter("measurement_variance_m2", 0.25)
         self.declare_parameter("acceleration_variance", 1.0)
+        self.declare_parameter("history_enabled", True)
+        self.declare_parameter("history_db_path", "~/.aeromind/world_model.db")
+        self.declare_parameter("history_retention_hours", 24.0)
+        self.declare_parameter("history_max_rows", 200000)
+        self.declare_parameter("history_write_interval_sec", 1.0)
 
         self._lock = threading.RLock()
         self._tracks = {}
@@ -38,6 +47,9 @@ class ObjectTrackerNode(Node):
         self._unlocated_observations = []
         self._last_observation_monotonic = None
         self._fusion_health = None
+        self._poses_by_frame = {}
+        self._store = self._create_store()
+        self._last_history_write_at = None
         self._objects_publisher = self.create_publisher(
             SemanticObjectArray, str(self.get_parameter("objects_topic").value), 10
         )
@@ -51,6 +63,15 @@ class ObjectTrackerNode(Node):
             10,
         )
         self.create_subscription(
+            Odometry, "/sensor/odometry", self._odometry_callback, 10
+        )
+        self.create_subscription(
+            Odometry, "/localization/odometry", self._odometry_callback, 10
+        )
+        self.create_service(
+            QueryWorldModel, "/world_model/query", self._query_callback
+        )
+        self.create_subscription(
             WorldModelHealth,
             "/world_model/fusion_health",
             self._fusion_health_callback,
@@ -58,6 +79,32 @@ class ObjectTrackerNode(Node):
         )
         self.create_timer(0.5, self._timer_callback)
         self.get_logger().info("三维语义对象跟踪节点已启动")
+
+    def _create_store(self):
+        if not bool(self.get_parameter("history_enabled").value):
+            return None
+        try:
+            store = WorldModelStore(
+                str(self.get_parameter("history_db_path").value),
+                float(self.get_parameter("history_retention_hours").value),
+                int(self.get_parameter("history_max_rows").value),
+            )
+            self.get_logger().info(f"世界对象历史库: {store.path}")
+            return store
+        except Exception as exc:
+            self.get_logger().error(f"世界对象历史库初始化失败，继续无持久化运行: {exc}")
+            return None
+
+    def _odometry_callback(self, msg: Odometry):
+        frame_id = str(msg.header.frame_id)
+        if not frame_id:
+            return
+        position = msg.pose.pose.position
+        with self._lock:
+            self._poses_by_frame[frame_id] = {
+                "position": (float(position.x), float(position.y), float(position.z)),
+                "received_at": time.monotonic(),
+            }
 
     def _fusion_health_callback(self, msg: WorldModelHealth):
         with self._lock:
@@ -107,11 +154,31 @@ class ObjectTrackerNode(Node):
                 if track_id not in matched_track_ids:
                     track.mark_missed(timestamp)
             self._remove_expired(timestamp)
-        self._publish(timestamp)
+        persist = bool(
+            self._store is not None
+            and (
+                self._last_history_write_at is None
+                or timestamp < self._last_history_write_at
+                or timestamp - self._last_history_write_at
+                >= float(self.get_parameter("history_write_interval_sec").value)
+            )
+        )
+        if persist:
+            self._last_history_write_at = timestamp
+        self._publish(timestamp, persist=persist)
 
     def _new_track(self, observation, timestamp: float):
-        track_id = f"{_safe_id(observation['class_name'])}_{self._next_track:04d}"
-        self._next_track += 1
+        if self._store is not None:
+            try:
+                track_id = self._store.allocate_track_id(observation["class_name"])
+            except Exception as exc:
+                self.get_logger().error(
+                    f"持久 Track ID 分配失败，使用进程内 ID: {exc}",
+                    throttle_duration_sec=5.0,
+                )
+                track_id = self._local_track_id(observation["class_name"])
+        else:
+            track_id = self._local_track_id(observation["class_name"])
         track = ConstantVelocityTrack(
             track_id,
             observation["class_name"],
@@ -122,6 +189,11 @@ class ObjectTrackerNode(Node):
         )
         _copy_evidence(track, observation)
         self._tracks[track_id] = track
+        return track_id
+
+    def _local_track_id(self, class_name: str):
+        track_id = f"{_safe_id(class_name)}_{self._next_track:06d}"
+        self._next_track += 1
         return track_id
 
     def _remove_expired(self, timestamp: float):
@@ -153,33 +225,18 @@ class ObjectTrackerNode(Node):
             int(self.get_parameter("lost_after_misses").value),
         )
 
-    def _publish(self, timestamp: float):
+    def _publish(self, timestamp: float, persist: bool = False):
         message = SemanticObjectArray()
         message.header.stamp = self.get_clock().now().to_msg()
         message.header.frame_id = self._frame_id
         with self._lock:
             tracks = list(self._tracks.values())
             unlocated = list(self._unlocated_observations)
+        records = []
         for track in tracks:
-            item = SemanticObject()
-            item.id = track.id
-            item.class_name = track.class_name
-            item.confidence = float(track.confidence)
-            item.position_valid = True
-            item.position.x, item.position.y, item.position.z = track.position
-            item.velocity.x, item.velocity.y, item.velocity.z = track.velocity
-            item.position_covariance = list(track.position_covariance)
-            item.dynamic = math.sqrt(sum(value * value for value in track.velocity)) >= float(
-                self.get_parameter("dynamic_speed_mps").value
-            )
-            item.depth_m = float(track.depth_m)
-            item.age_sec = float(max(0.0, timestamp - track.last_seen))
-            item.state = self._lifecycle(track)
-            item.evidence_type = "fused_tracked"
-            item.sources = list(track.sources)
-            item.hit_count = int(track.hit_count)
-            item.miss_count = int(track.miss_count)
+            item = self._track_message(track, timestamp)
             message.objects.append(item)
+            records.append(_track_record(item))
         for index, observation in enumerate(unlocated):
             item = SemanticObject()
             item.id = f"observed_2d_{_safe_id(observation['class_name'])}_{index:04d}"
@@ -196,8 +253,36 @@ class ObjectTrackerNode(Node):
             item.miss_count = 0
             message.objects.append(item)
         self._objects_publisher.publish(message)
+        if persist and self._store is not None:
+            try:
+                self._store.record(self._frame_id, timestamp, records)
+            except Exception as exc:
+                self.get_logger().error(
+                    f"写入世界对象历史失败: {exc}", throttle_duration_sec=5.0
+                )
         confirmed = sum(item.state == "confirmed" for item in message.objects)
         self._publish_health(len(message.objects), confirmed)
+
+    def _track_message(self, track, timestamp: float):
+        item = SemanticObject()
+        item.id = track.id
+        item.class_name = track.class_name
+        item.confidence = float(track.confidence)
+        item.position_valid = True
+        item.position.x, item.position.y, item.position.z = track.position
+        item.velocity.x, item.velocity.y, item.velocity.z = track.velocity
+        item.position_covariance = list(track.position_covariance)
+        item.dynamic = math.sqrt(sum(value * value for value in track.velocity)) >= float(
+            self.get_parameter("dynamic_speed_mps").value
+        )
+        item.depth_m = float(track.depth_m)
+        item.age_sec = float(max(0.0, timestamp - track.last_seen))
+        item.state = self._lifecycle(track)
+        item.evidence_type = "fused_tracked"
+        item.sources = list(track.sources)
+        item.hit_count = int(track.hit_count)
+        item.miss_count = int(track.miss_count)
+        return item
 
     def _publish_health(self, track_count: int, confirmed_count: int):
         health = WorldModelHealth()
@@ -227,6 +312,131 @@ class ObjectTrackerNode(Node):
         )
         self._health_publisher.publish(health)
 
+    def _query_callback(self, request, response):
+        query_type = str(request.query_type or "current").strip().lower()
+        if query_type not in {"current", "nearest", "history", "health"}:
+            response.success = False
+            response.message = f"不支持的 query_type: {query_type}"
+            return response
+        response.frame_id = self._frame_id
+        limit = max(1, min(int(request.limit or 20), 100))
+        if query_type == "health":
+            payload = self._health_payload()
+            response.success = True
+            response.message = "世界模型健康状态已读取"
+            response.result_json = json.dumps(payload, ensure_ascii=False)
+            return response
+        if query_type == "history":
+            if self._store is None:
+                response.success = False
+                response.message = "世界对象历史库未启用或不可用"
+                return response
+            try:
+                history = self._store.query_history(
+                    object_id=str(request.object_id).strip(),
+                    class_name=_normalize_class_name(request.class_name),
+                    fresh_within_sec=max(0.0, float(request.fresh_within_sec)),
+                    limit=limit,
+                    now=self.get_clock().now().nanoseconds / 1e9,
+                )
+            except Exception as exc:
+                response.success = False
+                response.message = f"查询世界对象历史失败: {exc}"
+                return response
+            response.success = True
+            response.message = f"返回 {len(history)} 条历史观测"
+            response.result_json = json.dumps(
+                {"query_type": "history", "count": len(history), "history": history},
+                ensure_ascii=False,
+            )
+            return response
+
+        now = self.get_clock().now().nanoseconds / 1e9
+        with self._lock:
+            tracks = list(self._tracks.values())
+            unlocated = list(self._unlocated_observations)
+        items = [self._track_message(track, now) for track in tracks]
+        items.extend(_unlocated_messages(unlocated))
+        items = _filter_objects(
+            items,
+            object_id=str(request.object_id).strip(),
+            class_name=_normalize_class_name(request.class_name),
+            dynamic_only=bool(request.dynamic_only),
+            confirmed_only=bool(request.confirmed_only),
+            fresh_within_sec=max(0.0, float(request.fresh_within_sec)),
+        )
+        reference = None
+        if request.reference_position_valid:
+            reference = (
+                float(request.reference_position.x),
+                float(request.reference_position.y),
+                float(request.reference_position.z),
+            )
+        elif query_type == "nearest" or float(request.max_distance_m) > 0.0:
+            reference = self._reference_position()
+            if reference is None:
+                response.success = False
+                response.message = f"没有与 {self._frame_id or '世界'} 坐标系匹配的新鲜无人机位姿"
+                return response
+        if reference is not None:
+            located = [item for item in items if item.position_valid]
+            located.sort(key=lambda item: _object_distance(item, reference))
+            maximum = float(request.max_distance_m)
+            if maximum > 0.0:
+                located = [
+                    item for item in located
+                    if _object_distance(item, reference) <= maximum
+                ]
+            items = located
+        items = items[:limit]
+        response.success = True
+        response.message = f"返回 {len(items)} 个世界对象"
+        response.objects = items
+        response.result_json = json.dumps(
+            {
+                "query_type": query_type,
+                "count": len(items),
+                "frame_id": self._frame_id,
+                "reference_position_m": (
+                    {"x": reference[0], "y": reference[1], "z": reference[2]}
+                    if reference is not None else None
+                ),
+            },
+            ensure_ascii=False,
+        )
+        return response
+
+    def _reference_position(self):
+        with self._lock:
+            value = self._poses_by_frame.get(self._frame_id)
+            if value is None or time.monotonic() - value["received_at"] > 2.0:
+                return None
+            return tuple(value["position"])
+
+    def _health_payload(self):
+        with self._lock:
+            source = self._fusion_health
+            tracks = list(self._tracks.values())
+        return {
+            "frame_id": self._frame_id,
+            "healthy": bool(source and source.healthy),
+            "fusion_state": source.state if source else "UNAVAILABLE",
+            "sync_delta_sec": (
+                float(source.sync_delta_sec) if source and math.isfinite(source.sync_delta_sec) else None
+            ),
+            "track_count": len(tracks),
+            "confirmed_track_count": sum(
+                self._lifecycle(track) == "confirmed" for track in tracks
+            ),
+            "history_enabled": self._store is not None,
+            "history_rows": self._store.count() if self._store is not None else 0,
+        }
+
+    def close(self):
+        if self._store is not None:
+            self._store.close()
+            self._store = None
+
 
 def _observation_dict(item, fallback_variance: float):
     return {
@@ -254,9 +464,82 @@ def _measurement_variance(covariance, fallback: float):
     return sum(valid) / len(valid) if valid else float(fallback)
 
 
+def _track_record(item):
+    return {
+        "id": item.id,
+        "class_name": item.class_name,
+        "confidence": float(item.confidence),
+        "position_valid": bool(item.position_valid),
+        "position": (float(item.position.x), float(item.position.y), float(item.position.z)),
+        "velocity": (float(item.velocity.x), float(item.velocity.y), float(item.velocity.z)),
+        "dynamic": bool(item.dynamic),
+        "state": item.state,
+        "hit_count": int(item.hit_count),
+        "miss_count": int(item.miss_count),
+        "position_covariance": list(item.position_covariance),
+        "sources": list(item.sources),
+    }
+
+
+def _unlocated_messages(observations):
+    values = []
+    for index, observation in enumerate(observations):
+        item = SemanticObject()
+        item.id = f"observed_2d_{_safe_id(observation['class_name'])}_{index:04d}"
+        item.class_name = observation["class_name"]
+        item.confidence = float(observation["confidence"])
+        item.position_valid = False
+        item.state = "observed_2d"
+        item.evidence_type = "observed_2d"
+        item.sources = list(observation["sources"])
+        item.hit_count = 1
+        values.append(item)
+    return values
+
+
+def _filter_objects(
+    items,
+    object_id: str = "",
+    class_name: str = "",
+    dynamic_only: bool = False,
+    confirmed_only: bool = False,
+    fresh_within_sec: float = 0.0,
+):
+    expected_class = class_name.lower()
+    return [
+        item for item in items
+        if (not object_id or item.id == object_id)
+        and (not expected_class or item.class_name.lower() == expected_class)
+        and (not dynamic_only or item.dynamic)
+        and (not confirmed_only or item.state == "confirmed")
+        and (fresh_within_sec <= 0.0 or item.age_sec <= fresh_within_sec)
+    ]
+
+
+def _object_distance(item, reference):
+    return math.dist(
+        (float(item.position.x), float(item.position.y), float(item.position.z)),
+        reference,
+    )
+
+
 def _safe_id(value: str):
     normalized = "".join(char.lower() if char.isalnum() else "_" for char in value)
     return normalized.strip("_") or "object"
+
+
+def _normalize_class_name(value: str):
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "人": "person",
+        "人员": "person",
+        "行人": "person",
+        "汽车": "car",
+        "车辆": "car",
+        "车": "car",
+        "公交车": "bus",
+    }
+    return aliases.get(normalized, normalized)
 
 
 def _stamp_seconds(stamp):
@@ -272,6 +555,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node.close()
         node.destroy_node()
         rclpy.shutdown()
 

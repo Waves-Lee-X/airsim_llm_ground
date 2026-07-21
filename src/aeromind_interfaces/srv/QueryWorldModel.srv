@@ -1,0 +1,18 @@
+# Read-only, filtered query over current tracks, history, or health.
+# query_type: current | nearest | history | health
+string query_type
+string object_id
+string class_name
+bool dynamic_only
+bool confirmed_only
+float32 max_distance_m
+geometry_msgs/Point reference_position
+bool reference_position_valid
+float32 fresh_within_sec
+uint32 limit
+---
+bool success
+string message
+string frame_id
+aeromind_interfaces/SemanticObject[] objects
+string result_json

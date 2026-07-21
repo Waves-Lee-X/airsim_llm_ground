@@ -27,6 +27,37 @@ def _text_result(value: object) -> dict:
 ControlRequester = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
+def _world_query_schema():
+    return {
+        "type": "object",
+        "properties": {
+            "query_type": {
+                "type": "string",
+                "enum": ["current", "nearest", "history", "health"],
+            },
+            "object_id": {"type": "string"},
+            "class_name": {"type": "string"},
+            "dynamic_only": {"type": "boolean"},
+            "confirmed_only": {"type": "boolean"},
+            "max_distance_m": {"type": "number", "minimum": 0.0},
+            "fresh_within_sec": {"type": "number", "minimum": 0.0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            "reference_position_m": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "z": {"type": "number"},
+                },
+                "required": ["x", "y", "z"],
+                "additionalProperties": False,
+            },
+        },
+        "required": ["query_type"],
+        "additionalProperties": False,
+    }
+
+
 def create_drone_mcp_server(
     ros_state: RosStateBridge,
     request_control: ControlRequester | None = None,
@@ -46,6 +77,14 @@ def create_drone_mcp_server(
     )
     async def get_perception_summary(_args):
         return _text_result(ros_state.perception_summary())
+
+    @tool(
+        "query_world_model",
+        "按类别、ID、距离、动态状态和时效查询当前或历史语义对象。该工具只读，不执行控制。目标类别使用检测器类别名，例如 person、car。",
+        _world_query_schema(),
+    )
+    async def query_world_model(args):
+        return _text_result(await ros_state.query_world_model(args))
 
     @tool(
         "analyze_current_image",
@@ -256,6 +295,7 @@ def create_drone_mcp_server(
         tools=[
             get_drone_state,
             get_perception_summary,
+            query_world_model,
             analyze_current_image,
             get_system_snapshot,
             list_skills,
@@ -279,6 +319,7 @@ def create_drone_mcp_server(
 READ_ONLY_TOOL_NAMES = [
     "mcp__drone__get_drone_state",
     "mcp__drone__get_perception_summary",
+    "mcp__drone__query_world_model",
     "mcp__drone__analyze_current_image",
     "mcp__drone__get_system_snapshot",
     "mcp__drone__list_skills",
@@ -333,6 +374,14 @@ OPENAI_DRONE_TOOLS = [
             "name": "get_perception_summary",
             "description": "读取二维目标检测、三维语义世界对象和自主避障摘要，只读。",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_world_model",
+            "description": "按类别、ID、距离、动态状态和时效查询当前、最近或历史语义对象，只读。类别使用 person、car 等检测器类别名。",
+            "parameters": _world_query_schema(),
         },
     },
     {
@@ -506,6 +555,8 @@ async def execute_openai_drone_tool(
         return ros_state.drone_state()
     if name == "get_perception_summary":
         return ros_state.perception_summary()
+    if name == "query_world_model":
+        return await ros_state.query_world_model(args)
     if name == "analyze_current_image":
         return await ros_state.analyze_current_image(str(args.get("prompt") or ""))
     if name == "get_system_snapshot":
