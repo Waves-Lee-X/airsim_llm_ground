@@ -171,6 +171,17 @@ class RosTaskMappingTest(unittest.TestCase):
             "detections_stamp": 103.5,
             "detections_age_sec": 1.5,
             "detections_fresh": True,
+            "world_objects": [
+                {
+                    "id": "person_0001",
+                    "class_name": "person",
+                    "position_valid": True,
+                    "position_m": {"x": 4.0, "y": 1.0, "z": 0.0},
+                }
+            ],
+            "world_objects_stamp": 103.8,
+            "world_objects_age_sec": 1.2,
+            "world_objects_fresh": True,
         }
 
         evidence = _snapshot_evidence(snapshot)
@@ -181,6 +192,8 @@ class RosTaskMappingTest(unittest.TestCase):
         self.assertEqual(by_id["detections"]["kind"], "model_inference")
         self.assertEqual(by_id["detections"]["stamp"], 103.5)
         self.assertIn("person", by_id["detections"]["summary"])
+        self.assertEqual(by_id["world_objects"]["source"], "/world_model/objects")
+        self.assertIn("located=1", by_id["world_objects"]["summary"])
 
     def test_missing_records_are_explicitly_stale(self):
         evidence = _snapshot_evidence({})

@@ -115,6 +115,33 @@ class LocalEsdfMap:
                 best_sq = dist_sq
         return math.sqrt(best_sq)
 
+    def takeoff_zone_clearance(
+        self,
+        position: Point3,
+        *,
+        horizontal_radius: float = 2.0,
+        ground_exclusion: float = 0.35,
+        check_height: float = 5.0,
+        max_distance: float = 12.0,
+    ) -> float:
+        """Nearest mapped obstacle in a ground-filtered launch cylinder."""
+        px, py, pz = position
+        radius_sq = max(0.1, horizontal_radius) ** 2
+        minimum_z = pz + max(0.0, ground_exclusion)
+        maximum_z = pz + max(ground_exclusion, check_height)
+        best_sq = max_distance * max_distance
+        for key in self.occupied:
+            ox, oy, oz = self._center(key)
+            if not minimum_z <= oz <= maximum_z:
+                continue
+            horizontal_sq = (ox - px) ** 2 + (oy - py) ** 2
+            if horizontal_sq > radius_sq:
+                continue
+            distance_sq = horizontal_sq + (oz - pz) ** 2
+            if distance_sq < best_sq:
+                best_sq = distance_sq
+        return math.sqrt(best_sq)
+
     def nearest_ahead(self, max_radius: float = 12.0) -> float:
         """Compatibility query for callers still using a body-local map."""
         return self.nearest_obstacle((0.0, 0.0, 0.0), max_radius)

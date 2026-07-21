@@ -806,6 +806,7 @@ class SessionManager:
         session_id = session["id"]
 
         async def request_control(action: str, args: dict[str, Any]):
+            await self._guard_control_concurrency(session, action)
             return await self._confirmations.create(
                 session_id=session_id,
                 user_id=session["user_id"],
@@ -834,6 +835,52 @@ class SessionManager:
             model=session["model"],
             history=history,
             request_control=request_control,
+        )
+
+    async def _guard_control_concurrency(
+        self, session: dict[str, Any], action: str
+    ) -> None:
+        active = self._store.active_gateway_missions_for_user(session["user_id"])
+        if not active:
+            return
+
+        pending = [item for item in active if item["status"] == "pending_confirmation"]
+        if pending:
+            raise ValueError(
+                f"已有待确认任务：{pending[0]['title']}。请先确认或取消该请求。"
+            )
+
+        safety_override = action in {"land", "hover"}
+        if safety_override:
+            for mission in active:
+                if mission["action"] != "workflow":
+                    continue
+                workflow = mission.get("args") or {}
+                workflow_id = workflow.get("workflow_id")
+                if workflow_id:
+                    self._ros_state.control_workflow(workflow_id, "cancel")
+                    updated = self._store.update_gateway_mission(
+                        mission["confirmation_id"],
+                        "executing",
+                        result={
+                            **(mission.get("result") or {}),
+                            "control": {
+                                "status": "cancelling",
+                                "message": f"被安全动作 {action} 抢占",
+                            },
+                        },
+                        phase="cancelling",
+                        physical_complete=False,
+                    )
+                    await self._events.emit(
+                        mission["session_id"], "mission.updated", mission=updated
+                    )
+            return
+
+        blocking = active[0]
+        raise ValueError(
+            f"已有任务正在执行：{blocking['title']}。"
+            "请等待完成，或先暂停/取消当前 Workflow。"
         )
 
     async def close(self):

@@ -27,7 +27,14 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image, PointCloud2
 from std_msgs.msg import Empty, String
 
-from aeromind_interfaces.msg import AutonomyStatus, Detection, DetectionArray, DroneState, Trajectory
+from aeromind_interfaces.msg import (
+    AutonomyStatus,
+    Detection,
+    DetectionArray,
+    DroneState,
+    SemanticObjectArray,
+    Trajectory,
+)
 from aeromind_interfaces.srv import ArmDrone, ExecuteTask, Land, ReturnHome, Takeoff
 
 try:
@@ -179,6 +186,11 @@ def _stamp_to_float(stamp) -> float:
     return float(stamp.sec) + float(stamp.nanosec) / 1_000_000_000.0
 
 
+def _finite_json_number(value):
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
 class WebConsoleNode(Node):
     """ROS node + embedded HTTP server for the browser console."""
 
@@ -208,6 +220,9 @@ class WebConsoleNode(Node):
         self._detections = []
         self._detections_received_at = 0.0
         self._detections_frame_id = ""
+        self._world_objects = []
+        self._world_objects_received_at = 0.0
+        self._world_objects_frame_id = ""
         self._autonomy = None
         self._autonomy_goal = None
         self._autonomy_trajectory = None
@@ -222,6 +237,12 @@ class WebConsoleNode(Node):
         self.create_subscription(PointCloud2, "/sensor/lidar/points", self._pointcloud_cb, 10)
         self.create_subscription(Detection, "/perception/detection", self._detection_cb, 10)
         self.create_subscription(DetectionArray, "/perception/detections", self._detections_cb, 10)
+        self.create_subscription(
+            SemanticObjectArray,
+            "/world_model/objects",
+            self._world_objects_cb,
+            10,
+        )
         self.create_subscription(AutonomyStatus, "/autonomy/status", self._autonomy_cb, 10)
         self.create_subscription(PoseStamped, "/autonomy/goal", self._autonomy_goal_cb, 10)
         self.create_subscription(Trajectory, "/autonomy/trajectory", self._autonomy_trajectory_cb, 10)
@@ -337,6 +358,36 @@ class WebConsoleNode(Node):
             if detections:
                 self._detection = max(detections, key=lambda item: item["confidence"])
 
+    def _world_objects_cb(self, msg: SemanticObjectArray):
+        objects = []
+        for item in msg.objects:
+            objects.append({
+                "id": item.id,
+                "class_name": item.class_name,
+                "confidence": float(item.confidence),
+                "position_valid": bool(item.position_valid),
+                "position": {
+                    "x": float(item.position.x),
+                    "y": float(item.position.y),
+                    "z": float(item.position.z),
+                } if item.position_valid else None,
+                "velocity": {
+                    "x": float(item.velocity.x),
+                    "y": float(item.velocity.y),
+                    "z": float(item.velocity.z),
+                },
+                "dynamic": bool(item.dynamic),
+                "depth_m": _finite_json_number(item.depth_m),
+                "age_s": float(item.age_sec),
+                "state": item.state,
+                "evidence_type": item.evidence_type,
+                "sources": list(item.sources),
+            })
+        with self._lock:
+            self._world_objects = objects
+            self._world_objects_received_at = time.time()
+            self._world_objects_frame_id = msg.header.frame_id
+
     def _autonomy_cb(self, msg: AutonomyStatus):
         with self._lock:
             self._autonomy = {
@@ -345,6 +396,9 @@ class WebConsoleNode(Node):
                 "state": msg.state,
                 "replanning": bool(msg.replanning),
                 "nearest_obstacle_m": float(msg.nearest_obstacle_m),
+                "takeoff_clearance_valid": bool(msg.takeoff_clearance_valid),
+                "takeoff_clearance_m": float(msg.takeoff_clearance_m),
+                "takeoff_clearance_source": msg.takeoff_clearance_source,
                 "target_distance_m": float(msg.target_distance_m),
                 "active_strategy": msg.active_strategy,
                 "message": msg.message,
@@ -421,6 +475,14 @@ class WebConsoleNode(Node):
                 else None
             )
             detections_active = detection_age is not None and detection_age <= 3.0
+            world_objects_age = (
+                max(0.0, now - self._world_objects_received_at)
+                if self._world_objects_received_at > 0.0
+                else None
+            )
+            world_objects_active = (
+                world_objects_age is not None and world_objects_age <= 3.0
+            )
             return {
                 "state": self._state,
                 "odom": self._odom,
@@ -443,6 +505,16 @@ class WebConsoleNode(Node):
                     "received_at": self._detections_received_at,
                     "age_s": detection_age,
                     "active": detections_active,
+                },
+                "world_objects": (
+                    list(self._world_objects) if world_objects_active else []
+                ),
+                "world_model_meta": {
+                    "source_topic": "/world_model/objects",
+                    "frame_id": self._world_objects_frame_id,
+                    "received_at": self._world_objects_received_at,
+                    "age_s": world_objects_age,
+                    "active": world_objects_active,
                 },
                 "autonomy": self._autonomy,
                 "autonomy_goal": self._autonomy_goal,

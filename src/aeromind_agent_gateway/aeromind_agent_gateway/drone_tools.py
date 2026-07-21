@@ -331,7 +331,7 @@ OPENAI_DRONE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_perception_summary",
-            "description": "读取目标检测和自主避障摘要，只读。",
+            "description": "读取二维目标检测、三维语义世界对象和自主避障摘要，只读。",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -576,6 +576,7 @@ def _safe_takeoff_workflow(args: dict[str, Any]) -> dict[str, Any]:
                     "action": "safety_check",
                     "args": {
                         "require_gps": require_gps,
+                        "check_takeoff_zone": True,
                         "minimum_obstacle_distance": minimum,
                     },
                 },

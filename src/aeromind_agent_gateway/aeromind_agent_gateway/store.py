@@ -899,6 +899,20 @@ class SessionStore:
             ).fetchall()
         return [self._gateway_mission_row(row) for row in rows]
 
+    def active_gateway_missions_for_user(
+        self, user_id: str
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                """
+                SELECT * FROM gateway_missions
+                WHERE user_id=? AND status IN ('pending_confirmation', 'executing')
+                ORDER BY created_at
+                """,
+                (user_id,),
+            ).fetchall()
+        return [self._gateway_mission_row(row) for row in rows]
+
     def gateway_mission_for_workflow(
         self, user_id: str, workflow_id: str
     ) -> dict[str, Any] | None:

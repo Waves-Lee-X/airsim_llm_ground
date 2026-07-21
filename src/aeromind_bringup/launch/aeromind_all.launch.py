@@ -192,6 +192,11 @@ def generate_launch_description():
         default_value="0.35",
         description="YOLO 检测置信度阈值",
     )
+    semantic_world_enabled_arg = DeclareLaunchArgument(
+        "semantic_world_enabled",
+        default_value="true",
+        description="是否启动检测+深度+TF 三维语义融合节点",
+    )
     vlm_enabled_arg = DeclareLaunchArgument(
         "vlm_enabled",
         default_value="false",
@@ -261,6 +266,13 @@ def generate_launch_description():
             {"model": LaunchConfiguration("yolo_model")},
             {"confidence_threshold": ParameterValue(LaunchConfiguration("yolo_confidence"), value_type=float)},
         ],
+    )
+    semantic_fusion_node = Node(
+        package="aeromind_perception",
+        executable="semantic_fusion_node",
+        name="semantic_fusion_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("semantic_world_enabled")),
     )
 
     planning_node = Node(
@@ -373,6 +385,7 @@ def generate_launch_description():
         yolo_enabled_arg,
         yolo_model_arg,
         yolo_confidence_arg,
+        semantic_world_enabled_arg,
         vlm_enabled_arg,
         vlm_api_url_arg,
         vlm_model_arg,
@@ -383,6 +396,7 @@ def generate_launch_description():
         bridge_node,
         perception_node,
         yolo_detection_node,
+        semantic_fusion_node,
         planning_node,
         autonomy_node,
         control_node,

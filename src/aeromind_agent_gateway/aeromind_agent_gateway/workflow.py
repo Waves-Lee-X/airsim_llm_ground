@@ -473,6 +473,7 @@ def _validate_step_args(action: str, args: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("安全检查最小障碍物距离必须在 0.5 到 20 米之间")
         return {
             "require_gps": bool(args.get("require_gps", True)),
+            "check_takeoff_zone": bool(args.get("check_takeoff_zone", False)),
             "minimum_obstacle_distance": minimum,
         }
     if action == "perception_check":

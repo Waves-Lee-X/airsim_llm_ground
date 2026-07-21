@@ -16,6 +16,8 @@ find_package(rosidl_default_generators REQUIRED)
 set(msg_files
   msg/Detection.msg
   msg/DetectionArray.msg
+  msg/SemanticObject.msg
+  msg/SemanticObjectArray.msg
   msg/ObstacleMap.msg
   msg/Path.msg
   msg/TrajectoryPoint.msg

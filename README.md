@@ -92,7 +92,7 @@ ros2 service call /control/return_home aeromind_interfaces/srv/ReturnHome "{}"
 |---|---|
 | `aeromind_interfaces` | 自定义 Message、Service 和 Action 协议 |
 | `aeromind_bridge` | AirSim/PX4 数据桥接、坐标转换和 TF |
-| `aeromind_perception` | 图像保存、YOLO、VLM 和感知摘要 |
+| `aeromind_perception` | 图像保存、YOLO、VLM 与 `/world_model/objects` 三维语义融合 |
 | `aeromind_autonomy` | 局部地图、避障重规划、Minimum Snap 轨迹 |
 | `aeromind_control` | PX4 原生指令、Offboard 和轨迹执行 |
 | `aeromind_agent` | ROS 任务解析、基础技能和状态验证 |

@@ -16,7 +16,12 @@ from rclpy.node import Node
 from std_msgs.msg import Empty, String
 
 from aeromind_interfaces.action import FollowWaypoints
-from aeromind_interfaces.msg import AutonomyStatus, DetectionArray, DroneState
+from aeromind_interfaces.msg import (
+    AutonomyStatus,
+    DetectionArray,
+    DroneState,
+    SemanticObjectArray,
+)
 from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction
 from .workflow import validate_workflow
 
@@ -45,6 +50,8 @@ class RosStateBridge(Node):
         self._autonomy_terminal: dict[str, Any] | None = None
         self._detections: list[dict[str, Any]] = []
         self._detections_stamp: float | None = None
+        self._world_objects: list[dict[str, Any]] = []
+        self._world_objects_stamp: float | None = None
         self._mission: dict[str, Any] | None = None
         self._workflow_controls: dict[str, str] = {}
         self._action_client = self.create_client(
@@ -69,6 +76,12 @@ class RosStateBridge(Node):
         )
         self.create_subscription(
             DetectionArray, "/perception/detections", self._detections_cb, 10
+        )
+        self.create_subscription(
+            SemanticObjectArray,
+            "/world_model/objects",
+            self._world_objects_cb,
+            10,
         )
         self.create_subscription(String, "/agent/mission_status", self._mission_cb, 10)
 
@@ -113,6 +126,9 @@ class RosStateBridge(Node):
             "state": msg.state,
             "replanning": bool(msg.replanning),
             "nearest_obstacle_m": float(msg.nearest_obstacle_m),
+            "takeoff_clearance_valid": bool(msg.takeoff_clearance_valid),
+            "takeoff_clearance_m": float(msg.takeoff_clearance_m),
+            "takeoff_clearance_source": msg.takeoff_clearance_source,
             "target_distance_m": float(msg.target_distance_m),
             "active_strategy": msg.active_strategy,
             "message": msg.message,
@@ -139,6 +155,40 @@ class RosStateBridge(Node):
             self._detections = values
             self._detections_stamp = time.time()
 
+    def _world_objects_cb(self, msg: SemanticObjectArray):
+        values = []
+        for item in msg.objects:
+            values.append(
+                {
+                    "id": item.id,
+                    "class_name": item.class_name,
+                    "confidence": float(item.confidence),
+                    "frame_id": msg.header.frame_id,
+                    "position_valid": bool(item.position_valid),
+                    "position_m": {
+                        "x": float(item.position.x),
+                        "y": float(item.position.y),
+                        "z": float(item.position.z),
+                    }
+                    if item.position_valid
+                    else None,
+                    "velocity_mps": {
+                        "x": float(item.velocity.x),
+                        "y": float(item.velocity.y),
+                        "z": float(item.velocity.z),
+                    },
+                    "dynamic": bool(item.dynamic),
+                    "depth_m": _finite_or_none(item.depth_m),
+                    "age_sec": float(item.age_sec),
+                    "state": item.state,
+                    "evidence_type": item.evidence_type,
+                    "sources": list(item.sources),
+                }
+            )
+        with self._lock:
+            self._world_objects = values
+            self._world_objects_stamp = time.time()
+
     def _mission_cb(self, msg: String):
         try:
             payload = json.loads(msg.data)
@@ -156,6 +206,10 @@ class RosStateBridge(Node):
             autonomy = _record_with_freshness(self._autonomy, 2.0)
             detections_age = _age_seconds(self._detections_stamp)
             detections_fresh = detections_age is not None and detections_age <= 2.0
+            world_objects_age = _age_seconds(self._world_objects_stamp)
+            world_objects_fresh = (
+                world_objects_age is not None and world_objects_age <= 2.0
+            )
             snapshot = {
                 "available": bool(state and state["fresh"]),
                 "state": state,
@@ -172,6 +226,12 @@ class RosStateBridge(Node):
                 "detections_fresh": detections_fresh,
                 "detections_age_sec": detections_age,
                 "detections_stamp": self._detections_stamp,
+                "world_objects": [dict(item) for item in self._world_objects]
+                if world_objects_fresh
+                else [],
+                "world_objects_fresh": world_objects_fresh,
+                "world_objects_age_sec": world_objects_age,
+                "world_objects_stamp": self._world_objects_stamp,
                 "mission": dict(self._mission) if self._mission else None,
             }
             snapshot["evidence"] = _snapshot_evidence(snapshot)
@@ -189,12 +249,17 @@ class RosStateBridge(Node):
     def perception_summary(self) -> dict[str, Any]:
         snapshot = self.snapshot()
         return {
-            "available": bool(snapshot["detections"]),
+            "available": bool(snapshot["detections"] or snapshot["world_objects"]),
             "detections": snapshot["detections"],
             "detections_fresh": snapshot["detections_fresh"],
             "detections_age_sec": snapshot["detections_age_sec"],
+            "world_objects": snapshot["world_objects"],
+            "world_objects_fresh": snapshot["world_objects_fresh"],
+            "world_objects_age_sec": snapshot["world_objects_age_sec"],
             "autonomy": snapshot["autonomy"],
-            "evidence": _select_evidence(snapshot, {"detections", "autonomy"}),
+            "evidence": _select_evidence(
+                snapshot, {"detections", "world_objects", "autonomy"}
+            ),
         }
 
     async def analyze_current_image(self, prompt: str = "") -> dict[str, Any]:
@@ -728,9 +793,19 @@ class RosStateBridge(Node):
         if args.get("require_gps", True) and int(state.get("gps_fix", 0)) < 2:
             issues.append("GPS 定位质量不足")
         minimum = float(args.get("minimum_obstacle_distance", 2.0))
-        obstacle = autonomy.get("nearest_obstacle_m") if autonomy_fresh else None
+        check_takeoff_zone = bool(args.get("check_takeoff_zone", False))
+        if check_takeoff_zone:
+            clearance_valid = bool(
+                autonomy_fresh and autonomy.get("takeoff_clearance_valid")
+            )
+            obstacle = autonomy.get("takeoff_clearance_m") if clearance_valid else None
+        else:
+            clearance_valid = autonomy_fresh
+            obstacle = autonomy.get("nearest_obstacle_m") if autonomy_fresh else None
         if not autonomy_fresh:
             issues.append("自主避障状态不可用或已过期")
+        elif check_takeoff_zone and not clearance_valid:
+            issues.append("起飞区域净空证据不可用或已过期")
         elif obstacle is not None and math.isfinite(float(obstacle)):
             if float(obstacle) < minimum:
                 issues.append(
@@ -748,6 +823,11 @@ class RosStateBridge(Node):
                 "gps_usable": state.get("gps_usable"),
                 "nearest_obstacle_m": obstacle,
                 "minimum_obstacle_distance": minimum,
+                "check_takeoff_zone": check_takeoff_zone,
+                "clearance_source": (
+                    autonomy.get("takeoff_clearance_source")
+                    if check_takeoff_zone else "/autonomy/status nearest_obstacle_m"
+                ),
                 "state_age_sec": state.get("age_sec"),
                 "autonomy_age_sec": autonomy.get("age_sec"),
             },
@@ -757,8 +837,10 @@ class RosStateBridge(Node):
     def _perception_check(self, args: dict[str, Any]) -> dict[str, Any]:
         snapshot = self.snapshot()
         detections = snapshot.get("detections") or []
+        world_objects = snapshot.get("world_objects") or []
         observation_available = bool(
             snapshot.get("detections_fresh", bool(detections))
+            or snapshot.get("world_objects_fresh", bool(world_objects))
         )
         target = str(args.get("target") or "").strip().lower()
         confidence = float(args.get("minimum_confidence", 0.35))
@@ -767,26 +849,38 @@ class RosStateBridge(Node):
             if float(item.get("confidence", 0.0)) >= confidence
             and (not target or target in str(item.get("class_name", "")).lower())
         ]
+        matched_objects = [
+            item for item in world_objects
+            if float(item.get("confidence", 0.0)) >= confidence
+            and (not target or target in str(item.get("class_name", "")).lower())
+        ]
+        target_matched = bool(matched or matched_objects)
         success = observation_available if target else bool(
             observation_available or snapshot.get("autonomy")
         )
         if target:
             message = (
-                f"感知检查命中 {target}，共 {len(matched)} 个目标"
-                if success else f"感知检查未发现 {target}"
+                f"感知检查命中 {target}，共 {max(len(matched), len(matched_objects))} 个目标"
+                if target_matched else f"感知检查未发现 {target}"
             )
         else:
-            message = f"感知摘要已读取，共 {len(detections)} 个检测目标"
+            message = (
+                f"感知摘要已读取，共 {len(detections)} 个二维检测、"
+                f"{len(world_objects)} 个语义世界对象"
+            )
         return {
             "success": success,
             "physical_complete": success,
             "message": message,
-            "matched": bool(matched),
+            "matched": target_matched,
             "observation_available": observation_available,
             "target": target,
             "detections": matched if target else detections,
+            "world_objects": matched_objects if target else world_objects,
             "autonomy": snapshot.get("autonomy"),
-            "evidence": _select_evidence(snapshot, {"detections", "autonomy"}),
+            "evidence": _select_evidence(
+                snapshot, {"detections", "world_objects", "autonomy"}
+            ),
         }
 
     async def _emit_workflow_progress(
@@ -1059,6 +1153,11 @@ def _age_seconds(stamp: float | None) -> float | None:
     return round(max(0.0, time.time() - float(stamp)), 3)
 
 
+def _finite_or_none(value: Any) -> float | None:
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
 def _record_with_freshness(
     record: dict[str, Any] | None, timeout_sec: float
 ) -> dict[str, Any] | None:
@@ -1128,6 +1227,7 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     odometry = snapshot.get("odometry") or {}
     autonomy = snapshot.get("autonomy") or {}
     detections = snapshot.get("detections") or []
+    world_objects = snapshot.get("world_objects") or []
     records = [
         _evidence_record(
             "flight_state",
@@ -1166,6 +1266,19 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             "summary": (
                 f"detections={len(detections)} "
                 f"classes={[item.get('class_name') for item in detections[:5]]}"
+            ),
+        },
+        {
+            "id": "world_objects",
+            "kind": "fused_world_fact",
+            "source": "/world_model/objects",
+            "stamp": snapshot.get("world_objects_stamp"),
+            "age_sec": snapshot.get("world_objects_age_sec"),
+            "fresh": bool(snapshot.get("world_objects_fresh")),
+            "summary": (
+                f"objects={len(world_objects)} "
+                f"located={sum(bool(item.get('position_valid')) for item in world_objects)} "
+                f"classes={[item.get('class_name') for item in world_objects[:5]]}"
             ),
         },
     ]

@@ -20,6 +20,7 @@ setup(
         "console_scripts": [
             "perception_node = aeromind_perception.perception_node:main",
             "yolo_detection_node = aeromind_perception.yolo_detection_node:main",
+            "semantic_fusion_node = aeromind_perception.semantic_fusion_node:main",
         ],
     },
 )

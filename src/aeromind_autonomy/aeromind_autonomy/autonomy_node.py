@@ -96,6 +96,10 @@ class AutonomyNode(Node):
         self.declare_parameter("waypoint_timeout_margin_sec", 20.0)
         self.declare_parameter("waypoint_collision_lookahead_sec", 3.0)
         self.declare_parameter("waypoint_max_replans", 12)
+        self.declare_parameter("takeoff_zone_radius_m", 2.0)
+        self.declare_parameter("takeoff_ground_exclusion_m", 0.35)
+        self.declare_parameter("takeoff_check_height_m", 5.0)
+        self.declare_parameter("takeoff_clearance_max_m", 12.0)
 
         self._enabled = bool(self.get_parameter("enabled").value)
         self._publish_control_cmd = bool(self.get_parameter("publish_control_cmd").value)
@@ -113,6 +117,10 @@ class AutonomyNode(Node):
         self._odom_timeout_sec = float(self.get_parameter("odom_timeout_sec").value)
         self._depth_timeout_sec = float(self.get_parameter("depth_timeout_sec").value)
         self._require_depth = bool(self.get_parameter("require_depth_for_flight").value)
+        self._takeoff_zone_radius = float(self.get_parameter("takeoff_zone_radius_m").value)
+        self._takeoff_ground_exclusion = float(self.get_parameter("takeoff_ground_exclusion_m").value)
+        self._takeoff_check_height = float(self.get_parameter("takeoff_check_height_m").value)
+        self._takeoff_clearance_max = float(self.get_parameter("takeoff_clearance_max_m").value)
         self._odom_jump_reset_m = float(self.get_parameter("odom_jump_reset_m").value)
         self._recovery_lateral_m = float(self.get_parameter("recovery_lateral_m").value)
         self._recovery_climb_m = float(self.get_parameter("recovery_climb_m").value)
@@ -1019,6 +1027,24 @@ class AutonomyNode(Node):
             "RECOVERY",
         )
         msg.nearest_obstacle_m = float(result.nearest_obstacle)
+        takeoff_valid = self._odom_fresh() and self._depth_fresh()
+        if takeoff_valid:
+            position = self._world_position()
+            with self._map_lock:
+                takeoff_clearance = self._esdf.takeoff_zone_clearance(
+                    position,
+                    horizontal_radius=self._takeoff_zone_radius,
+                    ground_exclusion=self._takeoff_ground_exclusion,
+                    check_height=self._takeoff_check_height,
+                    max_distance=self._takeoff_clearance_max,
+                )
+            msg.takeoff_clearance_valid = True
+            msg.takeoff_clearance_m = float(takeoff_clearance)
+            msg.takeoff_clearance_source = "front_depth_esdf_ground_filtered"
+        else:
+            msg.takeoff_clearance_valid = False
+            msg.takeoff_clearance_m = 0.0
+            msg.takeoff_clearance_source = "unavailable"
         msg.target_distance_m = float(result.target_distance)
         msg.active_strategy = result.strategy
         msg.message = result.message

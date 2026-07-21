@@ -188,6 +188,7 @@ class OpenAICompatibleRuntimeTest(unittest.IsolatedAsyncioTestCase):
         check = workflow["steps"][0]
         self.assertEqual(check["args"]["minimum_obstacle_distance"], 2.0)
         self.assertTrue(check["args"]["require_gps"])
+        self.assertTrue(check["args"]["check_takeoff_zone"])
 
 
 if __name__ == "__main__":

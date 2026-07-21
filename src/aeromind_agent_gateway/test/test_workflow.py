@@ -564,7 +564,13 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                 "gps_fix": 1,
             },
             "odometry": {"position_m": {"z": 0.0}},
-            "autonomy": {"stamp": time.time(), "nearest_obstacle_m": 0.8},
+            "autonomy": {
+                "stamp": time.time(),
+                "nearest_obstacle_m": 0.8,
+                "takeoff_clearance_valid": True,
+                "takeoff_clearance_m": 0.8,
+                "takeoff_clearance_source": "test_esdf",
+            },
             "detections": [],
         }
         called = []
@@ -582,7 +588,11 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
             {
                 "name": "安全起飞",
                 "steps": [
-                    {"id": "safe", "action": "safety_check"},
+                    {
+                        "id": "safe",
+                        "action": "safety_check",
+                        "args": {"check_takeoff_zone": True},
+                    },
                     {
                         "id": "takeoff",
                         "action": "takeoff",
@@ -597,6 +607,35 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(called, [])
         self.assertIn("最近障碍物 0.80 米", result["message"])
         self.assertIn("安全距离 2.00 米", result["message"])
+
+    def test_takeoff_safety_rejects_missing_clearance_evidence(self):
+        bridge = self._bridge()
+        now = time.time()
+        bridge.snapshot = lambda: {
+            "available": True,
+            "state": {
+                "stamp": now,
+                "fresh": True,
+                "armed": False,
+                "ekf_healthy": True,
+                "gps_fix": 2,
+            },
+            "autonomy": {
+                "stamp": now,
+                "fresh": True,
+                "nearest_obstacle_m": 5.0,
+                "takeoff_clearance_valid": False,
+                "takeoff_clearance_m": 12.0,
+                "takeoff_clearance_source": "unavailable",
+            },
+            "evidence": [],
+        }
+
+        result = bridge._safety_check({"check_takeoff_zone": True})
+
+        self.assertFalse(result["success"])
+        self.assertIn("起飞区域净空证据不可用", result["message"])
+        self.assertIsNone(result["checks"]["nearest_obstacle_m"])
 
     def test_workflow_control_state_machine(self):
         bridge = self._bridge()

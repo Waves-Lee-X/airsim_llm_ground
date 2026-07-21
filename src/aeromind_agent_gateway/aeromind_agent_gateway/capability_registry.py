@@ -57,6 +57,7 @@ WORKFLOW_ACTION_SPECS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "require_gps": {"type": "boolean", "default": True},
+                "check_takeoff_zone": {"type": "boolean", "default": False},
                 "minimum_obstacle_distance": {
                     "type": "number",
                     "minimum": 0.5,

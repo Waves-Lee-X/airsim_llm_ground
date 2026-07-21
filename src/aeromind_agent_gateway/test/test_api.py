@@ -18,6 +18,9 @@ from aeromind_agent_gateway.store import SessionStore
 
 
 class FakeRosState:
+    def __init__(self):
+        self.workflow_controls = []
+
     def snapshot(self):
         return {
             "available": False,
@@ -34,6 +37,10 @@ class FakeRosState:
             "message": "fake",
             "physical_complete": True,
         }
+
+    def control_workflow(self, workflow_id, command):
+        self.workflow_controls.append((workflow_id, command))
+        return {"success": True, "status": "cancelled", "workflow_id": workflow_id}
 
 
 class FakeMemorySummarizer:
@@ -144,6 +151,54 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
                 json={"session_id": "s1", "user_id": "other", "channel": "web"},
             )
             self.assertEqual(forbidden.status_code, 403)
+
+    async def test_new_flight_task_is_blocked_while_mission_is_active(self):
+        session = self.store.ensure_session(
+            "s-lock", "operator:waves", "web", "deepseek-chat", "deepseek"
+        )
+        confirmation = self.store.create_confirmation(
+            session_id=session["id"],
+            user_id=session["user_id"],
+            action="workflow",
+            args={"workflow_id": "workflow-lock", "name": "巡检任务", "steps": []},
+            summary="执行组合任务：巡检任务",
+            risk_level="high",
+            ttl_seconds=60.0,
+        )
+        self.store.create_gateway_mission(confirmation)
+        self.store.update_gateway_mission(
+            confirmation["id"], "executing", phase="workflow_step"
+        )
+
+        with self.assertRaisesRegex(ValueError, "已有任务正在执行"):
+            await self.sessions._guard_control_concurrency(session, "move")
+
+    async def test_land_cancels_active_workflow_before_override(self):
+        session = self.store.ensure_session(
+            "s-land", "operator:waves", "web", "deepseek-chat", "deepseek"
+        )
+        confirmation = self.store.create_confirmation(
+            session_id=session["id"],
+            user_id=session["user_id"],
+            action="workflow",
+            args={"workflow_id": "workflow-land", "name": "巡检任务", "steps": []},
+            summary="执行组合任务：巡检任务",
+            risk_level="high",
+            ttl_seconds=60.0,
+        )
+        self.store.create_gateway_mission(confirmation)
+        self.store.update_gateway_mission(
+            confirmation["id"], "executing", phase="workflow_step"
+        )
+
+        await self.sessions._guard_control_concurrency(session, "land")
+
+        self.assertEqual(
+            self.ros_state.workflow_controls,
+            [("workflow-land", "cancel")],
+        )
+        mission = self.store.gateway_mission_for_confirmation(confirmation["id"])
+        self.assertEqual(mission["phase"], "cancelling")
 
     def test_current_image_analysis_request_detection(self):
         self.assertTrue(_is_current_image_analysis_request("分析当前画面"))

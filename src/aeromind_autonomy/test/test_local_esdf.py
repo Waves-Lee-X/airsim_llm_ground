@@ -63,6 +63,35 @@ class LocalEsdfTest(unittest.TestCase):
         esdf.insert_points([(1.1, -0.1, 2.2)], stamp=1.0)
         self.assertEqual(esdf.points(), [(1.25, -0.25, 2.25)])
 
+    def test_takeoff_clearance_ignores_ground_and_checks_launch_cylinder(self):
+        esdf = LocalEsdfMap(resolution=0.2)
+        esdf.insert_points(
+            [
+                (0.2, 0.1, 0.05),
+                (0.5, 0.0, 1.4),
+                (4.0, 0.0, 1.0),
+            ],
+            stamp=1.0,
+        )
+        clearance = esdf.takeoff_zone_clearance(
+            (0.0, 0.0, 0.0),
+            horizontal_radius=2.0,
+            ground_exclusion=0.35,
+            check_height=5.0,
+        )
+        self.assertGreater(clearance, 1.3)
+        self.assertLess(clearance, 1.6)
+
+    def test_takeoff_clearance_is_open_when_only_ground_is_mapped(self):
+        esdf = LocalEsdfMap(resolution=0.2)
+        esdf.insert_points([(0.2, 0.1, 0.05)], stamp=1.0)
+        self.assertEqual(
+            esdf.takeoff_zone_clearance(
+                (0.0, 0.0, 0.0), ground_exclusion=0.35, max_distance=10.0
+            ),
+            10.0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

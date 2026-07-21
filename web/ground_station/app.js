@@ -929,6 +929,8 @@ function renderStatus(data, source = "HTTP") {
     odomFresh ? odom : null,
     data.autonomy_goal,
     data.autonomy_trajectory,
+    Array.isArray(data.world_objects) ? data.world_objects : [],
+    data.world_model_meta || null,
   );
   renderLiveMission(data.mission);
   renderImageAnalysis(data.image_analysis);
@@ -1047,7 +1049,10 @@ function renderStatus(data, source = "HTTP") {
     els.autonomyStrategy.textContent = autonomy.active_strategy || "--";
     els.autonomyNearest.textContent = meters(autonomy.nearest_obstacle_m);
     els.autonomyTarget.textContent = meters(autonomy.target_distance_m);
-    els.autonomyMessage.textContent = autonomy.message || "等待任务状态";
+    const takeoffClearance = autonomy.takeoff_clearance_valid
+      ? `起飞区域净空 ${meters(autonomy.takeoff_clearance_m)}`
+      : "起飞区域净空不可用";
+    els.autonomyMessage.textContent = `${takeoffClearance} · ${autonomy.message || "等待任务状态"}`;
   }
 
   if (pointcloud && !threePointcloud) {
@@ -1061,7 +1066,7 @@ function renderStatus(data, source = "HTTP") {
   renderEvents(data.events || []);
 }
 
-function updateMissionMap(odom, goal, trajectory) {
+function updateMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = null) {
   const position = odom?.position;
   const frame = odom?.frame_id || goal?.frame_id || trajectory?.frame_id || "odom";
   if (frame !== missionTrackFrame) {
@@ -1078,10 +1083,10 @@ function updateMissionMap(odom, goal, trajectory) {
       missionTrack = missionTrack.slice(-800);
     }
   }
-  drawMissionMap(odom, goal, trajectory);
+  drawMissionMap(odom, goal, trajectory, worldObjects, worldMeta);
 }
 
-function drawMissionMap(odom, goal, trajectory) {
+function drawMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = null) {
   const canvas = els.missionMapCanvas;
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
@@ -1109,7 +1114,9 @@ function drawMissionMap(odom, goal, trajectory) {
   const current = odom?.position && Number.isFinite(Number(odom.position.x))
     ? {x: Number(odom.position.x), y: Number(odom.position.y), z: Number(odom.position.z || 0)}
     : null;
-  const allPoints = [...missionTrack, ...planned, ...(goalPoint ? [goalPoint] : []), ...(current ? [current] : [])];
+  const locatedObjects = worldObjects.filter((item) => item?.position_valid && Number.isFinite(Number(item.position?.x)) && Number.isFinite(Number(item.position?.y)));
+  const objectPoints = locatedObjects.map((item) => ({x: Number(item.position.x), y: Number(item.position.y), z: Number(item.position.z || 0)}));
+  const allPoints = [...missionTrack, ...planned, ...objectPoints, ...(goalPoint ? [goalPoint] : []), ...(current ? [current] : [])];
   if (!allPoints.length) {
     ctx.fillStyle = "#69727e";
     ctx.font = "10px system-ui, sans-serif";
@@ -1156,11 +1163,13 @@ function drawMissionMap(odom, goal, trajectory) {
     ctx.beginPath(); ctx.arc(home.x, home.y, 3, 0, Math.PI * 2); ctx.fill();
   }
   if (goalPoint) drawMapGoal(ctx, project(goalPoint));
+  locatedObjects.forEach((item) => drawMapSemanticObject(ctx, project(item.position), item));
   if (current) drawMapVehicle(ctx, project(current), odom?.velocity);
 
   const z = current ? `${current.z.toFixed(1)}m` : "--";
   const mode = trajectory?.planner_mode || "无规划轨迹";
-  els.missionMapMeta.textContent = `${missionTrackFrame || "odom"} · 网格 ${gridStep}m · Z ${z} · ${mode}`;
+  const semanticText = worldMeta?.active ? `语义目标 ${worldObjects.length}` : "语义模型等待";
+  els.missionMapMeta.textContent = `${missionTrackFrame || "odom"} · 网格 ${gridStep}m · Z ${z} · ${semanticText} · ${mode}`;
 }
 
 function niceMapStep(value) {
@@ -1193,6 +1202,22 @@ function drawMapGoal(ctx, point) {
   ctx.beginPath(); ctx.arc(point.x, point.y, 6, 0, Math.PI * 2); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(point.x - 9, point.y); ctx.lineTo(point.x + 9, point.y); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(point.x, point.y - 9); ctx.lineTo(point.x, point.y + 9); ctx.stroke();
+  ctx.restore();
+}
+
+function drawMapSemanticObject(ctx, point, item) {
+  ctx.save();
+  ctx.fillStyle = item.dynamic ? "#ed5c5c" : "#e8b84a";
+  ctx.strokeStyle = "#0d1014";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, item.dynamic ? 5 : 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#dce3e8";
+  ctx.font = "10px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`${item.class_name || "object"} ${item.id || ""}`.trim(), point.x + 7, point.y - 5);
   ctx.restore();
 }
 
