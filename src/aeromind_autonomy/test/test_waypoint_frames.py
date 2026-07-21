@@ -26,6 +26,23 @@ class WaypointFrameTest(unittest.TestCase):
         self.assertAlmostEqual(world[0][1], 0.0, places=6)
         self.assertEqual(world[0][2], 3.0)
 
+    def test_semantic_path_only_keeps_remaining_samples(self):
+        samples = [
+            {"t": float(index), "position": (float(index), 0.0, 3.0)}
+            for index in range(8)
+        ]
+        remaining = AutonomyNode._remaining_trajectory_samples(samples, 5.0)
+        self.assertEqual(remaining[0]["t"], 4.0)
+        self.assertEqual(remaining[-1]["t"], 7.0)
+
+    def test_semantic_path_keeps_two_samples_at_trajectory_end(self):
+        samples = [
+            {"t": float(index), "position": (float(index), 0.0, 3.0)}
+            for index in range(4)
+        ]
+        remaining = AutonomyNode._remaining_trajectory_samples(samples, 99.0)
+        self.assertEqual([sample["t"] for sample in remaining], [2.0, 3.0])
+
 
 if __name__ == "__main__":
     unittest.main()

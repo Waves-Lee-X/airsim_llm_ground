@@ -35,4 +35,16 @@ def test_intrusion_monitor_requires_confirm_and_clear_hysteresis():
     assert monitor.update([])["cleared"] == []
     result = monitor.update([])
     assert result["cleared"] == ["person_1"]
+
+
+def test_intrusion_monitor_does_not_clear_on_unknown_or_occluded_track():
+    monitor = PathIntrusionMonitor(confirm_frames=1, clear_frames=2)
+    assert monitor.update(["person_1"])["entered"] == ["person_1"]
+    for _ in range(5):
+        result = monitor.update([], unknown_ids=["person_1"])
+        assert result["cleared"] == []
+        assert result["active"] == ["person_1"]
+    assert monitor.update([])["cleared"] == []
+    result = monitor.update([])
+    assert result["cleared"] == ["person_1"]
     assert result["active"] == []

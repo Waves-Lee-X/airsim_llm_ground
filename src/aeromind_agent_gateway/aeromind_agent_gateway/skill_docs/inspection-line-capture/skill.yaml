@@ -2,7 +2,7 @@ name: inspection.line_capture
 label: 直线拍照巡检
 version: 1.0.0
 risk_level: high
-description: 沿前方直线飞行并在起点、终点保存图像，可原路返回。
+description: 沿前方连续航点巡检并在两端保存图像；人员进入航迹时悬停留证，清除后续飞。
 example_task: 向前巡检20米，在起点和终点拍照，然后返回
 workflow_name: "前方 ${distance} 米直线拍照巡检"
 parameters:
@@ -24,8 +24,11 @@ workflow:
     retries: 1
   - id: outbound
     label: "向前巡检 ${distance} 米"
-    action: move
-    args: {direction: forward, distance: "${distance}"}
+    action: follow_waypoints
+    args:
+      points: [{forward_m: "${distance}"}]
+      cruise_speed: 1.5
+      capture_on_semantic_hold: true
     depends_on: [start-capture]
   - id: end-capture
     label: 保存巡检终点图像
@@ -34,8 +37,11 @@ workflow:
     retries: 1
   - id: return-leg
     label: "原路返回 ${distance} 米"
-    action: move
-    args: {direction: backward, distance: "${distance}"}
+    action: follow_waypoints
+    args:
+      points: [{forward_m: "${-distance}"}]
+      cruise_speed: 1.5
+      capture_on_semantic_hold: true
     depends_on: [end-capture]
     include_if: return_after
   - id: land

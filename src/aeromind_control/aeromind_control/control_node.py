@@ -150,7 +150,12 @@ def autonomy_trajectory_action(
         return "ignore_no_goal"
     if not collision_free:
         return "ignore_inactive" if control_mode in ("IDLE", "READY") else "hold_unsafe"
-    if planner_mode in ("goal_reached", "safe_hover", "blocked_hold"):
+    if planner_mode in (
+        "goal_reached",
+        "safe_hover",
+        "blocked_hold",
+        "semantic_person_hold",
+    ):
         return "hold"
     if not has_points:
         return "ignore_empty"

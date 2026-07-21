@@ -414,6 +414,7 @@ class ObjectTrackerNode(Node):
         relations.header.frame_id = self._frame_id
         intruding = []
         evidence = {}
+        track_by_id = {track.id: track for track in tracks}
         for track in tracks:
             if (
                 self._lifecycle(track) != "confirmed"
@@ -463,7 +464,15 @@ class ObjectTrackerNode(Node):
                     "trajectory_transformed": transformed,
                 }
         self._relations_publisher.publish(relations)
-        transitions = self._intrusion_monitor.update(intruding)
+        unknown_active = {
+            object_id
+            for object_id in self._intrusion_monitor.active_ids
+            if object_id not in track_by_id
+            or self._lifecycle(track_by_id[object_id]) != "confirmed"
+        }
+        transitions = self._intrusion_monitor.update(
+            intruding, unknown_ids=unknown_active
+        )
         self._intrusion_evidence.update(evidence)
         for object_id in transitions["entered"]:
             self._publish_world_event(

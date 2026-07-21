@@ -72,12 +72,15 @@ class PathIntrusionMonitor:
     def active_ids(self):
         return set(self._active)
 
-    def update(self, intruding_ids):
+    def update(self, intruding_ids, unknown_ids=()):
         observed = set(str(value) for value in intruding_ids)
+        unknown = set(str(value) for value in unknown_ids)
         entered = []
         cleared = []
         known = set(self._hits) | set(self._misses) | self._active | observed
         for object_id in known:
+            if object_id in unknown:
+                continue
             if object_id in observed:
                 self._hits[object_id] = self._hits.get(object_id, 0) + 1
                 self._misses[object_id] = 0

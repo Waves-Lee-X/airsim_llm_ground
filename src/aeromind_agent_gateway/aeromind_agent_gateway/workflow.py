@@ -528,7 +528,13 @@ def _validate_step_args(action: str, args: dict[str, Any]) -> dict[str, Any]:
         cruise_speed = float(args.get("cruise_speed", 1.5))
         if not math.isfinite(cruise_speed) or not 0.2 <= cruise_speed <= 4.0:
             raise ValueError("航点巡航速度必须在 0.2 到 4.0 m/s 之间")
-        return {"points": points, "cruise_speed": cruise_speed}
+        return {
+            "points": points,
+            "cruise_speed": cruise_speed,
+            "capture_on_semantic_hold": bool(
+                args.get("capture_on_semantic_hold", False)
+            ),
+        }
     if action == "capture_image":
         return {}
     return {}

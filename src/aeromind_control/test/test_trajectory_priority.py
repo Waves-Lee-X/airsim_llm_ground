@@ -58,6 +58,12 @@ class TrajectoryPriorityTest(unittest.TestCase):
         action = autonomy_trajectory_action("AUTONOMY", "sensor_timeout_hold", False, True)
         self.assertEqual(action, "hold_unsafe")
 
+    def test_semantic_guard_holds_even_when_trajectory_points_are_present(self):
+        action = autonomy_trajectory_action(
+            "AUTONOMY", "semantic_person_hold", True, True
+        )
+        self.assertEqual(action, "hold")
+
     def test_ready_mode_accepts_valid_autonomy_trajectory(self):
         action = autonomy_trajectory_action("READY", "direct_goal", True, True)
         self.assertEqual(action, "execute")

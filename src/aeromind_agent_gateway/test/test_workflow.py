@@ -422,7 +422,8 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                             "points": [
                                 {"forward_m": 2},
                                 {"right_m": 2},
-                            ]
+                            ],
+                            "capture_on_semantic_hold": True,
                         },
                     },
                     {
@@ -445,6 +446,9 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
                 ],
             },
             progress,
+        )
+        self.assertTrue(
+            waypoint_requests[0]["capture_on_semantic_hold"]
         )
 
         self.assertTrue(result["success"])

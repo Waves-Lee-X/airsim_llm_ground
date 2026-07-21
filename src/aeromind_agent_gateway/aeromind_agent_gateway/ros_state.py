@@ -845,6 +845,9 @@ class RosStateBridge(Node):
                 }
         request = FollowWaypoints.Goal()
         request.cruise_speed = float(args.get("cruise_speed", 1.5))
+        capture_on_hold = bool(args.get("capture_on_semantic_hold", False))
+        semantic_state = {"previous": ""}
+        semantic_capture_futures = []
         for point in args["points"]:
             request.relative_waypoints.append(
                 Vector3(
@@ -857,14 +860,29 @@ class RosStateBridge(Node):
 
         def feedback_callback(feedback_message):
             feedback = feedback_message.feedback
+            if (
+                capture_on_hold
+                and feedback.state == "SEMANTIC_HOLD"
+                and semantic_state["previous"] != "SEMANTIC_HOLD"
+            ):
+                semantic_capture_futures.append(
+                    asyncio.run_coroutine_threadsafe(
+                        self._capture_semantic_hold(progress), loop
+                    )
+                )
+            semantic_state["previous"] = feedback.state
             asyncio.run_coroutine_threadsafe(
                 progress(
                     "waypoint",
                     {
                         "message": (
-                            f"连续轨迹航点 {feedback.current_waypoint}/"
-                            f"{len(request.relative_waypoints)}，"
-                            f"进度 {feedback.progress * 100:.0f}%"
+                            "人员进入剩余航迹，底层已悬停并等待风险解除"
+                            if feedback.state == "SEMANTIC_HOLD"
+                            else (
+                                f"连续轨迹航点 {feedback.current_waypoint}/"
+                                f"{len(request.relative_waypoints)}，"
+                                f"进度 {feedback.progress * 100:.0f}%"
+                            )
                         ),
                         "waypoint_index": int(feedback.current_waypoint),
                         "waypoint_count": len(request.relative_waypoints),
@@ -911,6 +929,12 @@ class RosStateBridge(Node):
                 "message": "连续多航点 Action 等待结果超时",
             }
         action_result = wrapped_result.result
+        capture_results = []
+        if semantic_capture_futures:
+            capture_results = await asyncio.gather(
+                *(asyncio.wrap_future(item) for item in semantic_capture_futures),
+                return_exceptions=True,
+            )
         return {
             "success": bool(action_result.success),
             "physical_complete": bool(action_result.success),
@@ -921,7 +945,38 @@ class RosStateBridge(Node):
                 "y": float(action_result.final_position.y),
                 "z": float(action_result.final_position.z),
             },
+            "semantic_captures": [
+                value
+                for value in capture_results
+                if isinstance(value, dict)
+            ],
         }
+
+    async def _capture_semantic_hold(
+        self, progress: ProgressCallback
+    ) -> dict[str, Any]:
+        await progress(
+            "semantic_hold",
+            {"message": "人员进入剩余航迹：已悬停，正在保存现场图像"},
+        )
+
+        async def capture_progress(_phase: str, _details: dict[str, Any]):
+            return None
+
+        result = await self.execute_confirmed_action(
+            "capture_image", {}, capture_progress
+        )
+        await progress(
+            "semantic_capture",
+            {
+                "message": (
+                    result.get("message")
+                    if result.get("success")
+                    else f"语义悬停拍照失败：{result.get('message', '未知原因')}"
+                )
+            },
+        )
+        return result
 
     async def _await_ros_future(self, ros_future, timeout_sec: float):
         loop = asyncio.get_running_loop()

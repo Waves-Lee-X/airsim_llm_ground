@@ -34,13 +34,19 @@ from std_msgs.msg import Empty, Header, String
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from aeromind_interfaces.action import FollowWaypoints
-from aeromind_interfaces.msg import AutonomyStatus, Trajectory, TrajectoryPoint
+from aeromind_interfaces.msg import (
+    AutonomyStatus,
+    Trajectory,
+    TrajectoryPoint,
+    WorldModelEvent,
+)
 
 from .frame_transform import body_to_world
 from .kinodynamic_replanner import KinodynamicReplanner, ReplanResult
 from .local_esdf import LocalEsdfMap
 from .minimum_snap import sample_minimum_snap_waypoints, splice_replanned_trajectory
 from .odometry_quality import odometry_quality_issue
+from .semantic_guard import SemanticTrajectoryGuard
 
 
 class AutonomyNode(Node):
@@ -96,6 +102,9 @@ class AutonomyNode(Node):
         self.declare_parameter("waypoint_timeout_margin_sec", 20.0)
         self.declare_parameter("waypoint_collision_lookahead_sec", 3.0)
         self.declare_parameter("waypoint_max_replans", 12)
+        self.declare_parameter("semantic_guard_enabled", True)
+        self.declare_parameter("semantic_guard_clear_dwell_sec", 1.5)
+        self.declare_parameter("semantic_guard_hold_timeout_sec", 30.0)
         self.declare_parameter("takeoff_zone_radius_m", 2.0)
         self.declare_parameter("takeoff_ground_exclusion_m", 0.35)
         self.declare_parameter("takeoff_check_height_m", 5.0)
@@ -143,6 +152,17 @@ class AutonomyNode(Node):
         self._map_lock = threading.RLock()
         self._active_waypoint_action = None
         self._waypoint_goal_reserved = False
+        self._semantic_guard_enabled = bool(
+            self.get_parameter("semantic_guard_enabled").value
+        )
+        self._semantic_guard = SemanticTrajectoryGuard(
+            clear_dwell_sec=float(
+                self.get_parameter("semantic_guard_clear_dwell_sec").value
+            ),
+            hold_timeout_sec=float(
+                self.get_parameter("semantic_guard_hold_timeout_sec").value
+            ),
+        )
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
@@ -194,6 +214,12 @@ class AutonomyNode(Node):
         self.create_subscription(PoseStamped, goal_topic, self._goal_callback, 10)
         self.create_subscription(Empty, "/autonomy/cancel", self._cancel_callback, 10)
         self.create_subscription(String, "/perception/image_analysis", self._image_analysis_callback, 10)
+        self.create_subscription(
+            WorldModelEvent,
+            "/world_model/events",
+            self._world_event_callback,
+            10,
+        )
         world_cloud_topic = str(self.get_parameter("world_cloud_topic").value).strip()
         self._world_cloud_sub = None
         if world_cloud_topic:
@@ -225,8 +251,27 @@ class AutonomyNode(Node):
         self._timer = self.create_timer(0.1, self._timer_callback)
         self.get_logger().info(
             "自主避障节点已启动: "
-            f"enabled={self._enabled}, publish_control_cmd={self._publish_control_cmd}"
+            f"enabled={self._enabled}, publish_control_cmd={self._publish_control_cmd}, "
+            f"semantic_guard={self._semantic_guard_enabled}"
         )
+
+    def _world_event_callback(self, msg: WorldModelEvent):
+        if not self._semantic_guard_enabled:
+            return
+        if msg.event_type not in {"person_entered_path", "person_cleared_path"}:
+            return
+        now = time.monotonic()
+        with self._action_lock:
+            self._semantic_guard.update_event(
+                msg.event_type,
+                bool(msg.active),
+                list(msg.object_ids),
+                now,
+            )
+        if msg.event_type == "person_entered_path" and msg.active:
+            self.get_logger().warn(
+                "语义保护触发：人员进入剩余航迹，连续航点任务保持悬停"
+            )
 
     def _odom_callback(self, msg: Odometry):
         quality_issue = odometry_quality_issue(
@@ -741,6 +786,7 @@ class AutonomyNode(Node):
         with self._action_lock:
             self._active_waypoint_action = state
             self._waypoint_goal_reserved = False
+            self._semantic_guard.begin_mission(started_at)
         self._goal_world = world_waypoints[-1]
         self._primary_goal_world = world_waypoints[-1]
         self.get_logger().info(
@@ -773,6 +819,54 @@ class AutonomyNode(Node):
 
                 position = self._world_position()
                 self._update_completed_waypoints(state, position)
+                semantic_decision = self._semantic_guard_decision(now)
+                if semantic_decision in {"hold", "clearing"}:
+                    state.setdefault("semantic_hold_elapsed", elapsed)
+                    clearance = self._trajectory_clearance_window(
+                        samples, position, state["semantic_hold_elapsed"]
+                    )
+                    self._publish_waypoint_hold(
+                        state, trajectory_id, clearance, semantic_decision
+                    )
+                    self._publish_waypoint_feedback(
+                        goal_handle,
+                        state,
+                        clearance,
+                        "SEMANTIC_HOLD",
+                    )
+                    time.sleep(0.2)
+                    continue
+                if semantic_decision == "timeout":
+                    result.message = "人员持续占用航迹超过语义保护时限，任务已悬停终止"
+                    result.completed_waypoints = state["completed"]
+                    self._set_result_position(result, position)
+                    goal_handle.abort()
+                    return result
+                if semantic_decision == "resume":
+                    with self._action_lock:
+                        hold_duration = self._semantic_guard.consume_resume(now)
+                    state["mission_deadline"] += hold_duration
+                    state.pop("semantic_hold_elapsed", None)
+                    resumed, message, new_clearance = self._replan_waypoint_route(state)
+                    if not resumed:
+                        result.message = f"语义风险解除，但剩余轨迹恢复失败：{message}"
+                        result.completed_waypoints = state["completed"]
+                        self._set_result_position(result, position)
+                        goal_handle.abort()
+                        return result
+                    self.get_logger().info(
+                        f"人员已离开航迹并稳定 {self._semantic_guard.clear_dwell_sec:.1f}s，"
+                        "已重拼接剩余 Minimum Snap 轨迹"
+                    )
+                    self._publish_waypoint_trajectory(
+                        state["samples"],
+                        trajectory_id,
+                        reset_time=True,
+                        clearance=new_clearance,
+                        strategy=state["strategy"],
+                    )
+                    state["reset_time"] = False
+                    continue
                 clearance = self._trajectory_clearance_window(samples, position, elapsed)
                 if clearance < self._replanner.safety_radius:
                     maximum = int(self.get_parameter("waypoint_max_replans").value)
@@ -814,7 +908,11 @@ class AutonomyNode(Node):
                     continue
 
                 self._publish_waypoint_trajectory(
-                    samples,
+                    (
+                        samples
+                        if state["reset_time"]
+                        else self._remaining_trajectory_samples(samples, elapsed)
+                    ),
                     trajectory_id,
                     reset_time=state["reset_time"],
                     clearance=clearance,
@@ -855,6 +953,7 @@ class AutonomyNode(Node):
                 if self._active_waypoint_action is state:
                     self._active_waypoint_action = None
                 self._waypoint_goal_reserved = False
+                self._semantic_guard.end_mission()
             self._goal_world = None
             self._primary_goal_world = None
 
@@ -872,6 +971,46 @@ class AutonomyNode(Node):
             message="连续多航点 Minimum Snap 轨迹",
         )
         self._publish_trajectory(result, trajectory_id, reset_time)
+
+    def _publish_waypoint_hold(self, state, trajectory_id, clearance, decision):
+        object_count = len(self._semantic_guard.active_object_ids)
+        result = ReplanResult(
+            state="SEMANTIC_HOLD",
+            strategy="semantic_person_hold",
+            collision_free=True,
+            target_distance=math.dist(self._world_position(), self._goal_world),
+            nearest_obstacle=clearance,
+            command_velocity=(0.0, 0.0, 0.0),
+            trajectory=self._remaining_trajectory_samples(
+                state["samples"], state.get("semantic_hold_elapsed", 0.0)
+            ),
+            message=(
+                f"人员占用航迹，保持悬停（{object_count} 个活动目标）"
+                if decision == "hold"
+                else "人员已离开，等待稳定后恢复剩余轨迹"
+            ),
+        )
+        self._publish_trajectory(result, trajectory_id, reset_time=False)
+        self._publish_status(result)
+
+    def _semantic_guard_decision(self, now):
+        if not self._semantic_guard_enabled:
+            return "tracking"
+        with self._action_lock:
+            return self._semantic_guard.decision(now)
+
+    @staticmethod
+    def _remaining_trajectory_samples(samples, elapsed):
+        if len(samples) <= 2:
+            return list(samples)
+        start_index = 0
+        for index, sample in enumerate(samples):
+            if float(sample["t"]) >= max(0.0, float(elapsed) - 0.2):
+                start_index = max(0, index - 1)
+                break
+        else:
+            start_index = len(samples) - 2
+        return list(samples[start_index:])
 
     def _replan_waypoint_route(self, state):
         completed = state["completed"]
@@ -934,7 +1073,15 @@ class AutonomyNode(Node):
         self, goal_handle, state, clearance, feedback_state, final_distance=None
     ):
         total = len(state["world_waypoints"])
-        elapsed = max(0.0, time.monotonic() - state["started_at"])
+        elapsed = max(
+            0.0,
+            float(
+                state.get(
+                    "semantic_hold_elapsed",
+                    time.monotonic() - state["started_at"],
+                )
+            ),
+        )
         duration = max(0.1, float(state["samples"][-1]["t"]))
         base = state["timeline_completed"]
         candidate = (base + min(1.0, elapsed / duration) * (total - base)) / total

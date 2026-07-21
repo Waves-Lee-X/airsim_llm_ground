@@ -172,6 +172,21 @@ def generate_launch_description():
         default_value="12",
         description="单次连续多航点任务允许的最大局部重规划次数",
     )
+    autonomy_semantic_guard_arg = DeclareLaunchArgument(
+        "autonomy_semantic_guard_enabled",
+        default_value="true",
+        description="连续航点任务是否响应人员进入航迹的语义事件",
+    )
+    autonomy_semantic_clear_dwell_arg = DeclareLaunchArgument(
+        "autonomy_semantic_clear_dwell_sec",
+        default_value="1.5",
+        description="人员离开航迹后恢复飞行前的稳定等待时间",
+    )
+    autonomy_semantic_hold_timeout_arg = DeclareLaunchArgument(
+        "autonomy_semantic_hold_timeout_sec",
+        default_value="30.0",
+        description="人员持续占用航迹时悬停等待的最长时间",
+    )
     autonomy_odom_topic_arg = DeclareLaunchArgument(
         "autonomy_odom_topic",
         default_value="/sensor/odometry",
@@ -352,6 +367,9 @@ def generate_launch_description():
             {"depth_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_depth_timeout_sec"), value_type=float)},
             {"waypoint_collision_lookahead_sec": ParameterValue(LaunchConfiguration("autonomy_waypoint_lookahead_sec"), value_type=float)},
             {"waypoint_max_replans": ParameterValue(LaunchConfiguration("autonomy_waypoint_max_replans"), value_type=int)},
+            {"semantic_guard_enabled": ParameterValue(LaunchConfiguration("autonomy_semantic_guard_enabled"), value_type=bool)},
+            {"semantic_guard_clear_dwell_sec": ParameterValue(LaunchConfiguration("autonomy_semantic_clear_dwell_sec"), value_type=float)},
+            {"semantic_guard_hold_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_semantic_hold_timeout_sec"), value_type=float)},
             {"max_acceleration": ParameterValue(LaunchConfiguration("autonomy_accel_limit"), value_type=float)},
             {"min_flight_altitude": ParameterValue(LaunchConfiguration("autonomy_min_altitude"), value_type=float)},
             {"odom_topic": LaunchConfiguration("autonomy_odom_topic")},
@@ -434,6 +452,9 @@ def generate_launch_description():
         autonomy_depth_timeout_arg,
         autonomy_waypoint_lookahead_arg,
         autonomy_waypoint_max_replans_arg,
+        autonomy_semantic_guard_arg,
+        autonomy_semantic_clear_dwell_arg,
+        autonomy_semantic_hold_timeout_arg,
         autonomy_odom_topic_arg,
         autonomy_world_cloud_topic_arg,
         autonomy_max_position_variance_arg,
