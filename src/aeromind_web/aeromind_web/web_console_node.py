@@ -33,6 +33,8 @@ from aeromind_interfaces.msg import (
     DetectionArray,
     DroneState,
     SemanticObjectArray,
+    SemanticRelationArray,
+    WorldModelEvent,
     WorldModelHealth,
     Trajectory,
 )
@@ -235,6 +237,9 @@ class WebConsoleNode(Node):
         self._world_objects_received_at = 0.0
         self._world_objects_frame_id = ""
         self._world_health = None
+        self._world_relations = []
+        self._world_relations_received_at = 0.0
+        self._world_events = []
         self._autonomy = None
         self._autonomy_goal = None
         self._autonomy_trajectory = None
@@ -259,6 +264,18 @@ class WebConsoleNode(Node):
             WorldModelHealth,
             "/world_model/health",
             self._world_health_cb,
+            10,
+        )
+        self.create_subscription(
+            SemanticRelationArray,
+            "/world_model/relations",
+            self._world_relations_cb,
+            10,
+        )
+        self.create_subscription(
+            WorldModelEvent,
+            "/world_model/events",
+            self._world_event_cb,
             10,
         )
         self.create_subscription(AutonomyStatus, "/autonomy/status", self._autonomy_cb, 10)
@@ -430,6 +447,44 @@ class WebConsoleNode(Node):
                 "message": msg.message,
             }
 
+    def _world_relations_cb(self, msg: SemanticRelationArray):
+        values = [
+            {
+                "subject_id": item.subject_id,
+                "predicate": item.predicate,
+                "object_id": item.object_id,
+                "frame_id": msg.header.frame_id,
+                "confidence": float(item.confidence),
+                "distance_m": _finite_json_number(item.distance_m),
+                "evidence_type": item.evidence_type,
+                "sources": list(item.sources),
+            }
+            for item in msg.relations
+        ]
+        with self._lock:
+            self._world_relations = values
+            self._world_relations_received_at = time.time()
+
+    def _world_event_cb(self, msg: WorldModelEvent):
+        try:
+            evidence = json.loads(msg.evidence_json) if msg.evidence_json else {}
+        except json.JSONDecodeError:
+            evidence = {"raw": msg.evidence_json}
+        value = {
+            "id": msg.id,
+            "received_at": time.time(),
+            "frame_id": msg.header.frame_id,
+            "event_type": msg.event_type,
+            "severity": msg.severity,
+            "active": bool(msg.active),
+            "object_ids": list(msg.object_ids),
+            "confidence": float(msg.confidence),
+            "evidence": evidence,
+        }
+        with self._lock:
+            self._world_events.append(value)
+            self._world_events = self._world_events[-100:]
+
     def _autonomy_cb(self, msg: AutonomyStatus):
         with self._lock:
             self._autonomy = {
@@ -525,6 +580,13 @@ class WebConsoleNode(Node):
             world_objects_active = (
                 world_objects_age is not None and world_objects_age <= 3.0
             )
+            world_relations_age = (
+                max(0.0, now - self._world_relations_received_at)
+                if self._world_relations_received_at > 0.0 else None
+            )
+            world_relations_active = (
+                world_relations_age is not None and world_relations_age <= 3.0
+            )
             return {
                 "state": self._state,
                 "odom": self._odom,
@@ -558,6 +620,9 @@ class WebConsoleNode(Node):
                     "age_s": world_objects_age,
                     "active": world_objects_active,
                     "health": dict(self._world_health) if self._world_health else None,
+                    "relations": list(self._world_relations) if world_relations_active else [],
+                    "relations_age_s": world_relations_age,
+                    "events": list(self._world_events[-20:]),
                 },
                 "autonomy": self._autonomy,
                 "autonomy_goal": self._autonomy_goal,

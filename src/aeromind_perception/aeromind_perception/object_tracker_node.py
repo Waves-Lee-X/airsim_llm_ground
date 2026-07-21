@@ -10,15 +10,24 @@ import time
 
 import rclpy
 from nav_msgs.msg import Odometry
+from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.time import Time
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from aeromind_interfaces.msg import (
+    SemanticRelation,
+    SemanticRelationArray,
     SemanticObject,
     SemanticObjectArray,
+    Trajectory,
+    WorldModelEvent,
     WorldModelHealth,
 )
 from aeromind_interfaces.srv import QueryWorldModel
 from .object_tracking import ConstantVelocityTrack, greedy_association
+from .semantic_relations import PathIntrusionMonitor, predicted_path_distance
+from .semantic_geometry import transform_point
 from .world_model_store import WorldModelStore
 
 
@@ -39,6 +48,14 @@ class ObjectTrackerNode(Node):
         self.declare_parameter("history_retention_hours", 24.0)
         self.declare_parameter("history_max_rows", 200000)
         self.declare_parameter("history_write_interval_sec", 1.0)
+        self.declare_parameter("path_intrusion_classes", ["person"])
+        self.declare_parameter("path_intrusion_radius_m", 2.0)
+        self.declare_parameter("path_prediction_horizon_sec", 2.0)
+        self.declare_parameter("path_prediction_period_sec", 0.5)
+        self.declare_parameter("path_uncertainty_sigma", 1.0)
+        self.declare_parameter("path_confirm_frames", 3)
+        self.declare_parameter("path_clear_frames", 3)
+        self.declare_parameter("trajectory_timeout_sec", 3.0)
 
         self._lock = threading.RLock()
         self._tracks = {}
@@ -50,11 +67,26 @@ class ObjectTrackerNode(Node):
         self._poses_by_frame = {}
         self._store = self._create_store()
         self._last_history_write_at = None
+        self._trajectory = None
+        self._intrusion_monitor = PathIntrusionMonitor(
+            int(self.get_parameter("path_confirm_frames").value),
+            int(self.get_parameter("path_clear_frames").value),
+        )
+        self._intrusion_evidence = {}
+        self._event_sequence = 1
+        self._tf_buffer = Buffer(cache_time=Duration(seconds=10.0))
+        self._tf_listener = TransformListener(self._tf_buffer, self)
         self._objects_publisher = self.create_publisher(
             SemanticObjectArray, str(self.get_parameter("objects_topic").value), 10
         )
         self._health_publisher = self.create_publisher(
             WorldModelHealth, "/world_model/health", 10
+        )
+        self._relations_publisher = self.create_publisher(
+            SemanticRelationArray, "/world_model/relations", 10
+        )
+        self._events_publisher = self.create_publisher(
+            WorldModelEvent, "/world_model/events", 10
         )
         self.create_subscription(
             SemanticObjectArray,
@@ -67,6 +99,9 @@ class ObjectTrackerNode(Node):
         )
         self.create_subscription(
             Odometry, "/localization/odometry", self._odometry_callback, 10
+        )
+        self.create_subscription(
+            Trajectory, "/autonomy/trajectory", self._trajectory_callback, 10
         )
         self.create_service(
             QueryWorldModel, "/world_model/query", self._query_callback
@@ -105,6 +140,47 @@ class ObjectTrackerNode(Node):
                 "position": (float(position.x), float(position.y), float(position.z)),
                 "received_at": time.monotonic(),
             }
+
+    def _trajectory_callback(self, msg: Trajectory):
+        terminal_modes = {
+            "safe_hover",
+            "goal_reached",
+            "hover_no_goal",
+            "blocked_hold",
+            "sensor_timeout_hold",
+        }
+        active = bool(
+            msg.collision_free
+            and len(msg.points) >= 2
+            and str(msg.planner_mode) not in terminal_modes
+        )
+        if active:
+            trajectory_id = str(msg.trajectory_id or msg.planner_mode)
+            with self._lock:
+                previous_id = (
+                    self._trajectory.get("trajectory_id")
+                    if self._trajectory else None
+                )
+            if previous_id and previous_id != trajectory_id:
+                self._clear_trajectory("trajectory_replaced")
+            with self._lock:
+                self._trajectory = {
+                    "frame_id": str(msg.header.frame_id),
+                    "trajectory_id": trajectory_id,
+                    "planner_mode": str(msg.planner_mode),
+                    "stamp": msg.header.stamp,
+                    "points": [
+                        (
+                            float(point.position.x),
+                            float(point.position.y),
+                            float(point.position.z),
+                        )
+                        for point in msg.points
+                    ],
+                    "received_at": time.monotonic(),
+                }
+            return
+        self._clear_trajectory("trajectory_inactive")
 
     def _fusion_health_callback(self, msg: WorldModelHealth):
         with self._lock:
@@ -262,6 +338,7 @@ class ObjectTrackerNode(Node):
                 )
         confirmed = sum(item.state == "confirmed" for item in message.objects)
         self._publish_health(len(message.objects), confirmed)
+        self._evaluate_path_relations(tracks)
 
     def _track_message(self, track, timestamp: float):
         item = SemanticObject()
@@ -311,6 +388,178 @@ class ObjectTrackerNode(Node):
             f"observation_age={observation_age:.2f}s"
         )
         self._health_publisher.publish(health)
+
+    def _evaluate_path_relations(self, tracks):
+        with self._lock:
+            trajectory = dict(self._trajectory) if self._trajectory else None
+        if trajectory is None:
+            return
+        if (
+            time.monotonic() - trajectory["received_at"]
+            > float(self.get_parameter("trajectory_timeout_sec").value)
+        ):
+            self._clear_trajectory("trajectory_timeout")
+            return
+        path_points, transformed = self._trajectory_points_in_world(trajectory)
+        if path_points is None:
+            return
+        classes = {
+            _normalize_class_name(value)
+            for value in self.get_parameter("path_intrusion_classes").value
+        }
+        radius = float(self.get_parameter("path_intrusion_radius_m").value)
+        sigma = float(self.get_parameter("path_uncertainty_sigma").value)
+        relations = SemanticRelationArray()
+        relations.header.stamp = self.get_clock().now().to_msg()
+        relations.header.frame_id = self._frame_id
+        intruding = []
+        evidence = {}
+        for track in tracks:
+            if (
+                self._lifecycle(track) != "confirmed"
+                or _normalize_class_name(track.class_name) not in classes
+            ):
+                continue
+            distance, prediction_time = predicted_path_distance(
+                track.position,
+                track.velocity,
+                path_points,
+                float(self.get_parameter("path_prediction_horizon_sec").value),
+                float(self.get_parameter("path_prediction_period_sec").value),
+            )
+            covariance = track.position_covariance
+            position_std = math.sqrt(
+                max(0.0, covariance[0] + covariance[4] + covariance[8]) / 3.0
+            )
+            threshold = radius + sigma * position_std
+            relation = SemanticRelation()
+            relation.subject_id = track.id
+            relation.predicate = (
+                "intersects_path" if distance <= threshold else "near_path"
+            )
+            relation.object_id = trajectory["trajectory_id"]
+            relation.confidence = float(track.confidence)
+            relation.distance_m = float(distance)
+            relation.evidence_type = "predicted" if prediction_time > 0.0 else "fused"
+            relation.sources = [
+                "/world_model/objects",
+                "/autonomy/trajectory",
+            ]
+            if transformed:
+                relation.sources.append("/tf")
+            relations.relations.append(relation)
+            if distance <= threshold:
+                intruding.append(track.id)
+                evidence[track.id] = {
+                    "object_id": track.id,
+                    "class_name": track.class_name,
+                    "trajectory_id": trajectory["trajectory_id"],
+                    "distance_m": distance,
+                    "threshold_m": threshold,
+                    "prediction_time_sec": prediction_time,
+                    "position_std_m": position_std,
+                    "frame_id": self._frame_id,
+                    "trajectory_source_frame": trajectory["frame_id"],
+                    "trajectory_transformed": transformed,
+                }
+        self._relations_publisher.publish(relations)
+        transitions = self._intrusion_monitor.update(intruding)
+        self._intrusion_evidence.update(evidence)
+        for object_id in transitions["entered"]:
+            self._publish_world_event(
+                "person_entered_path",
+                "high",
+                True,
+                [object_id],
+                self._intrusion_evidence.get(object_id, {}),
+            )
+        for object_id in transitions["cleared"]:
+            self._publish_world_event(
+                "person_cleared_path",
+                "info",
+                False,
+                [object_id],
+                self._intrusion_evidence.pop(object_id, {}),
+            )
+
+    def _clear_trajectory(self, reason: str):
+        with self._lock:
+            self._trajectory = None
+        relations = SemanticRelationArray()
+        relations.header.stamp = self.get_clock().now().to_msg()
+        relations.header.frame_id = self._frame_id
+        self._relations_publisher.publish(relations)
+        cleared = self._intrusion_monitor.reset()
+        for object_id in cleared:
+            evidence = self._intrusion_evidence.pop(object_id, {})
+            evidence["clear_reason"] = reason
+            self._publish_world_event(
+                "person_cleared_path", "info", False, [object_id], evidence
+            )
+
+    def _trajectory_points_in_world(self, trajectory):
+        source_frame = trajectory["frame_id"]
+        if source_frame == self._frame_id:
+            return trajectory["points"], False
+        if not source_frame or not self._frame_id:
+            return None, False
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self._frame_id,
+                source_frame,
+                Time.from_msg(trajectory["stamp"]),
+                timeout=Duration(seconds=0.05),
+            )
+        except TransformException as exc:
+            self.get_logger().warning(
+                f"轨迹语义关系 TF 不可用: {self._frame_id} <- {source_frame}: {exc}",
+                throttle_duration_sec=5.0,
+            )
+            return None, False
+        translation = transform.transform.translation
+        rotation = transform.transform.rotation
+        points = [
+            transform_point(
+                point,
+                (translation.x, translation.y, translation.z),
+                (rotation.x, rotation.y, rotation.z, rotation.w),
+            )
+            for point in trajectory["points"]
+        ]
+        return points, True
+
+    def _publish_world_event(
+        self,
+        event_type: str,
+        severity: str,
+        active: bool,
+        object_ids,
+        evidence,
+    ):
+        message = WorldModelEvent()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.frame_id = self._frame_id
+        message.id = f"world-event-{self._event_sequence:08d}"
+        self._event_sequence += 1
+        message.event_type = event_type
+        message.severity = severity
+        message.active = bool(active)
+        message.object_ids = [str(value) for value in object_ids]
+        message.confidence = float(
+            max(
+                (
+                    self._tracks[object_id].confidence
+                    for object_id in object_ids
+                    if object_id in self._tracks
+                ),
+                default=0.0,
+            )
+        )
+        message.evidence_json = json.dumps(evidence, ensure_ascii=False)
+        self._events_publisher.publish(message)
+        self.get_logger().warning(
+            f"世界模型事件: {event_type}, objects={message.object_ids}"
+        )
 
     def _query_callback(self, request, response):
         query_type = str(request.query_type or "current").strip().lower()

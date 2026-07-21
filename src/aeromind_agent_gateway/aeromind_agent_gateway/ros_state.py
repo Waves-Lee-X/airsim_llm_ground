@@ -21,6 +21,8 @@ from aeromind_interfaces.msg import (
     DetectionArray,
     DroneState,
     SemanticObjectArray,
+    SemanticRelationArray,
+    WorldModelEvent,
     WorldModelHealth,
 )
 from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction, QueryWorldModel
@@ -54,6 +56,9 @@ class RosStateBridge(Node):
         self._world_objects: list[dict[str, Any]] = []
         self._world_objects_stamp: float | None = None
         self._world_health: dict[str, Any] | None = None
+        self._world_relations: list[dict[str, Any]] = []
+        self._world_relations_stamp: float | None = None
+        self._world_events: list[dict[str, Any]] = []
         self._mission: dict[str, Any] | None = None
         self._workflow_controls: dict[str, str] = {}
         self._action_client = self.create_client(
@@ -92,6 +97,18 @@ class RosStateBridge(Node):
             WorldModelHealth,
             "/world_model/health",
             self._world_health_cb,
+            10,
+        )
+        self.create_subscription(
+            SemanticRelationArray,
+            "/world_model/relations",
+            self._world_relations_cb,
+            10,
+        )
+        self.create_subscription(
+            WorldModelEvent,
+            "/world_model/events",
+            self._world_event_cb,
             10,
         )
         self.create_subscription(String, "/agent/mission_status", self._mission_cb, 10)
@@ -224,6 +241,41 @@ class RosStateBridge(Node):
                 "message": msg.message,
             }
 
+    def _world_relations_cb(self, msg: SemanticRelationArray):
+        values = [
+            {
+                "subject_id": item.subject_id,
+                "predicate": item.predicate,
+                "object_id": item.object_id,
+                "frame_id": msg.header.frame_id,
+                "confidence": float(item.confidence),
+                "distance_m": _finite_or_none(item.distance_m),
+                "evidence_type": item.evidence_type,
+                "sources": list(item.sources),
+            }
+            for item in msg.relations
+        ]
+        with self._lock:
+            self._world_relations = values
+            self._world_relations_stamp = time.time()
+
+    def _world_event_cb(self, msg: WorldModelEvent):
+        value = {
+            "id": msg.id,
+            "stamp": time.time(),
+            "frame_id": msg.header.frame_id,
+            "event_type": msg.event_type,
+            "severity": msg.severity,
+            "active": bool(msg.active),
+            "object_ids": list(msg.object_ids),
+            "confidence": float(msg.confidence),
+            "evidence": _parse_json_object(msg.evidence_json),
+            "source": "/world_model/events",
+        }
+        with self._lock:
+            self._world_events.append(value)
+            self._world_events = self._world_events[-100:]
+
     def _mission_cb(self, msg: String):
         try:
             payload = json.loads(msg.data)
@@ -246,6 +298,10 @@ class RosStateBridge(Node):
                 world_objects_age is not None and world_objects_age <= 2.0
             )
             world_health = _record_with_freshness(self._world_health, 2.0)
+            world_relations_age = _age_seconds(self._world_relations_stamp)
+            world_relations_fresh = (
+                world_relations_age is not None and world_relations_age <= 2.0
+            )
             snapshot = {
                 "available": bool(state and state["fresh"]),
                 "state": state,
@@ -269,6 +325,11 @@ class RosStateBridge(Node):
                 "world_objects_age_sec": world_objects_age,
                 "world_objects_stamp": self._world_objects_stamp,
                 "world_health": world_health,
+                "world_relations": [dict(item) for item in self._world_relations]
+                if world_relations_fresh else [],
+                "world_relations_fresh": world_relations_fresh,
+                "world_relations_age_sec": world_relations_age,
+                "world_events": [dict(item) for item in self._world_events[-20:]],
                 "mission": dict(self._mission) if self._mission else None,
             }
             snapshot["evidence"] = _snapshot_evidence(snapshot)
@@ -294,6 +355,9 @@ class RosStateBridge(Node):
             "world_objects_fresh": snapshot["world_objects_fresh"],
             "world_objects_age_sec": snapshot["world_objects_age_sec"],
             "world_health": snapshot["world_health"],
+            "world_relations": snapshot["world_relations"],
+            "world_relations_fresh": snapshot["world_relations_fresh"],
+            "world_events": snapshot["world_events"],
             "autonomy": snapshot["autonomy"],
             "evidence": _select_evidence(
                 snapshot, {"detections", "world_objects", "autonomy"}
@@ -1370,6 +1434,7 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     autonomy = snapshot.get("autonomy") or {}
     detections = snapshot.get("detections") or []
     world_objects = snapshot.get("world_objects") or []
+    world_events = snapshot.get("world_events") or []
     records = [
         _evidence_record(
             "flight_state",
@@ -1421,6 +1486,26 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 f"objects={len(world_objects)} "
                 f"located={sum(bool(item.get('position_valid')) for item in world_objects)} "
                 f"classes={[item.get('class_name') for item in world_objects[:5]]}"
+            ),
+        },
+        {
+            "id": "world_events",
+            "kind": "derived_world_event",
+            "source": "/world_model/events",
+            "stamp": world_events[-1].get("stamp") if world_events else None,
+            "age_sec": (
+                _age_seconds(world_events[-1].get("stamp")) if world_events else None
+            ),
+            "fresh": bool(
+                world_events
+                and _age_seconds(world_events[-1].get("stamp")) is not None
+                and _age_seconds(world_events[-1].get("stamp")) <= 5.0
+            ),
+            "summary": (
+                f"latest={world_events[-1].get('event_type')} "
+                f"active={world_events[-1].get('active')} "
+                f"objects={world_events[-1].get('object_ids')}"
+                if world_events else "尚无世界模型事件"
             ),
         },
     ]

@@ -19,6 +19,9 @@ set(msg_files
   msg/SemanticObject.msg
   msg/SemanticObjectArray.msg
   msg/WorldModelHealth.msg
+  msg/SemanticRelation.msg
+  msg/SemanticRelationArray.msg
+  msg/WorldModelEvent.msg
   msg/ObstacleMap.msg
   msg/Path.msg
   msg/TrajectoryPoint.msg

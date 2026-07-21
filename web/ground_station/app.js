@@ -20,6 +20,7 @@ const els = {
   detectionList: document.getElementById("detectionList"),
   worldHealthStatus: document.getElementById("worldHealthStatus"),
   worldTrackCount: document.getElementById("worldTrackCount"),
+  worldPathRisk: document.getElementById("worldPathRisk"),
   cameraZoomBtn: document.getElementById("cameraZoomBtn"),
   cameraViewer: document.getElementById("cameraViewer"),
   cameraViewerStage: document.getElementById("cameraViewerStage"),
@@ -1075,12 +1076,25 @@ function renderWorldModelHealth(meta) {
   if (!health) {
     els.worldHealthStatus.textContent = "语义融合等待数据";
     els.worldTrackCount.textContent = "0 稳定目标";
+    if (els.worldPathRisk) {
+      els.worldPathRisk.textContent = "未激活";
+      els.worldPathRisk.className = "";
+    }
     return;
   }
   const sync = Number(health.sync_delta_s);
   const syncText = Number.isFinite(sync) ? ` · 同步差 ${fmt(sync * 1000, 0)}ms` : "";
   els.worldHealthStatus.textContent = `${health.healthy ? "语义融合正常" : "语义融合降级"}${syncText}`;
   els.worldTrackCount.textContent = `${Number(health.confirmed_track_count) || 0} 稳定目标`;
+  if (els.worldPathRisk) {
+    const intrusions = Array.isArray(meta?.relations)
+      ? meta.relations.filter((item) => item.predicate === "intersects_path")
+      : [];
+    els.worldPathRisk.textContent = intrusions.length
+      ? `${intrusions.length} 个目标侵入`
+      : (Array.isArray(meta?.relations) && meta.relations.length ? "航线清晰" : "未激活");
+    els.worldPathRisk.className = intrusions.length ? "status-bad" : "status-ok";
+  }
 }
 
 function updateMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = null) {
@@ -1186,7 +1200,16 @@ function drawMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = n
     ctx.beginPath(); ctx.arc(home.x, home.y, 3, 0, Math.PI * 2); ctx.fill();
   }
   if (goalPoint) drawMapGoal(ctx, project(goalPoint));
-  locatedObjects.forEach((item) => drawMapSemanticObject(ctx, project(item.position), item));
+  const intrusionIds = new Set(
+    (Array.isArray(worldMeta?.relations) ? worldMeta.relations : [])
+      .filter((item) => item.predicate === "intersects_path")
+      .map((item) => item.subject_id),
+  );
+  locatedObjects.forEach((item) => drawMapSemanticObject(
+    ctx,
+    project(item.position),
+    {...item, path_intrusion: intrusionIds.has(item.id)},
+  ));
   if (current) drawMapVehicle(ctx, project(current), odom?.velocity);
 
   const z = current ? `${current.z.toFixed(1)}m` : "--";
@@ -1232,11 +1255,11 @@ function drawMapGoal(ctx, point) {
 
 function drawMapSemanticObject(ctx, point, item) {
   ctx.save();
-  ctx.fillStyle = item.dynamic ? "#ed5c5c" : "#e8b84a";
+  ctx.fillStyle = item.path_intrusion ? "#ff3f52" : item.dynamic ? "#ed5c5c" : "#e8b84a";
   ctx.strokeStyle = "#0d1014";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(point.x, point.y, item.dynamic ? 5 : 4, 0, Math.PI * 2);
+  ctx.arc(point.x, point.y, item.path_intrusion ? 7 : item.dynamic ? 5 : 4, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = "#dce3e8";

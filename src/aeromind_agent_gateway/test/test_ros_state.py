@@ -202,6 +202,23 @@ class RosTaskMappingTest(unittest.TestCase):
         self.assertIsNone(by_id["flight_state"]["age_sec"])
         self.assertEqual(by_id["flight_state"]["summary"], "数据尚未收到")
 
+    @patch("aeromind_agent_gateway.ros_state.time.time", return_value=105.0)
+    def test_world_event_is_exposed_as_traceable_evidence(self, _time):
+        snapshot = {
+            "world_events": [{
+                "id": "world-event-1",
+                "stamp": 104.0,
+                "event_type": "person_entered_path",
+                "active": True,
+                "object_ids": ["person_000001"],
+            }]
+        }
+        evidence = _snapshot_evidence(snapshot)
+        record = next(item for item in evidence if item["id"] == "world_events")
+        self.assertTrue(record["fresh"])
+        self.assertEqual(record["source"], "/world_model/events")
+        self.assertIn("person_entered_path", record["summary"])
+
     def test_tools_can_select_only_relevant_evidence(self):
         snapshot = {
             "evidence": [
