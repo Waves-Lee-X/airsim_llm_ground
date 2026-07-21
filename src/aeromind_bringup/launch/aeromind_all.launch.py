@@ -57,6 +57,21 @@ def generate_launch_description():
         description="AirSim 宿主机 IP 地址（默认自动检测 WSL 网关）",
     )
     airsim_ip = LaunchConfiguration("airsim_ip")
+    primary_rgbd_period_arg = DeclareLaunchArgument(
+        "primary_rgbd_period_sec",
+        default_value="0.1",
+        description="AirSim 前视 RGB-D 批量发布周期",
+    )
+    lidar_period_arg = DeclareLaunchArgument(
+        "lidar_period_sec",
+        default_value="0.2",
+        description="AirSim LiDAR 发布周期",
+    )
+    publish_aux_cameras_arg = DeclareLaunchArgument(
+        "publish_aux_cameras",
+        default_value="true",
+        description="是否低频发布底视和左右辅助相机",
+    )
     llm_enabled_arg = DeclareLaunchArgument(
         "llm_enabled",
         default_value="true",
@@ -197,6 +212,11 @@ def generate_launch_description():
         default_value="true",
         description="是否启动检测+深度+TF 三维语义融合节点",
     )
+    semantic_world_frame_arg = DeclareLaunchArgument(
+        "semantic_world_frame",
+        default_value="odom",
+        description="语义世界对象的目标坐标系；SLAM 模式使用 map",
+    )
     vlm_enabled_arg = DeclareLaunchArgument(
         "vlm_enabled",
         default_value="false",
@@ -238,7 +258,12 @@ def generate_launch_description():
         executable="airsim_bridge_node",
         name="airsim_bridge_node",
         output="screen",
-        parameters=[{"airsim_ip": airsim_ip}],
+        parameters=[
+            {"airsim_ip": airsim_ip},
+            {"primary_rgbd_period_sec": ParameterValue(LaunchConfiguration("primary_rgbd_period_sec"), value_type=float)},
+            {"lidar_period_sec": ParameterValue(LaunchConfiguration("lidar_period_sec"), value_type=float)},
+            {"publish_aux_cameras": ParameterValue(LaunchConfiguration("publish_aux_cameras"), value_type=bool)},
+        ],
     )
 
     perception_node = Node(
@@ -273,6 +298,7 @@ def generate_launch_description():
         name="semantic_fusion_node",
         output="screen",
         condition=IfCondition(LaunchConfiguration("semantic_world_enabled")),
+        parameters=[{"world_frame": LaunchConfiguration("semantic_world_frame")}],
     )
 
     planning_node = Node(
@@ -358,6 +384,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         airsim_ip_arg,
+        primary_rgbd_period_arg,
+        lidar_period_arg,
+        publish_aux_cameras_arg,
         llm_enabled_arg,
         llm_api_url_arg,
         llm_model_arg,
@@ -386,6 +415,7 @@ def generate_launch_description():
         yolo_model_arg,
         yolo_confidence_arg,
         semantic_world_enabled_arg,
+        semantic_world_frame_arg,
         vlm_enabled_arg,
         vlm_api_url_arg,
         vlm_model_arg,

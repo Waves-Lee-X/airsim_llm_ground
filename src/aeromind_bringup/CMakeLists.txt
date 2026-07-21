@@ -14,6 +14,7 @@ install(DIRECTORY launch
 install(PROGRAMS
   scripts/aeromind_demo_check
   scripts/aeromind_mission_metrics
+  scripts/aeromind_slam_check
   DESTINATION lib/${PROJECT_NAME}
 )
 

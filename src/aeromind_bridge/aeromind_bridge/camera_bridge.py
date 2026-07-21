@@ -250,61 +250,80 @@ class CameraBridge:
 
         self._tf_broadcaster.sendTransform(transforms)
 
-    def publish_all(self):
-        """获取并发布所有相机图像 + LiDAR 数据（在定时器中调用）"""
+    def publish_primary_rgbd(self):
+        """一次 AirSim RPC 同步获取前视 RGB-D，供 SLAM 高频消费。"""
+        self._publish_camera_configs(self._camera_configs[:2])
+
+    def publish_auxiliary_cameras(self):
+        """低频发布底视和左右前视相机。"""
+        self._publish_camera_configs(self._camera_configs[2:])
+
+    def publish_lidar(self):
+        """独立发布 LiDAR，避免拖慢 RGB-D 同步链路。"""
         if self._client is None:
             return
-
         now = self._node.get_clock().now().to_msg()
+        try:
+            lidar_data = self._client.getLidarData()
+            if lidar_data and len(lidar_data.point_cloud) > 0:
+                cloud_msg = airsim_lidar_to_pointcloud(lidar_data, frame_id="lidar")
+                cloud_msg.header.stamp = now
+                self._lidar_pub.publish(cloud_msg)
+        except Exception as exc:
+            self._logger.warn(f"LiDAR 获取失败: {exc}")
 
-        # === 相机 ===
-        for cam_name, topic_postfix, fov, w, h, img_type in self._camera_configs:
+    def publish_all(self):
+        """兼容原有调用；新链路应使用独立定时器。"""
+        self.publish_primary_rgbd()
+        self.publish_auxiliary_cameras()
+        self.publish_lidar()
+
+    def _publish_camera_configs(self, configs):
+        if self._client is None or not configs:
+            return
+        now = self._node.get_clock().now().to_msg()
+        try:
+            requests = [
+                airsim.ImageRequest(
+                    cam_name,
+                    img_type,
+                    pixels_as_float=(img_type == self.IMAGE_TYPE_DEPTH),
+                    compress=False,
+                )
+                for cam_name, _, _, _, _, img_type in configs
+            ]
+            responses = self._client.simGetImages(requests)
+        except Exception as exc:
+            self._logger.warn(f"相机批量获取失败: {exc}")
+            return
+        if not responses or len(responses) != len(configs):
+            self._logger.warn(
+                f"相机批量返回数量异常: {len(responses) if responses else 0}/{len(configs)}"
+            )
+            return
+        for config, response in zip(configs, responses):
+            cam_name, topic_postfix, fov, _, _, img_type = config
             try:
                 topic = f"/sensor/camera/{topic_postfix}"
                 info_topic = f"{topic}/camera_info"
                 parent_info_topic = f"{topic.rsplit('/', 1)[0]}/camera_info"
-
-                pixels_as_float = (img_type == self.IMAGE_TYPE_DEPTH)
-                # compress=False 才会返回 ROS Image 需要的原始像素/深度数组。
-                responses = self._client.simGetImages([
-                    airsim.ImageRequest(
-                        cam_name,
-                        img_type,
-                        pixels_as_float=pixels_as_float,
-                        compress=False,
-                    )
-                ])
-                if responses and len(responses) > 0:
-                    img_msg = airsim_image_to_ros(
-                        responses[0], img_type,
-                        frame_id=f"camera_{cam_name}_optical"
-                    )
-                    img_msg.header.stamp = now
-                    self._img_publishers[topic].publish(img_msg)
-
-                    # 发布 camera_info
-                    if info_topic in self._info_data and info_topic in self._info_pubs:
-                        info_msg = create_camera_info(
-                            img_msg.width,
-                            img_msg.height,
-                            fov,
-                            frame_id=f"camera_{cam_name}_optical",
-                        )
-                        info_msg.header.stamp = now
-                        self._info_pubs[info_topic].publish(info_msg)
-                        if parent_info_topic in self._parent_info_pubs:
-                            self._parent_info_pubs[parent_info_topic].publish(info_msg)
-            except Exception as e:
-                self._logger.warn(f"相机 {cam_name} 获取失败: {e}")
-
-        # === LiDAR ===
-        try:
-            lidar_data = self._client.getLidarData()
-            if lidar_data and len(lidar_data.point_cloud) > 0:
-                cloud_msg = airsim_lidar_to_pointcloud(
-                    lidar_data, frame_id="lidar"
+                img_msg = airsim_image_to_ros(
+                    response,
+                    img_type,
+                    frame_id=f"camera_{cam_name}_optical",
                 )
-                cloud_msg.header.stamp = now
-                self._lidar_pub.publish(cloud_msg)
-        except Exception as e:
-            self._logger.warn(f"LiDAR 获取失败: {e}")
+                img_msg.header.stamp = now
+                self._img_publishers[topic].publish(img_msg)
+                if info_topic in self._info_data and info_topic in self._info_pubs:
+                    info_msg = create_camera_info(
+                        img_msg.width,
+                        img_msg.height,
+                        fov,
+                        frame_id=f"camera_{cam_name}_optical",
+                    )
+                    info_msg.header.stamp = now
+                    self._info_pubs[info_topic].publish(info_msg)
+                    if parent_info_topic in self._parent_info_pubs:
+                        self._parent_info_pubs[parent_info_topic].publish(info_msg)
+            except Exception as exc:
+                self._logger.warn(f"相机 {cam_name}/{topic_postfix} 发布失败: {exc}")

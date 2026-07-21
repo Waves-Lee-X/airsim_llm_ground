@@ -1114,7 +1114,13 @@ function drawMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = n
   const current = odom?.position && Number.isFinite(Number(odom.position.x))
     ? {x: Number(odom.position.x), y: Number(odom.position.y), z: Number(odom.position.z || 0)}
     : null;
-  const locatedObjects = worldObjects.filter((item) => item?.position_valid && Number.isFinite(Number(item.position?.x)) && Number.isFinite(Number(item.position?.y)));
+  const worldFrame = worldMeta?.frame_id || "";
+  const locatedObjects = worldObjects.filter((item) => (
+    (!worldFrame || worldFrame === frame)
+    && item?.position_valid
+    && Number.isFinite(Number(item.position?.x))
+    && Number.isFinite(Number(item.position?.y))
+  ));
   const objectPoints = locatedObjects.map((item) => ({x: Number(item.position.x), y: Number(item.position.y), z: Number(item.position.z || 0)}));
   const allPoints = [...missionTrack, ...planned, ...objectPoints, ...(goalPoint ? [goalPoint] : []), ...(current ? [current] : [])];
   if (!allPoints.length) {
@@ -1168,7 +1174,9 @@ function drawMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = n
 
   const z = current ? `${current.z.toFixed(1)}m` : "--";
   const mode = trajectory?.planner_mode || "无规划轨迹";
-  const semanticText = worldMeta?.active ? `语义目标 ${worldObjects.length}` : "语义模型等待";
+  const semanticText = worldMeta?.active
+    ? `语义目标 ${worldObjects.length} (${worldFrame || frame})`
+    : "语义模型等待";
   els.missionMapMeta.textContent = `${missionTrackFrame || "odom"} · 网格 ${gridStep}m · Z ${z} · ${semanticText} · ${mode}`;
 }
 

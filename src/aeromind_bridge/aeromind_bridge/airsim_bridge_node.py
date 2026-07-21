@@ -71,6 +71,10 @@ class AirSimBridgeNode(Node):
         self.declare_parameter("mode", "airsim")
         self.declare_parameter("airsim_ip", "192.168.1.100")
         self.declare_parameter("publish_drone_state", True)
+        self.declare_parameter("primary_rgbd_period_sec", 0.1)
+        self.declare_parameter("aux_camera_period_sec", 1.0)
+        self.declare_parameter("lidar_period_sec", 0.2)
+        self.declare_parameter("publish_aux_cameras", True)
         self._mode = self.get_parameter("mode").value
         self._airsim_ip = self.get_parameter("airsim_ip").value
         self._publish_drone_state = bool(
@@ -138,13 +142,8 @@ class AirSimBridgeNode(Node):
             callback_group=self._flight_callback_group,
         )
 
-        # 定时器：1Hz 发布相机图像和 LiDAR
         self._camera_bridge = CameraBridge(self, self._client)
-        self._camera_timer = self.create_timer(
-            1.0,
-            self._camera_timer_callback,
-            callback_group=self._camera_callback_group,
-        )
+        self._init_camera_timers()
 
         # 缓存 IMU 所需的最新状态
         self._latest_airsim_state = None
@@ -163,11 +162,7 @@ class AirSimBridgeNode(Node):
             return
 
         self._camera_bridge = CameraBridge(self, self._client)
-        self._camera_timer = self.create_timer(
-            1.0,
-            self._camera_timer_callback,
-            callback_group=self._camera_callback_group,
-        )
+        self._init_camera_timers()
 
     def _airsim_timer_callback(self):
         """AirSim 定时器：读取状态并发布 ROS 消息"""
@@ -250,10 +245,48 @@ class AirSimBridgeNode(Node):
         drone_state.ekf_healthy = True
         self._state_pub.publish(drone_state)
 
+    def _init_camera_timers(self):
+        primary_period = max(
+            0.03, float(self.get_parameter("primary_rgbd_period_sec").value)
+        )
+        lidar_period = max(
+            0.05, float(self.get_parameter("lidar_period_sec").value)
+        )
+        self._camera_timer = self.create_timer(
+            primary_period,
+            self._camera_timer_callback,
+            callback_group=self._camera_callback_group,
+        )
+        self._lidar_timer = self.create_timer(
+            lidar_period,
+            self._lidar_timer_callback,
+            callback_group=self._camera_callback_group,
+        )
+        self._aux_camera_timer = None
+        if bool(self.get_parameter("publish_aux_cameras").value):
+            self._aux_camera_timer = self.create_timer(
+                max(0.2, float(self.get_parameter("aux_camera_period_sec").value)),
+                self._aux_camera_timer_callback,
+                callback_group=self._camera_callback_group,
+            )
+        self.get_logger().info(
+            f"AirSim 传感器周期: RGB-D={primary_period:.2f}s, "
+            f"LiDAR={lidar_period:.2f}s, "
+            f"辅助相机={'开启' if self._aux_camera_timer else '关闭'}"
+        )
+
     def _camera_timer_callback(self):
-        """1Hz 定时器：发布相机图像和 LiDAR 点云"""
+        """高频批量发布前视 RGB-D。"""
         if self._camera_bridge is not None:
-            self._camera_bridge.publish_all()
+            self._camera_bridge.publish_primary_rgbd()
+
+    def _aux_camera_timer_callback(self):
+        if self._camera_bridge is not None:
+            self._camera_bridge.publish_auxiliary_cameras()
+
+    def _lidar_timer_callback(self):
+        if self._camera_bridge is not None:
+            self._camera_bridge.publish_lidar()
 
     # ============================================================
     # PX4 模式

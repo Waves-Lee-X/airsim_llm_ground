@@ -18,6 +18,9 @@
   <exec_depend>aeromind_control</exec_depend>
   <exec_depend>aeromind_agent</exec_depend>
   <exec_depend>aeromind_agent_gateway</exec_depend>
+  <exec_depend>rtabmap_slam</exec_depend>
+  <exec_depend>rtabmap_sync</exec_depend>
+  <exec_depend>image_proc</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

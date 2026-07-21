@@ -19,6 +19,7 @@ setup(
     entry_points={
         "console_scripts": [
             "airsim_bridge_node = aeromind_bridge.airsim_bridge_node:main",
+            "slam_pose_node = aeromind_bridge.slam_pose_node:main",
         ],
     },
 )
