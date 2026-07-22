@@ -38,12 +38,10 @@ from aeromind_interfaces.msg import (
     AutonomyStatus,
     Trajectory,
     TrajectoryPoint,
-    SemanticObjectArray,
     WorldModelEvent,
 )
 
-from .dynamic_obstacles import DynamicClearance, DynamicObstacleField
-from .frame_transform import body_to_world, rotate_vector
+from .frame_transform import body_to_world
 from .kinodynamic_replanner import KinodynamicReplanner, ReplanResult
 from .local_esdf import LocalEsdfMap
 from .minimum_snap import sample_minimum_snap_waypoints, splice_replanned_trajectory
@@ -107,12 +105,6 @@ class AutonomyNode(Node):
         self.declare_parameter("semantic_guard_enabled", True)
         self.declare_parameter("semantic_guard_clear_dwell_sec", 1.5)
         self.declare_parameter("semantic_guard_hold_timeout_sec", 30.0)
-        self.declare_parameter("dynamic_planning_enabled", True)
-        self.declare_parameter("dynamic_object_classes", ["person"])
-        self.declare_parameter("dynamic_object_timeout_sec", 1.5)
-        self.declare_parameter("dynamic_object_default_radius_m", 0.45)
-        self.declare_parameter("dynamic_object_uncertainty_sigma", 2.0)
-        self.declare_parameter("dynamic_object_min_confidence", 0.45)
         self.declare_parameter("takeoff_zone_radius_m", 2.0)
         self.declare_parameter("takeoff_ground_exclusion_m", 0.35)
         self.declare_parameter("takeoff_check_height_m", 5.0)
@@ -171,25 +163,6 @@ class AutonomyNode(Node):
                 self.get_parameter("semantic_guard_hold_timeout_sec").value
             ),
         )
-        self._dynamic_planning_enabled = bool(
-            self.get_parameter("dynamic_planning_enabled").value
-        )
-        self._dynamic_field = DynamicObstacleField(
-            timeout_sec=float(
-                self.get_parameter("dynamic_object_timeout_sec").value
-            ),
-            default_radius=float(
-                self.get_parameter("dynamic_object_default_radius_m").value
-            ),
-            uncertainty_sigma=float(
-                self.get_parameter("dynamic_object_uncertainty_sigma").value
-            ),
-            minimum_confidence=float(
-                self.get_parameter("dynamic_object_min_confidence").value
-            ),
-            classes=tuple(self.get_parameter("dynamic_object_classes").value),
-        )
-        self._latest_dynamic_risk = DynamicClearance(float("inf"))
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
@@ -247,12 +220,6 @@ class AutonomyNode(Node):
             self._world_event_callback,
             10,
         )
-        self.create_subscription(
-            SemanticObjectArray,
-            "/world_model/objects",
-            self._world_objects_callback,
-            10,
-        )
         world_cloud_topic = str(self.get_parameter("world_cloud_topic").value).strip()
         self._world_cloud_sub = None
         if world_cloud_topic:
@@ -285,8 +252,7 @@ class AutonomyNode(Node):
         self.get_logger().info(
             "自主避障节点已启动: "
             f"enabled={self._enabled}, publish_control_cmd={self._publish_control_cmd}, "
-            f"semantic_guard={self._semantic_guard_enabled}, "
-            f"dynamic_planning={self._dynamic_planning_enabled}"
+            f"semantic_guard={self._semantic_guard_enabled}"
         )
 
     def _world_event_callback(self, msg: WorldModelEvent):
@@ -306,81 +272,6 @@ class AutonomyNode(Node):
             self.get_logger().warn(
                 "语义保护触发：人员进入剩余航迹，连续航点任务保持悬停"
             )
-
-    def _world_objects_callback(self, msg: SemanticObjectArray):
-        if not self._dynamic_planning_enabled or self._latest_odom is None:
-            return
-        source_frame = str(msg.header.frame_id).strip()
-        target_frame = str(self._latest_odom.header.frame_id).strip()
-        if not source_frame or not target_frame:
-            return
-        transform = None
-        if source_frame != target_frame:
-            try:
-                transform = self._tf_buffer.lookup_transform(
-                    target_frame,
-                    source_frame,
-                    Time(),
-                    timeout=Duration(seconds=0.05),
-                )
-            except TransformException as exc:
-                self.get_logger().warn(
-                    f"动态对象 TF 不可用 {target_frame} <- {source_frame}: {exc}",
-                    throttle_duration_sec=5.0,
-                )
-                return
-        records = []
-        timeout = float(self.get_parameter("dynamic_object_timeout_sec").value)
-        for item in msg.objects:
-            if (
-                not item.position_valid
-                or item.state != "confirmed"
-                or float(item.age_sec) > timeout
-            ):
-                continue
-            position = (
-                float(item.position.x),
-                float(item.position.y),
-                float(item.position.z),
-            )
-            velocity = (
-                float(item.velocity.x),
-                float(item.velocity.y),
-                float(item.velocity.z),
-            )
-            if transform is not None:
-                translation = transform.transform.translation
-                rotation = transform.transform.rotation
-                orientation = (
-                    float(rotation.x),
-                    float(rotation.y),
-                    float(rotation.z),
-                    float(rotation.w),
-                )
-                position = body_to_world(
-                    position,
-                    (
-                        float(translation.x),
-                        float(translation.y),
-                        float(translation.z),
-                    ),
-                    orientation,
-                )
-                velocity = rotate_vector(velocity, orientation)
-            records.append({
-                "id": item.id,
-                "class_name": item.class_name,
-                "confidence": float(item.confidence),
-                "position": position,
-                "velocity": velocity,
-                "size": (
-                    float(item.size.x),
-                    float(item.size.y),
-                    float(item.size.z),
-                ),
-                "position_covariance": list(item.position_covariance),
-            })
-        self._dynamic_field.update(records, now=time.monotonic())
 
     def _odom_callback(self, msg: Odometry):
         quality_issue = odometry_quality_issue(
@@ -584,25 +475,9 @@ class AutonomyNode(Node):
                 )
         else:
             with self._map_lock:
-                result = self._replanner.replan(
-                    self._esdf,
-                    position,
-                    velocity,
-                    goal,
-                    dynamic_field=(
-                        self._dynamic_field
-                        if self._dynamic_planning_enabled
-                        else None
-                    ),
-                    now=time.monotonic(),
-                )
+                result = self._replanner.replan(self._esdf, position, velocity, goal)
 
         result = self._apply_task_lifecycle(result)
-        self._latest_dynamic_risk = DynamicClearance(
-            clearance=float(result.dynamic_clearance),
-            object_id=str(result.dynamic_object_id),
-            time_to_closest_sec=float(result.dynamic_ttc),
-        )
         self._publish_trajectory(result)
         self._publish_status(result)
         self._publish_map_if_due()
@@ -1146,16 +1021,7 @@ class AutonomyNode(Node):
         velocity = self._local_velocity()
         with self._map_lock:
             local_result = self._replanner.replan(
-                self._esdf,
-                position,
-                velocity,
-                remaining_waypoints[0],
-                dynamic_field=(
-                    self._dynamic_field
-                    if self._dynamic_planning_enabled
-                    else None
-                ),
-                now=time.monotonic(),
+                self._esdf, position, velocity, remaining_waypoints[0]
             )
         if local_result.state != "TRACKING" or not local_result.collision_free:
             return (
@@ -1256,27 +1122,16 @@ class AutonomyNode(Node):
             0.5,
             float(self.get_parameter("waypoint_collision_lookahead_sec").value),
         )
-        selected = [
-            sample
+        points = [
+            sample["position"]
             for sample in samples
             if elapsed - 0.1 <= float(sample["t"]) <= elapsed + lookahead
             if math.dist(sample["position"], position) >= self._replanner.start_ignore_radius
         ]
         with self._map_lock:
-            geometric = self._esdf.trajectory_clearance(
-                [sample["position"] for sample in selected] or [position],
-                max_radius=max(4.0, self._replanner.safety_radius * 2.5),
+            return self._esdf.trajectory_clearance(
+                points or [position], max_radius=max(4.0, self._replanner.safety_radius * 2.5)
             )
-        if not self._dynamic_planning_enabled:
-            return geometric
-        dynamic = self._dynamic_field.trajectory_clearance(
-            selected or [{"t": elapsed, "position": position}],
-            trajectory_elapsed=elapsed,
-            now=time.monotonic(),
-            max_radius=max(4.0, self._replanner.safety_radius * 2.5),
-        )
-        self._latest_dynamic_risk = dynamic
-        return min(geometric, dynamic.clearance)
 
     @staticmethod
     def _relative_waypoints_to_world(start, yaw, waypoints):
@@ -1339,23 +1194,6 @@ class AutonomyNode(Node):
             msg.takeoff_clearance_source = "unavailable"
         msg.target_distance_m = float(result.target_distance)
         msg.active_strategy = result.strategy
-        dynamic = (
-            DynamicClearance(
-                clearance=float(result.dynamic_clearance),
-                object_id=str(result.dynamic_object_id),
-                time_to_closest_sec=float(result.dynamic_ttc),
-            )
-            if result.dynamic_object_id
-            else self._latest_dynamic_risk
-        )
-        msg.dynamic_risk_active = bool(dynamic.object_id)
-        msg.dynamic_object_id = dynamic.object_id
-        msg.dynamic_clearance_m = (
-            float(dynamic.clearance) if dynamic.object_id else 0.0
-        )
-        msg.dynamic_ttc_sec = (
-            float(dynamic.time_to_closest_sec) if dynamic.object_id else 0.0
-        )
         msg.message = result.message
         self._status_pub.publish(msg)
 

@@ -498,10 +498,6 @@ class WebConsoleNode(Node):
                 "takeoff_clearance_source": msg.takeoff_clearance_source,
                 "target_distance_m": float(msg.target_distance_m),
                 "active_strategy": msg.active_strategy,
-                "dynamic_risk_active": bool(getattr(msg, "dynamic_risk_active", False)),
-                "dynamic_object_id": str(getattr(msg, "dynamic_object_id", "")),
-                "dynamic_clearance_m": float(getattr(msg, "dynamic_clearance_m", 0.0)),
-                "dynamic_ttc_sec": float(getattr(msg, "dynamic_ttc_sec", 0.0)),
                 "message": msg.message,
             }
 

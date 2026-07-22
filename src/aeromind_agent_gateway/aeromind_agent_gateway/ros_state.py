@@ -159,10 +159,6 @@ class RosStateBridge(Node):
             "takeoff_clearance_source": msg.takeoff_clearance_source,
             "target_distance_m": float(msg.target_distance_m),
             "active_strategy": msg.active_strategy,
-            "dynamic_risk_active": bool(getattr(msg, "dynamic_risk_active", False)),
-            "dynamic_object_id": str(getattr(msg, "dynamic_object_id", "")),
-            "dynamic_clearance_m": float(getattr(msg, "dynamic_clearance_m", 0.0)),
-            "dynamic_ttc_sec": float(getattr(msg, "dynamic_ttc_sec", 0.0)),
             "message": msg.message,
         }
         with self._lock:
@@ -1467,10 +1463,6 @@ def _verification_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
         "autonomy_state": autonomy.get("state"),
         "autonomy_strategy": autonomy.get("active_strategy"),
         "target_distance_m": autonomy.get("target_distance_m"),
-        "dynamic_risk_active": autonomy.get("dynamic_risk_active"),
-        "dynamic_object_id": autonomy.get("dynamic_object_id"),
-        "dynamic_clearance_m": autonomy.get("dynamic_clearance_m"),
-        "dynamic_ttc_sec": autonomy.get("dynamic_ttc_sec"),
         "autonomy_terminal": {
             "stamp": autonomy_terminal.get("stamp"),
             "state": autonomy_terminal.get("state"),
@@ -1523,9 +1515,7 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             autonomy,
             (
                 f"state={autonomy.get('state', 'unknown')} "
-                f"obstacle={autonomy.get('nearest_obstacle_m')}m "
-                f"dynamic_object={autonomy.get('dynamic_object_id') or 'none'} "
-                f"dynamic_ttc={autonomy.get('dynamic_ttc_sec')}s"
+                f"obstacle={autonomy.get('nearest_obstacle_m')}m"
             ),
         ),
         {

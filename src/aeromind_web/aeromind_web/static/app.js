@@ -60,8 +60,6 @@ const els = {
   autonomyStrategy: document.getElementById("autonomyStrategy"),
   autonomyNearest: document.getElementById("autonomyNearest"),
   autonomyTarget: document.getElementById("autonomyTarget"),
-  autonomyDynamicObject: document.getElementById("autonomyDynamicObject"),
-  autonomyDynamicRisk: document.getElementById("autonomyDynamicRisk"),
   autonomyMessage: document.getElementById("autonomyMessage"),
   cancelAutonomyBtn: document.getElementById("cancelAutonomyBtn"),
   pointcloudMeta: document.getElementById("pointcloudMeta"),
@@ -1055,12 +1053,6 @@ function renderStatus(data, source = "HTTP") {
     els.autonomyStrategy.textContent = autonomy.active_strategy || "--";
     els.autonomyNearest.textContent = meters(autonomy.nearest_obstacle_m);
     els.autonomyTarget.textContent = meters(autonomy.target_distance_m);
-    els.autonomyDynamicObject.textContent = autonomy.dynamic_risk_active
-      ? autonomy.dynamic_object_id || "动态目标"
-      : "--";
-    els.autonomyDynamicRisk.textContent = autonomy.dynamic_risk_active
-      ? `${meters(autonomy.dynamic_clearance_m)} / ${fmt(autonomy.dynamic_ttc_sec, 1)} s`
-      : "--";
     const takeoffClearance = autonomy.takeoff_clearance_valid
       ? `起飞区域净空 ${meters(autonomy.takeoff_clearance_m)}`
       : "起飞区域净空不可用";

@@ -1,7 +1,6 @@
 import unittest
 
 from aeromind_autonomy.kinodynamic_replanner import KinodynamicReplanner
-from aeromind_autonomy.dynamic_obstacles import DynamicObstacleField
 from aeromind_autonomy.local_esdf import LocalEsdfMap
 from aeromind_autonomy.minimum_snap import splice_replanned_trajectory
 
@@ -83,41 +82,6 @@ class KinodynamicReplannerTest(unittest.TestCase):
         )
         self.assertNotEqual(moving.state, "ARRIVED")
         self.assertEqual(stopped.state, "ARRIVED")
-
-    def test_predicted_person_on_direct_route_selects_side_primitive(self):
-        field = DynamicObstacleField(
-            timeout_sec=2.0,
-            default_radius=0.5,
-            uncertainty_sigma=0.0,
-            minimum_confidence=0.5,
-        )
-        field.update([{
-            "id": "person_1",
-            "class_name": "person",
-            "confidence": 0.9,
-            "position": (2.5, 0.0, 2.0),
-            "velocity": (0.0, 0.0, 0.0),
-            "size": (0.5, 0.5, 1.7),
-            "position_covariance": [0.0] * 9,
-        }], now=5.0)
-        planner = KinodynamicReplanner(
-            safety_radius=0.8,
-            max_speed=2.0,
-            horizon_sec=2.5,
-            start_ignore_radius=0.2,
-            min_altitude=0.5,
-        )
-        result = planner.replan(
-            LocalEsdfMap(resolution=0.2),
-            (0.0, 0.0, 2.0),
-            (0.0, 0.0, 0.0),
-            (10.0, 0.0, 2.0),
-            dynamic_field=field,
-            now=5.0,
-        )
-        self.assertTrue(result.collision_free)
-        self.assertNotIn(result.strategy, {"direct_goal", "slow_goal"})
-        self.assertGreater(abs(result.command_velocity[1]), 0.2)
 
 
 if __name__ == "__main__":
