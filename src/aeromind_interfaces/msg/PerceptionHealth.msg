@@ -1,0 +1,23 @@
+# Unified runtime health for perception inputs and inference services.
+std_msgs/Header header
+string overall_status
+bool yolo_enabled
+bool vlm_enabled
+string rgb_status
+float32 rgb_age_sec
+float32 rgb_rate_hz
+string depth_status
+float32 depth_age_sec
+float32 depth_rate_hz
+string camera_info_status
+float32 camera_info_age_sec
+string pointcloud_status
+float32 pointcloud_age_sec
+float32 pointcloud_rate_hz
+string detections_status
+float32 detections_age_sec
+float32 detections_rate_hz
+string vlm_status
+float32 vlm_age_sec
+string vlm_message
+string message

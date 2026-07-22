@@ -20,6 +20,7 @@ from aeromind_interfaces.msg import (
     AutonomyStatus,
     DetectionArray,
     DroneState,
+    PerceptionHealth,
     SemanticObjectArray,
     SemanticRelationArray,
     WorldModelEvent,
@@ -53,6 +54,7 @@ class RosStateBridge(Node):
         self._autonomy_terminal: dict[str, Any] | None = None
         self._detections: list[dict[str, Any]] = []
         self._detections_stamp: float | None = None
+        self._perception_health: dict[str, Any] | None = None
         self._world_objects: list[dict[str, Any]] = []
         self._world_objects_stamp: float | None = None
         self._world_health: dict[str, Any] | None = None
@@ -86,6 +88,9 @@ class RosStateBridge(Node):
         )
         self.create_subscription(
             DetectionArray, "/perception/detections", self._detections_cb, 10
+        )
+        self.create_subscription(
+            PerceptionHealth, "/perception/health", self._perception_health_cb, 10
         )
         self.create_subscription(
             SemanticObjectArray,
@@ -182,6 +187,26 @@ class RosStateBridge(Node):
         with self._lock:
             self._detections = values
             self._detections_stamp = time.time()
+
+    def _perception_health_cb(self, msg: PerceptionHealth):
+        with self._lock:
+            self._perception_health = {
+                "stamp": time.time(),
+                "overall_status": msg.overall_status,
+                "yolo_enabled": bool(msg.yolo_enabled),
+                "vlm_enabled": bool(msg.vlm_enabled),
+                "rgb": _health_signal(msg.rgb_status, msg.rgb_age_sec, msg.rgb_rate_hz),
+                "depth": _health_signal(msg.depth_status, msg.depth_age_sec, msg.depth_rate_hz),
+                "camera_info": _health_signal(msg.camera_info_status, msg.camera_info_age_sec),
+                "pointcloud": _health_signal(msg.pointcloud_status, msg.pointcloud_age_sec, msg.pointcloud_rate_hz),
+                "detections": _health_signal(msg.detections_status, msg.detections_age_sec, msg.detections_rate_hz),
+                "vlm": {
+                    "status": msg.vlm_status,
+                    "age_sec": _finite_or_none(msg.vlm_age_sec),
+                    "message": msg.vlm_message,
+                },
+                "message": msg.message,
+            }
 
     def _world_objects_cb(self, msg: SemanticObjectArray):
         values = []
@@ -298,6 +323,7 @@ class RosStateBridge(Node):
                 world_objects_age is not None and world_objects_age <= 2.0
             )
             world_health = _record_with_freshness(self._world_health, 2.0)
+            perception_health = _record_with_freshness(self._perception_health, 2.0)
             world_relations_age = _age_seconds(self._world_relations_stamp)
             world_relations_fresh = (
                 world_relations_age is not None and world_relations_age <= 2.0
@@ -325,6 +351,7 @@ class RosStateBridge(Node):
                 "world_objects_age_sec": world_objects_age,
                 "world_objects_stamp": self._world_objects_stamp,
                 "world_health": world_health,
+                "perception_health": perception_health,
                 "world_relations": [dict(item) for item in self._world_relations]
                 if world_relations_fresh else [],
                 "world_relations_fresh": world_relations_fresh,
@@ -346,8 +373,17 @@ class RosStateBridge(Node):
 
     def perception_summary(self) -> dict[str, Any]:
         snapshot = self.snapshot()
+        health = snapshot["perception_health"] or {}
+        perception_available = bool(
+            health.get("fresh")
+            and health.get("overall_status") not in {"ERROR", "MISSING"}
+        )
         return {
-            "available": bool(snapshot["detections"] or snapshot["world_objects"]),
+            "available": bool(
+                perception_available
+                or snapshot["detections"]
+                or snapshot["world_objects"]
+            ),
             "detections": snapshot["detections"],
             "detections_fresh": snapshot["detections_fresh"],
             "detections_age_sec": snapshot["detections_age_sec"],
@@ -355,12 +391,13 @@ class RosStateBridge(Node):
             "world_objects_fresh": snapshot["world_objects_fresh"],
             "world_objects_age_sec": snapshot["world_objects_age_sec"],
             "world_health": snapshot["world_health"],
+            "perception_health": snapshot["perception_health"],
             "world_relations": snapshot["world_relations"],
             "world_relations_fresh": snapshot["world_relations_fresh"],
             "world_events": snapshot["world_events"],
             "autonomy": snapshot["autonomy"],
             "evidence": _select_evidence(
-                snapshot, {"detections", "world_objects", "autonomy"}
+                snapshot, {"perception_health", "detections", "world_objects", "autonomy"}
             ),
         }
 
@@ -1379,6 +1416,16 @@ def _finite_or_none(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _health_signal(status: str, age_sec: Any, rate_hz: Any = None) -> dict[str, Any]:
+    result = {
+        "status": str(status or "MISSING").upper(),
+        "age_sec": _finite_or_none(age_sec),
+    }
+    if rate_hz is not None:
+        result["rate_hz"] = _finite_or_none(rate_hz)
+    return result
+
+
 def _position_standard_deviation(covariance) -> float | None:
     values = list(covariance)
     if len(values) != 9:
@@ -1490,6 +1537,7 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     detections = snapshot.get("detections") or []
     world_objects = snapshot.get("world_objects") or []
     world_events = snapshot.get("world_events") or []
+    perception_health = snapshot.get("perception_health") or {}
     records = [
         _evidence_record(
             "flight_state",
@@ -1516,6 +1564,20 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             (
                 f"state={autonomy.get('state', 'unknown')} "
                 f"obstacle={autonomy.get('nearest_obstacle_m')}m"
+            ),
+        ),
+        _evidence_record(
+            "perception_health",
+            "system_fact",
+            "/perception/health",
+            perception_health,
+            (
+                f"overall={perception_health.get('overall_status', 'MISSING')} "
+                f"rgb={perception_health.get('rgb', {}).get('status', 'MISSING')} "
+                f"depth={perception_health.get('depth', {}).get('status', 'MISSING')} "
+                f"lidar={perception_health.get('pointcloud', {}).get('status', 'MISSING')} "
+                f"yolo={perception_health.get('detections', {}).get('status', 'MISSING')} "
+                f"vlm={perception_health.get('vlm', {}).get('status', 'MISSING')}"
             ),
         ),
         {

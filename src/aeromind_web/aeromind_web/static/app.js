@@ -18,6 +18,8 @@ const els = {
   detectionStatus: document.getElementById("detectionStatus"),
   detectionCount: document.getElementById("detectionCount"),
   detectionList: document.getElementById("detectionList"),
+  perceptionHealthStatus: document.getElementById("perceptionHealthStatus"),
+  perceptionHealthDetails: document.getElementById("perceptionHealthDetails"),
   worldHealthStatus: document.getElementById("worldHealthStatus"),
   worldTrackCount: document.getElementById("worldTrackCount"),
   worldPathRisk: document.getElementById("worldPathRisk"),
@@ -928,6 +930,7 @@ function renderStatus(data, source = "HTTP") {
   const depth = data.depth;
   const pointcloud = data.pointcloud;
   const autonomy = data.autonomy;
+  renderPerceptionHealth(data.perception_health || null);
   renderWorldModelHealth(data.world_model_meta || null);
   updateMissionMap(
     odomFresh ? odom : null,
@@ -1095,6 +1098,28 @@ function renderWorldModelHealth(meta) {
       : (Array.isArray(meta?.relations) && meta.relations.length ? "航线清晰" : "未激活");
     els.worldPathRisk.className = intrusions.length ? "status-bad" : "status-ok";
   }
+}
+
+function renderPerceptionHealth(health) {
+  if (!els.perceptionHealthStatus || !els.perceptionHealthDetails) return;
+  if (!health) {
+    els.perceptionHealthStatus.textContent = "感知链路等待数据";
+    els.perceptionHealthStatus.className = "stale";
+    els.perceptionHealthDetails.textContent = "RGB -- · DEPTH -- · LIDAR --";
+    return;
+  }
+  const overall = String(health.overall_status || "MISSING").toUpperCase();
+  const labels = {OK: "感知链路正常", DEGRADED: "感知链路降级", ERROR: "感知链路异常"};
+  els.perceptionHealthStatus.textContent = labels[overall] || `感知链路 ${overall}`;
+  els.perceptionHealthStatus.className = overall === "OK" ? "live" : "stale";
+  const state = (name) => String(health?.[name]?.status || "MISSING").toUpperCase();
+  els.perceptionHealthDetails.textContent = [
+    `RGB ${state("rgb")}`,
+    `DEPTH ${state("depth")}`,
+    `LIDAR ${state("pointcloud")}`,
+    `YOLO ${state("detections")}`,
+    `VLM ${state("vlm")}`,
+  ].join(" · ");
 }
 
 function updateMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = null) {
@@ -1661,16 +1686,25 @@ function renderDetectionSummary(detections, meta) {
   if (!els.detectionStatus || !els.detectionList) return;
   const age = Number(meta?.age_s);
   const hasAge = meta?.age_s != null && Number.isFinite(age);
-  const active = meta ? meta.active !== false : detections.length > 0;
+  const healthState = String(meta?.health_status || "").toUpperCase();
+  const active = healthState
+    ? healthState === "OK"
+    : (meta ? meta.active !== false : detections.length > 0);
   const frame = meta?.frame_id || "camera";
   els.detectionStatus.className = active ? "live" : "stale";
+  const disabled = healthState === "DISABLED";
+  const error = healthState === "ERROR";
   els.detectionStatus.textContent = active
     ? `YOLO 实时检测 · ${frame}`
-    : `检测数据超时${hasAge ? ` · ${age.toFixed(1)}s` : ""}`;
-  els.detectionCount.textContent = active ? `${detections.length} 目标` : "数据失效";
+    : disabled
+      ? "YOLO 已关闭"
+      : error
+        ? "YOLO 运行异常"
+        : `检测数据超时${hasAge ? ` · ${age.toFixed(1)}s` : ""}`;
+  els.detectionCount.textContent = active ? `${detections.length} 目标` : disabled ? "未启用" : "数据失效";
 
   if (!active) {
-    els.detectionList.innerHTML = `<span class="muted">等待 /perception/detections 恢复</span>`;
+    els.detectionList.innerHTML = `<span class="muted">${disabled ? "启动时设置 yolo_enabled:=true 可启用检测" : "等待 /perception/detections 恢复"}</span>`;
     return;
   }
   if (!detections.length) {

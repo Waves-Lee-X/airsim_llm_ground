@@ -16,6 +16,7 @@ find_package(rosidl_default_generators REQUIRED)
 set(msg_files
   msg/Detection.msg
   msg/DetectionArray.msg
+  msg/PerceptionHealth.msg
   msg/SemanticObject.msg
   msg/SemanticObjectArray.msg
   msg/WorldModelHealth.msg

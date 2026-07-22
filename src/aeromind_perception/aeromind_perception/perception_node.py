@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""
-perception_node.py - 感知节点（占位）
-
-后续将挂载：
-  - YOLO 目标检测 → /perception/detection
-  - OctoMap 建图 → /perception/obstacle_map
-  - 相机图像处理 → 订阅 /sensor/camera/image
-
-当前提供基础图像快照保存服务，目标检测/建图仍为占位输出。
-"""
+"""Image capture, VLM analysis and unified perception health."""
 
 import base64
 import io
@@ -18,13 +9,14 @@ import re
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 
 import rclpy
 from rclpy.node import Node
 
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_msgs.msg import String
-from aeromind_interfaces.msg import Detection, DetectionArray, ObstacleMap
+from aeromind_interfaces.msg import DetectionArray, PerceptionHealth
 from aeromind_interfaces.srv import AnalyzeImage, CaptureImage
 
 try:
@@ -83,6 +75,19 @@ def normalize_vlm_content(content: str, fallback: dict) -> dict:
     return result
 
 
+def classify_signal(age_sec, timeout_sec, enabled=True, error=""):
+    """Return a stable health state without confusing empty data with no data."""
+    if not enabled:
+        return "DISABLED"
+    if error:
+        return "ERROR"
+    if age_sec is None:
+        return "MISSING"
+    if age_sec > timeout_sec:
+        return "STALE"
+    return "OK"
+
+
 class PerceptionNode(Node):
     """感知节点"""
 
@@ -90,7 +95,13 @@ class PerceptionNode(Node):
         super().__init__("perception_node")
 
         self.declare_parameter("image_topic", "/sensor/camera/rgb/front_center")
+        self.declare_parameter("depth_topic", "/sensor/camera/depth/front_center")
+        self.declare_parameter("camera_info_topic", "/sensor/camera/depth/front_center/camera_info")
+        self.declare_parameter("pointcloud_topic", "/sensor/lidar/points")
         self.declare_parameter("detections_topic", "/perception/detections")
+        self.declare_parameter("detector_status_topic", "/perception/detector_status")
+        self.declare_parameter("yolo_enabled", False)
+        self.declare_parameter("sensor_timeout_sec", 2.0)
         self.declare_parameter("vlm_enabled", False)
         self.declare_parameter("vlm_api_url", os.environ.get("AEROMIND_VLM_API_URL", ""))
         self.declare_parameter("vlm_api_key", os.environ.get("AEROMIND_VLM_API_KEY", ""))
@@ -107,7 +118,13 @@ class PerceptionNode(Node):
             ),
         )
         self._image_topic = str(self.get_parameter("image_topic").value)
+        self._depth_topic = str(self.get_parameter("depth_topic").value)
+        self._camera_info_topic = str(self.get_parameter("camera_info_topic").value)
+        self._pointcloud_topic = str(self.get_parameter("pointcloud_topic").value)
         self._detections_topic = str(self.get_parameter("detections_topic").value)
+        self._detector_status_topic = str(self.get_parameter("detector_status_topic").value)
+        self._yolo_enabled = bool(self.get_parameter("yolo_enabled").value)
+        self._sensor_timeout_sec = max(0.5, float(self.get_parameter("sensor_timeout_sec").value))
         self._vlm_enabled = bool(self.get_parameter("vlm_enabled").value)
         self._vlm_api_url = (
             str(self.get_parameter("vlm_api_url").value).strip()
@@ -132,25 +149,44 @@ class PerceptionNode(Node):
         self._latest_detections_at = 0.0
         self._latest_analysis = None
         self._last_auto_analysis_time = 0.0
+        self._signal_times = {
+            name: deque(maxlen=60)
+            for name in ("rgb", "depth", "camera_info", "pointcloud", "detections")
+        }
+        self._detector_error = ""
+        self._detector_message = "等待检测器状态"
+        self._vlm_last_at = 0.0
+        self._vlm_error = ""
+        self._vlm_message = "VLM 已禁用"
+        if self._vlm_enabled:
+            missing = []
+            if not self._vlm_api_url:
+                missing.append("API URL")
+            if not self._vlm_api_key:
+                missing.append("API Key")
+            if not self._vlm_model:
+                missing.append("模型")
+            self._vlm_error = f"缺少 {', '.join(missing)}" if missing else ""
+            self._vlm_message = self._vlm_error or "VLM 已配置，等待调用"
 
-        # 发布者
-        self._detection_pub = self.create_publisher(
-            Detection, "/perception/detection", 10
-        )
-        self._obstacle_pub = self.create_publisher(
-            ObstacleMap, "/perception/obstacle_map", 10
-        )
         self._image_analysis_pub = self.create_publisher(
             String, "/perception/image_analysis", 10
+        )
+        self._health_pub = self.create_publisher(
+            PerceptionHealth, "/perception/health", 10
         )
 
         # 订阅相机图像，供 CaptureImageSkill 保存最近一帧
         self._image_sub = self.create_subscription(
             Image, self._image_topic, self._image_callback, 10
         )
+        self.create_subscription(Image, self._depth_topic, self._depth_callback, 10)
+        self.create_subscription(CameraInfo, self._camera_info_topic, self._camera_info_callback, 10)
+        self.create_subscription(PointCloud2, self._pointcloud_topic, self._pointcloud_callback, 10)
         self._detections_sub = self.create_subscription(
             DetectionArray, self._detections_topic, self._detections_callback, 10
         )
+        self.create_subscription(String, self._detector_status_topic, self._detector_status_callback, 10)
 
         self._capture_srv = self.create_service(
             CaptureImage, "/perception/capture_image", self._capture_image_callback
@@ -159,8 +195,7 @@ class PerceptionNode(Node):
             AnalyzeImage, "/perception/analyze_image", self._analyze_image_callback
         )
 
-        # 定时器：1Hz 发送占位消息
-        self._timer = self.create_timer(1.0, self._timer_callback)
+        self._health_timer = self.create_timer(0.5, self._publish_health)
         self._auto_analyze_timer = self.create_timer(1.0, self._auto_analyze_callback)
 
         self.get_logger().info(
@@ -174,6 +209,16 @@ class PerceptionNode(Node):
     def _image_callback(self, msg: Image):
         """缓存最近一帧图像，供拍照服务保存。"""
         self._latest_image = msg
+        self._record_signal("rgb")
+
+    def _depth_callback(self, _msg: Image):
+        self._record_signal("depth")
+
+    def _camera_info_callback(self, _msg: CameraInfo):
+        self._record_signal("camera_info")
+
+    def _pointcloud_callback(self, _msg: PointCloud2):
+        self._record_signal("pointcloud")
 
     def _detections_callback(self, msg: DetectionArray):
         detections = []
@@ -190,6 +235,16 @@ class PerceptionNode(Node):
             })
         self._latest_detections = detections
         self._latest_detections_at = time.time()
+        self._record_signal("detections", self._latest_detections_at)
+
+    def _detector_status_callback(self, msg: String):
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            payload = {"status": "ERROR", "message": "检测器状态消息格式错误"}
+        status = str(payload.get("status", "MISSING")).upper()
+        self._detector_message = str(payload.get("message", ""))
+        self._detector_error = self._detector_message if status == "ERROR" else ""
 
     def _capture_image_callback(self, request, response):
         self.get_logger().info("收到拍照保存请求")
@@ -259,6 +314,9 @@ class PerceptionNode(Node):
 
         try:
             vlm = self._call_vlm(msg, prompt, fallback)
+            self._vlm_last_at = time.time()
+            self._vlm_error = ""
+            self._vlm_message = "最近一次 VLM 分析成功"
             message = vlm.get("message") or vlm.get("summary") or fallback["message"]
             scene = vlm.get("scene") or fallback["scene"]
             risk_level = vlm.get("risk_level") or fallback["risk_level"]
@@ -280,6 +338,9 @@ class PerceptionNode(Node):
                 "raw_response": vlm,
             }
         except Exception as exc:
+            self._vlm_last_at = time.time()
+            self._vlm_error = str(exc)
+            self._vlm_message = f"VLM 调用失败: {exc}"
             analysis_payload["message"] = f"{fallback['message']}（VLM 调用失败，已使用规则摘要：{exc}）"
             analysis_payload["source"] = "rule+detection+vlm_failed"
             analysis_payload["vlm_error"] = str(exc)
@@ -515,20 +576,82 @@ class PerceptionNode(Node):
         label = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip())
         return label[:48] or "capture"
 
-    def _timer_callback(self):
-        """定时发送空消息"""
-        # 空检测结果
-        detection = Detection()
-        self._detection_pub.publish(detection)
+    def _record_signal(self, name, received_at=None):
+        self._signal_times[name].append(float(received_at or time.time()))
 
-        # 空障碍物地图
-        obs_map = ObstacleMap()
-        obs_map.timestamp = self.get_clock().now().to_msg()
-        obs_map.width = 0
-        obs_map.height = 0
-        obs_map.resolution = 0.0
-        obs_map.data = []
-        self._obstacle_pub.publish(obs_map)
+    def _signal_age(self, name, now):
+        values = self._signal_times[name]
+        return max(0.0, now - values[-1]) if values else None
+
+    def _signal_rate(self, name):
+        values = self._signal_times[name]
+        if len(values) < 2:
+            return 0.0
+        span = values[-1] - values[0]
+        return (len(values) - 1) / span if span > 0.0 else 0.0
+
+    @staticmethod
+    def _age_value(age):
+        return float(age) if age is not None else float("nan")
+
+    def _publish_health(self):
+        now = time.time()
+        ages = {name: self._signal_age(name, now) for name in self._signal_times}
+        statuses = {
+            "rgb": classify_signal(ages["rgb"], self._sensor_timeout_sec),
+            "depth": classify_signal(ages["depth"], self._sensor_timeout_sec),
+            "camera_info": classify_signal(ages["camera_info"], 5.0),
+            "pointcloud": classify_signal(ages["pointcloud"], self._sensor_timeout_sec),
+            "detections": classify_signal(
+                ages["detections"], self._sensor_timeout_sec,
+                enabled=self._yolo_enabled, error=self._detector_error,
+            ),
+        }
+        if not self._vlm_enabled:
+            vlm_status = "DISABLED"
+        elif self._vlm_error:
+            vlm_status = "ERROR"
+        else:
+            vlm_status = "OK"
+        required = [statuses["rgb"], statuses["depth"], statuses["camera_info"], statuses["pointcloud"]]
+        if "ERROR" in required or statuses["rgb"] in {"MISSING", "STALE"}:
+            overall = "ERROR"
+        elif any(value != "OK" for value in required + [statuses["detections"]] if value != "DISABLED"):
+            overall = "DEGRADED"
+        else:
+            overall = "OK"
+
+        msg = PerceptionHealth()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "perception"
+        msg.overall_status = overall
+        msg.yolo_enabled = self._yolo_enabled
+        msg.vlm_enabled = self._vlm_enabled
+        msg.rgb_status = statuses["rgb"]
+        msg.rgb_age_sec = self._age_value(ages["rgb"])
+        msg.rgb_rate_hz = float(self._signal_rate("rgb"))
+        msg.depth_status = statuses["depth"]
+        msg.depth_age_sec = self._age_value(ages["depth"])
+        msg.depth_rate_hz = float(self._signal_rate("depth"))
+        msg.camera_info_status = statuses["camera_info"]
+        msg.camera_info_age_sec = self._age_value(ages["camera_info"])
+        msg.pointcloud_status = statuses["pointcloud"]
+        msg.pointcloud_age_sec = self._age_value(ages["pointcloud"])
+        msg.pointcloud_rate_hz = float(self._signal_rate("pointcloud"))
+        msg.detections_status = statuses["detections"]
+        msg.detections_age_sec = self._age_value(ages["detections"])
+        msg.detections_rate_hz = float(self._signal_rate("detections"))
+        msg.vlm_status = vlm_status
+        msg.vlm_age_sec = self._age_value(
+            max(0.0, now - self._vlm_last_at) if self._vlm_last_at else None
+        )
+        msg.vlm_message = self._vlm_message
+        msg.message = (
+            f"RGB={statuses['rgb']} Depth={statuses['depth']} "
+            f"CameraInfo={statuses['camera_info']} LiDAR={statuses['pointcloud']} "
+            f"YOLO={statuses['detections']} VLM={vlm_status}"
+        )
+        self._health_pub.publish(msg)
 
 
 def main(args=None):

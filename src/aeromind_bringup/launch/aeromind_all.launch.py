@@ -302,6 +302,7 @@ def generate_launch_description():
         name="perception_node",
         output="screen",
         parameters=[
+            {"yolo_enabled": ParameterValue(LaunchConfiguration("yolo_enabled"), value_type=bool)},
             {"vlm_enabled": ParameterValue(LaunchConfiguration("vlm_enabled"), value_type=bool)},
             {"vlm_api_url": LaunchConfiguration("vlm_api_url")},
             {"vlm_model": LaunchConfiguration("vlm_model")},

@@ -13,6 +13,8 @@ import time
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
+import json
 
 from aeromind_interfaces.msg import Detection, DetectionArray
 
@@ -44,6 +46,8 @@ class YoloDetectionNode(Node):
         self._max_detections = int(self.get_parameter("max_detections").value)
         self._model = None
         self._last_inference_time = 0.0
+        self._runtime_status = "MISSING"
+        self._runtime_message = "YOLO 尚未初始化"
 
         self._detections_pub = self.create_publisher(
             DetectionArray, "/perception/detections", 10
@@ -51,22 +55,27 @@ class YoloDetectionNode(Node):
         self._best_detection_pub = self.create_publisher(
             Detection, "/perception/detection", 10
         )
+        self._status_pub = self.create_publisher(String, "/perception/detector_status", 10)
         self.create_subscription(Image, self._image_topic, self._image_callback, 10)
 
         self._load_model()
+        self.create_timer(1.0, self._publish_status)
         self.get_logger().info(
             f"YOLO 检测节点已启动: image_topic={self._image_topic}, model={self._model_name}"
         )
 
     def _load_model(self):
         if YOLO is None or np is None:
+            self._set_status("ERROR", "缺少 ultralytics 或 numpy")
             self.get_logger().error(
                 "YOLO 检测不可用：请安装 ultralytics 和 numpy，例如 pip install ultralytics"
             )
             return
         try:
             self._model = YOLO(self._model_name)
+            self._set_status("OK", f"模型已加载: {self._model_name}")
         except Exception as exc:
+            self._set_status("ERROR", f"加载模型失败: {exc}")
             self.get_logger().error(f"加载 YOLO 模型失败: {exc}")
             self._model = None
 
@@ -91,10 +100,12 @@ class YoloDetectionNode(Node):
                 max_det=self._max_detections,
             )
         except Exception as exc:
+            self._set_status("ERROR", f"YOLO 推理失败: {exc}")
             self.get_logger().warn(f"YOLO 推理失败: {exc}", throttle_duration_sec=5.0)
             return
 
         detections = self._results_to_detections(results)
+        self._set_status("OK", f"推理正常，当前 {len(detections)} 个目标")
         array_msg = DetectionArray()
         array_msg.header = msg.header
         array_msg.detections = detections
@@ -103,6 +114,18 @@ class YoloDetectionNode(Node):
         if detections:
             best = max(detections, key=lambda item: item.confidence)
             self._best_detection_pub.publish(best)
+
+    def _set_status(self, status, message):
+        self._runtime_status = str(status)
+        self._runtime_message = str(message)
+
+    def _publish_status(self):
+        msg = String()
+        msg.data = json.dumps(
+            {"status": self._runtime_status, "message": self._runtime_message, "stamp": time.time()},
+            ensure_ascii=False,
+        )
+        self._status_pub.publish(msg)
 
     def _image_to_numpy(self, msg: Image):
         if np is None:

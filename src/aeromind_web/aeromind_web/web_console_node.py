@@ -32,6 +32,7 @@ from aeromind_interfaces.msg import (
     Detection,
     DetectionArray,
     DroneState,
+    PerceptionHealth,
     SemanticObjectArray,
     SemanticRelationArray,
     WorldModelEvent,
@@ -194,6 +195,16 @@ def _finite_json_number(value):
     return number if math.isfinite(number) else None
 
 
+def _web_health_signal(status, age_sec, rate_hz=None):
+    result = {
+        "status": str(status or "MISSING").upper(),
+        "age_s": _finite_json_number(age_sec),
+    }
+    if rate_hz is not None:
+        result["rate_hz"] = _finite_json_number(rate_hz)
+    return result
+
+
 def _position_standard_deviation(covariance):
     values = list(covariance)
     if len(values) != 9:
@@ -233,6 +244,7 @@ class WebConsoleNode(Node):
         self._detections = []
         self._detections_received_at = 0.0
         self._detections_frame_id = ""
+        self._perception_health = None
         self._world_objects = []
         self._world_objects_received_at = 0.0
         self._world_objects_frame_id = ""
@@ -254,6 +266,7 @@ class WebConsoleNode(Node):
         self.create_subscription(PointCloud2, "/sensor/lidar/points", self._pointcloud_cb, 10)
         self.create_subscription(Detection, "/perception/detection", self._detection_cb, 10)
         self.create_subscription(DetectionArray, "/perception/detections", self._detections_cb, 10)
+        self.create_subscription(PerceptionHealth, "/perception/health", self._perception_health_cb, 10)
         self.create_subscription(
             SemanticObjectArray,
             "/world_model/objects",
@@ -392,6 +405,28 @@ class WebConsoleNode(Node):
             self._detections_frame_id = msg.header.frame_id
             if detections:
                 self._detection = max(detections, key=lambda item: item["confidence"])
+            else:
+                self._detection = None
+
+    def _perception_health_cb(self, msg: PerceptionHealth):
+        with self._lock:
+            self._perception_health = {
+                "received_at": time.time(),
+                "overall_status": msg.overall_status,
+                "yolo_enabled": bool(msg.yolo_enabled),
+                "vlm_enabled": bool(msg.vlm_enabled),
+                "rgb": _web_health_signal(msg.rgb_status, msg.rgb_age_sec, msg.rgb_rate_hz),
+                "depth": _web_health_signal(msg.depth_status, msg.depth_age_sec, msg.depth_rate_hz),
+                "camera_info": _web_health_signal(msg.camera_info_status, msg.camera_info_age_sec),
+                "pointcloud": _web_health_signal(msg.pointcloud_status, msg.pointcloud_age_sec, msg.pointcloud_rate_hz),
+                "detections": _web_health_signal(msg.detections_status, msg.detections_age_sec, msg.detections_rate_hz),
+                "vlm": {
+                    "status": msg.vlm_status,
+                    "age_s": _finite_json_number(msg.vlm_age_sec),
+                    "message": msg.vlm_message,
+                },
+                "message": msg.message,
+            }
 
     def _world_objects_cb(self, msg: SemanticObjectArray):
         objects = []
@@ -572,6 +607,15 @@ class WebConsoleNode(Node):
                 else None
             )
             detections_active = detection_age is not None and detection_age <= 3.0
+            perception_health = (
+                dict(self._perception_health) if self._perception_health else None
+            )
+            if perception_health:
+                health_age = max(0.0, now - perception_health["received_at"])
+                perception_health["age_s"] = health_age
+                perception_health["fresh"] = health_age <= 2.0
+                if not perception_health["fresh"]:
+                    perception_health["overall_status"] = "MISSING"
             world_objects_age = (
                 max(0.0, now - self._world_objects_received_at)
                 if self._world_objects_received_at > 0.0
@@ -609,7 +653,12 @@ class WebConsoleNode(Node):
                     "received_at": self._detections_received_at,
                     "age_s": detection_age,
                     "active": detections_active,
+                    "health_status": (
+                        self._perception_health.get("detections", {}).get("status")
+                        if self._perception_health else None
+                    ),
                 },
+                "perception_health": perception_health,
                 "world_objects": (
                     list(self._world_objects) if world_objects_active else []
                 ),

@@ -6,6 +6,7 @@ from aeromind_agent_gateway.ros_state import (
     _action_task,
     _evaluate_action_completion,
     _extract_ros_mission_id,
+    _health_signal,
     _parse_agent_payload,
     _record_with_freshness,
     _select_evidence,
@@ -15,6 +16,12 @@ from aeromind_agent_gateway.ros_state import (
 
 
 class RosTaskMappingTest(unittest.TestCase):
+    def test_perception_health_signal_normalizes_non_finite_age(self):
+        signal = _health_signal("ok", float("nan"), 5.0)
+        self.assertEqual(signal["status"], "OK")
+        self.assertIsNone(signal["age_sec"])
+        self.assertEqual(signal["rate_hz"], 5.0)
+
     def test_control_actions_map_to_expected_agent_intents(self):
         self.assertEqual(_action_task("takeoff", {"altitude": 5.0}), ("起飞到 5.0 米", "takeoff"))
         self.assertEqual(_action_task("land", {}), ("降落", "land"))
