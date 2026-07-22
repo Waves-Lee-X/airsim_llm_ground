@@ -53,8 +53,9 @@ class ConfirmationCenterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mission["phase"], "completed")
         self.assertTrue(mission["physical_complete"])
         self.assertTrue(mission["result"]["success"])
-        with self.assertRaises(ValueError):
-            await self.center.respond(confirmation_id, "u1", "approve")
+        repeated = await self.center.respond(confirmation_id, "u1", "approve")
+        self.assertTrue(repeated["idempotent"])
+        self.assertIn("未重复执行", repeated["message"])
         self.assertEqual(len(self.executions), 1)
 
     async def test_wrong_user_cannot_approve(self):
@@ -62,6 +63,41 @@ class ConfirmationCenterTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             await self.center.respond(created["confirmation_id"], "u2", "approve")
         self.assertEqual(self.executions, [])
+
+    async def test_late_success_cannot_overwrite_cancelled_terminal_state(self):
+        release = asyncio.Event()
+
+        async def delayed_success(action, args, progress):
+            await progress("verifying", {"message": "waiting"})
+            await release.wait()
+            return {"success": True, "message": "late success", "physical_complete": True}
+
+        self.center._execute = delayed_success
+        created = await self.center.create("s1", "u1", "takeoff", {"altitude": 5})
+        confirmation_id = created["confirmation_id"]
+        await self.center.respond(confirmation_id, "u1", "approve")
+        await asyncio.sleep(0.02)
+        cancelled_result = {"success": False, "status": "cancelled", "message": "operator cancelled"}
+        self.store.complete_confirmation(confirmation_id, "cancelled", cancelled_result)
+        self.store.update_gateway_mission(
+            confirmation_id, "cancelled", cancelled_result, phase="cancelled"
+        )
+        release.set()
+
+        for _ in range(30):
+            events = self.store.events_after("s1")
+            if any(event["type"] == "control.completed" for event in events):
+                break
+            await asyncio.sleep(0.01)
+
+        mission = self.store.gateway_mission_for_confirmation(confirmation_id)
+        self.assertEqual(mission["status"], "cancelled")
+        self.assertFalse(mission["physical_complete"])
+        completed_event = next(
+            event for event in events if event["type"] == "control.completed"
+        )
+        self.assertFalse(completed_event["success"])
+        self.assertEqual(completed_event["result"]["message"], "operator cancelled")
 
     async def test_cancelled_workflow_is_not_reported_as_failed(self):
         async def cancelled(_action, _args, _progress):

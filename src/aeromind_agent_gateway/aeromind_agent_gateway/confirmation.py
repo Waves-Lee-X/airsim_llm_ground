@@ -29,6 +29,8 @@ ACTION_SPECS = {
     "workflow": {"risk": "high", "summary": "执行组合任务：{name}"},
 }
 
+TERMINAL_MISSION_STATUSES = {"completed", "failed", "cancelled", "expired"}
+
 
 class ConfirmationCenter:
     def __init__(
@@ -140,6 +142,13 @@ class ConfirmationCenter:
         item = self._store.resolve_confirmation(
             confirmation_id, user_id, normalized_decision
         )
+        if item.get("idempotent"):
+            mission = self._store.gateway_mission_for_confirmation(confirmation_id)
+            return {
+                **item,
+                "mission": mission,
+                "message": "该确认请求已经处理，本次响应未重复执行任务。",
+            }
         mission = self._store.update_gateway_mission(
             confirmation_id,
             "executing" if normalized_decision == "approve" else "cancelled",
@@ -181,6 +190,8 @@ class ConfirmationCenter:
                 ros_mission_id=details.get("ros_mission_id"),
                 physical_complete=False,
             )
+            if mission is None or mission.get("status") in TERMINAL_MISSION_STATUSES:
+                return
             await self._events.emit(
                 session_id,
                 "control.progress",
@@ -210,6 +221,8 @@ class ConfirmationCenter:
         completed = self._store.complete_confirmation(
             item["id"], final_status, result
         )
+        final_status = str(completed["status"])
+        success = final_status == "completed"
         mission = self._store.update_gateway_mission(
             item["id"],
             final_status,
@@ -218,13 +231,17 @@ class ConfirmationCenter:
             ros_mission_id=result.get("ros_mission_id"),
             physical_complete=bool(result.get("physical_complete", False)),
         )
+        authoritative_result = (
+            mission.get("result") if mission and mission.get("result") is not None else result
+        )
+        authoritative_success = bool(mission and mission.get("status") == "completed")
         await self._events.emit(
             session_id,
             "control.completed",
             confirmation=completed,
-            success=success,
+            success=authoritative_success,
             status=final_status,
-            result=result,
+            result=authoritative_result,
             mission=mission,
         )
         if mission is not None:

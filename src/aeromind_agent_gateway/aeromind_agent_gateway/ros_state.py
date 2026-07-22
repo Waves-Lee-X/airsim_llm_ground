@@ -726,6 +726,7 @@ class RosStateBridge(Node):
                     progress, workflow, index, results, "workflow_step"
                 )
                 if step["status"] == "failed" and step["on_failure"] == "stop":
+                    _settle_workflow_steps(workflow, "failed")
                     failed_result = results.get(step["id"]) or {}
                     failure_detail = str(
                         failed_result.get("message")
@@ -1168,6 +1169,7 @@ class RosStateBridge(Node):
     def _cancelled_workflow_result(
         workflow: dict[str, Any], results: dict[str, dict[str, Any]]
     ) -> dict[str, Any]:
+        _settle_workflow_steps(workflow, "cancelled")
         return {
             "success": False,
             "status": "cancelled",
@@ -1258,6 +1260,20 @@ def _set_result_if_pending(future: asyncio.Future, value: Any):
 def _set_exception_if_pending(future: asyncio.Future, error: Exception):
     if not future.done():
         future.set_exception(error)
+
+
+def _settle_workflow_steps(workflow: dict[str, Any], terminal_status: str):
+    """Make every step terminal when its parent workflow is terminal."""
+    for step in workflow.get("steps", []):
+        status = str(step.get("status", "pending"))
+        if status in {"completed", "failed", "skipped", "cancelled"}:
+            continue
+        if terminal_status == "cancelled" and status in {"running", "retrying", "paused"}:
+            step["status"] = "cancelled"
+            step["message"] = step.get("message") or "任务已由操作员取消"
+        else:
+            step["status"] = "skipped"
+            step["message"] = step.get("message") or "上游任务已结束，未执行此步骤"
 
 
 def _parse_json_object(value: str) -> dict[str, Any]:

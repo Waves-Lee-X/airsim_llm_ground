@@ -611,6 +611,23 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(called, [])
         self.assertIn("最近障碍物 0.80 米", result["message"])
         self.assertIn("安全距离 2.00 米", result["message"])
+        self.assertEqual(result["workflow"]["steps"][0]["status"], "failed")
+        self.assertEqual(result["workflow"]["steps"][1]["status"], "skipped")
+
+    async def test_cancelled_workflow_settles_running_and_pending_steps(self):
+        bridge = self._bridge()
+        workflow = {
+            "workflow_id": "workflow-cancelled",
+            "name": "取消测试",
+            "steps": [
+                {"id": "move", "status": "running"},
+                {"id": "capture", "status": "pending"},
+            ],
+        }
+        result = bridge._cancelled_workflow_result(workflow, {})
+        self.assertEqual(result["status"], "cancelled")
+        self.assertEqual(workflow["steps"][0]["status"], "cancelled")
+        self.assertEqual(workflow["steps"][1]["status"], "skipped")
 
     def test_takeoff_safety_rejects_missing_clearance_evidence(self):
         bridge = self._bridge()

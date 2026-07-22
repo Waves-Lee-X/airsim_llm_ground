@@ -77,6 +77,44 @@ class SessionStoreTest(unittest.TestCase):
         self.assertEqual(completed["status"], "completed")
         self.assertTrue(completed["result"]["success"])
 
+    def test_gateway_mission_terminal_state_is_monotonic_and_revisioned(self):
+        self.store.ensure_session("s1", "u1", "web", "sonnet")
+        item = self.store.create_confirmation(
+            "s1", "u1", "takeoff", {"altitude": 5.0}, "起飞", "high", 60
+        )
+        created = self.store.create_gateway_mission(item)
+        executing = self.store.update_gateway_mission(
+            item["id"], "executing", phase="verifying"
+        )
+        completed = self.store.update_gateway_mission(
+            item["id"], "completed", {"success": True},
+            phase="completed", physical_complete=True,
+        )
+        late = self.store.update_gateway_mission(
+            item["id"], "executing", {"message": "late progress"},
+            phase="verifying", physical_complete=False,
+        )
+
+        self.assertGreater(executing["revision"], created["revision"])
+        self.assertGreater(completed["revision"], executing["revision"])
+        self.assertEqual(late["revision"], completed["revision"])
+        self.assertEqual(late["status"], "completed")
+        self.assertEqual(late["phase"], "completed")
+        self.assertTrue(late["physical_complete"])
+        self.assertTrue(late["result"]["success"])
+
+    def test_duplicate_confirmation_resolution_is_idempotent(self):
+        self.store.ensure_session("s1", "u1", "web", "sonnet")
+        item = self.store.create_confirmation(
+            "s1", "u1", "land", {}, "降落", "high", 60
+        )
+        first = self.store.resolve_confirmation(item["id"], "u1", "approve")
+        second = self.store.resolve_confirmation(item["id"], "u1", "approve")
+        self.assertEqual(first["status"], "executing")
+        self.assertTrue(second["idempotent"])
+        with self.assertRaises(ValueError):
+            self.store.resolve_confirmation(item["id"], "u1", "cancel")
+
     def test_inbound_message_is_claimed_once(self):
         self.assertTrue(self.store.claim_inbound_message("m1", "feishu", "ou_1"))
         self.assertFalse(self.store.claim_inbound_message("m1", "feishu", "ou_1"))

@@ -117,6 +117,7 @@ const els = {
 let localEvents = [];
 let lastAgentPayload = null;
 let pendingConfirmation = null;
+const gatewayMissionRevisions = new Map();
 let activeWorkflowId = null;
 let gatewaySkills = [];
 let gatewayCapabilities = [];
@@ -2570,6 +2571,15 @@ function renderProviderOptions(providers, session) {
 
 function renderGatewayMission(mission) {
   if (!mission?.id) return;
+  const revision = Number(mission.revision || 0);
+  const previousRevision = Number(gatewayMissionRevisions.get(mission.id) || 0);
+  if (revision > 0 && revision < previousRevision) return;
+  if (revision > 0) gatewayMissionRevisions.set(mission.id, revision);
+  const terminal = ["completed", "failed", "cancelled", "expired"].includes(mission.status);
+  if (terminal && pendingConfirmation?.token === mission.confirmation_id) {
+    pendingConfirmation = null;
+    renderConfirmation();
+  }
   const labels = {
     pending_confirmation: "等待人工确认",
     executing: "正在执行",
@@ -2629,6 +2639,7 @@ function renderGatewayMission(mission) {
       retrying: ["↻", "warn-text"],
       paused: ["Ⅱ", "warn-text"],
       failed: ["×", "fail"],
+      cancelled: ["×", "muted"],
       skipped: ["-", "muted"],
       pending: ["•", "muted"],
     };
@@ -2637,8 +2648,8 @@ function renderGatewayMission(mission) {
       const attempt = step.attempt ? ` · 第 ${step.attempt} 次` : "";
       return `<div class="plan-row"><span class="${className}">${icon}</span><span>${index + 1}. ${escapeHtml(step.label || step.id)}<small>${escapeHtml(step.message || "")}${attempt}</small></span></div>`;
     }).join("");
-    activeWorkflowId = workflow.workflow_id;
     const controllable = mission.status === "executing";
+    activeWorkflowId = controllable ? workflow.workflow_id : null;
     els.workflowControls.hidden = !controllable;
     els.pauseWorkflowBtn.disabled = mission.phase === "paused";
     els.resumeWorkflowBtn.disabled = mission.phase !== "paused";

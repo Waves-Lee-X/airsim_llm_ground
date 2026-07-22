@@ -13,6 +13,13 @@ import uuid
 from typing import Any
 
 
+MISSION_TERMINAL_STATUSES = {"completed", "failed", "cancelled", "expired"}
+MISSION_ALLOWED_TRANSITIONS = {
+    "pending_confirmation": {"pending_confirmation", "executing", "cancelled", "expired", "failed"},
+    "executing": {"executing", "completed", "failed", "cancelled"},
+}
+
+
 def _search_terms(value: str) -> set[str]:
     text = str(value).casefold()
     words = set(re.findall(r"[a-z0-9_]+", text))
@@ -108,6 +115,7 @@ class SessionStore:
                     ros_mission_id TEXT,
                     physical_complete INTEGER NOT NULL DEFAULT 0,
                     result_json TEXT,
+                    revision INTEGER NOT NULL DEFAULT 1,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
                 );
@@ -147,6 +155,9 @@ class SessionStore:
             self._ensure_column("gateway_missions", "ros_mission_id", "TEXT")
             self._ensure_column(
                 "gateway_missions", "physical_complete", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                "gateway_missions", "revision", "INTEGER NOT NULL DEFAULT 1"
             )
             self._ensure_column(
                 "operator_memories", "semantic_summary", "TEXT NOT NULL DEFAULT ''"
@@ -731,7 +742,7 @@ class SessionStore:
             self._db.execute(
                 """
                 UPDATE gateway_missions
-                SET status='expired', phase='expired', updated_at=?
+                SET status='expired', phase='expired', revision=revision+1, updated_at=?
                 WHERE confirmation_id IN (
                     SELECT id FROM confirmations
                     WHERE session_id=? AND status='expired' AND resolved_at=?
@@ -762,7 +773,7 @@ class SessionStore:
             self._db.execute(
                 """
                 UPDATE gateway_missions
-                SET status='expired', phase='expired', updated_at=?
+                SET status='expired', phase='expired', revision=revision+1, updated_at=?
                 WHERE confirmation_id IN (
                     SELECT id FROM confirmations
                     WHERE user_id=? AND status='expired' AND resolved_at=?
@@ -793,7 +804,7 @@ class SessionStore:
             self._db.execute(
                 """
                 UPDATE gateway_missions
-                SET status='expired', phase='expired', updated_at=?
+                SET status='expired', phase='expired', revision=revision+1, updated_at=?
                 WHERE confirmation_id IN (
                     SELECT id FROM confirmations
                     WHERE status='expired' AND resolved_at=?
@@ -854,6 +865,24 @@ class SessionStore:
         physical_complete: bool | None = None,
     ) -> dict[str, Any] | None:
         with self._lock, self._db:
+            current = self._db.execute(
+                "SELECT status FROM gateway_missions WHERE confirmation_id=?",
+                (confirmation_id,),
+            ).fetchone()
+            if current is None:
+                return None
+            current_status = str(current["status"])
+            if current_status in MISSION_TERMINAL_STATUSES:
+                return self.gateway_mission_for_confirmation(confirmation_id)
+            allowed = MISSION_ALLOWED_TRANSITIONS.get(current_status, {current_status})
+            if status not in allowed:
+                return self.gateway_mission_for_confirmation(confirmation_id)
+            terminal = status in MISSION_TERMINAL_STATUSES
+            final_phase = status if terminal else phase
+            final_physical_complete = (
+                bool(physical_complete) and status == "completed"
+                if physical_complete is not None else None
+            )
             self._db.execute(
                 """
                 UPDATE gateway_missions
@@ -861,15 +890,16 @@ class SessionStore:
                     phase=COALESCE(?, phase),
                     ros_mission_id=COALESCE(?, ros_mission_id),
                     physical_complete=COALESCE(?, physical_complete),
+                    revision=revision+1,
                     updated_at=?
                 WHERE confirmation_id=?
                 """,
                 (
                     status,
                     json.dumps(result, ensure_ascii=False) if result is not None else None,
-                    phase,
+                    final_phase,
                     ros_mission_id,
-                    int(physical_complete) if physical_complete is not None else None,
+                    int(final_physical_complete) if final_physical_complete is not None else None,
                     time.time(),
                     confirmation_id,
                 ),
@@ -944,7 +974,8 @@ class SessionStore:
                 self._db.execute(
                     """
                     UPDATE gateway_missions
-                    SET status='failed', phase='interrupted', result_json=?, updated_at=?
+                    SET status='failed', phase='interrupted', result_json=?,
+                        revision=revision+1, updated_at=?
                     WHERE confirmation_id=?
                     """,
                     (json.dumps(result, ensure_ascii=False), now, confirmation_id),
@@ -979,7 +1010,17 @@ class SessionStore:
             if row["user_id"] != user_id:
                 raise PermissionError("当前用户无权处理该确认请求")
             if row["status"] != "pending":
-                raise ValueError(f"确认请求已经处理: {row['status']}")
+                status = str(row["status"])
+                same_decision = (
+                    decision == "approve" and status in {"executing", "completed", "failed"}
+                ) or (
+                    decision == "cancel" and status in {"cancelled", "expired"}
+                )
+                if not same_decision:
+                    raise ValueError(f"确认请求已经处理: {status}")
+                item = self._confirmation_row(row)
+                item["idempotent"] = True
+                return item
             if float(row["expires_at"]) <= now:
                 self._db.execute(
                     "UPDATE confirmations SET status='expired', resolved_at=? WHERE id=?",
@@ -988,7 +1029,7 @@ class SessionStore:
                 self._db.execute(
                     """
                     UPDATE gateway_missions
-                    SET status='expired', phase='expired', updated_at=?
+                    SET status='expired', phase='expired', revision=revision+1, updated_at=?
                     WHERE confirmation_id=?
                     """,
                     (now, confirmation_id),
@@ -1015,6 +1056,15 @@ class SessionStore:
         if status not in {"completed", "failed", "cancelled"}:
             raise ValueError("invalid confirmation completion status")
         with self._lock, self._db:
+            row = self._db.execute(
+                "SELECT status FROM confirmations WHERE id=?", (confirmation_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("确认请求不存在")
+            if row["status"] != "executing":
+                item = self.get_confirmation(confirmation_id)
+                assert item is not None
+                return item
             self._db.execute(
                 """
                 UPDATE confirmations
@@ -1065,6 +1115,7 @@ class SessionStore:
             "phase": row["phase"],
             "ros_mission_id": row["ros_mission_id"],
             "physical_complete": bool(row["physical_complete"]),
+            "revision": int(row["revision"]),
             "result": json.loads(row["result_json"]) if row["result_json"] else None,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
