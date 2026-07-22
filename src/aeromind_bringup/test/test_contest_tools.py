@@ -8,6 +8,7 @@ from unittest.mock import patch
 from aeromind_bringup_tools.mission_metrics import (
     load_file_missions,
     load_gateway_missions,
+    select_campaign,
     summarize,
     write_outputs,
 )
@@ -102,6 +103,92 @@ class MissionMetricsTest(unittest.TestCase):
             paths = write_outputs(report, root / "output", "metrics")
             self.assertTrue(all(path.is_file() for path in paths.values()))
             self.assertIn("66.7%", paths["markdown"].read_text(encoding="utf-8"))
+
+    def test_campaign_uses_gateway_events_and_workflow_steps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            db = root / "gateway.db"
+            connection = sqlite3.connect(db)
+            connection.executescript(
+                """
+                CREATE TABLE confirmations (
+                    id TEXT, resolved_at REAL
+                );
+                CREATE TABLE gateway_missions (
+                    id TEXT, confirmation_id TEXT, action TEXT, title TEXT,
+                    status TEXT, phase TEXT, revision INTEGER,
+                    physical_complete INTEGER, result_json TEXT,
+                    created_at REAL, updated_at REAL
+                );
+                CREATE TABLE events (
+                    type TEXT, payload_json TEXT, created_at REAL
+                );
+                """
+            )
+            workflow = {
+                "message": "组合任务失败：分析当前画面",
+                "workflow": {
+                    "steps": [
+                        {"id": "move", "label": "向前飞行", "status": "completed"},
+                        {"id": "analyze", "label": "分析当前画面", "status": "failed"},
+                        {"id": "land", "label": "降落", "status": "skipped"},
+                    ]
+                },
+            }
+            connection.executemany(
+                "INSERT INTO confirmations VALUES (?, ?)",
+                [("c1", 102.0), ("c2", 202.0)],
+            )
+            connection.executemany(
+                "INSERT INTO gateway_missions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    ("m1", "c1", "workflow", "校赛演示主链-01", "completed", "completed", 8, 1, "{}", 100.0, 112.0),
+                    ("m2", "c2", "workflow", "校赛演示主链-02", "failed", "failed", 9, 0, json.dumps(workflow), 200.0, 215.0),
+                    ("m3", "c3", "takeoff", "其他任务", "completed", "completed", 4, 1, "{}", 300.0, 305.0),
+                ],
+            )
+            events = [
+                ("confirmation.required", {"confirmation": {"id": "c1"}}, 100.0),
+                ("confirmation.resolved", {"confirmation": {"id": "c1"}}, 102.0),
+                ("control.started", {"confirmation_id": "c1"}, 103.0),
+                ("control.progress", {"confirmation_id": "c1", "phase": "verifying"}, 108.0),
+                ("control.completed", {"confirmation": {"id": "c1"}}, 112.0),
+                ("confirmation.required", {"confirmation": {"id": "c2"}}, 200.0),
+                ("confirmation.resolved", {"confirmation": {"id": "c2"}}, 202.0),
+                ("control.started", {"confirmation_id": "c2"}, 203.0),
+                ("control.completed", {"confirmation": {"id": "c2"}}, 215.0),
+            ]
+            connection.executemany(
+                "INSERT INTO events VALUES (?, ?, ?)",
+                [(kind, json.dumps(payload), timestamp) for kind, payload, timestamp in events],
+            )
+            connection.commit()
+            connection.close()
+
+            records = load_gateway_missions(db)
+            selected = select_campaign(records, "workflow", "校赛演示主链", 10)
+            self.assertEqual([item["id"] for item in selected], ["m1", "m2"])
+            self.assertEqual(selected[0]["confirmation_latency_sec"], 2.0)
+            self.assertEqual(selected[0]["execution_duration_sec"], 9.0)
+            self.assertEqual(selected[0]["verification_duration_sec"], 4.0)
+            self.assertEqual(selected[1]["failed_step"], "分析当前画面")
+            self.assertEqual(selected[1]["workflow_step_skipped"], 1)
+
+            summary = summarize(selected, expected_runs=2, target_success_rate=0.5)
+            self.assertTrue(summary["campaign_ready"])
+            self.assertEqual(summary["terminal_consistency_rate"], 1.0)
+            self.assertEqual(summary["failed_steps"], {"分析当前画面": 1})
+            self.assertEqual(summary["confirmation_mean_sec"], 2.0)
+
+    def test_duplicate_terminal_event_fails_campaign_gate(self):
+        record = {
+            "status": "completed", "physical_complete": True,
+            "duration_sec": 1.0, "action": "workflow", "failure_reason": "",
+            "terminal_event_count": 2, "terminal_consistent": False,
+        }
+        summary = summarize([record], expected_runs=1, target_success_rate=1.0)
+        self.assertFalse(summary["campaign_ready"])
+        self.assertEqual(summary["duplicate_terminal_events"], 1)
 
 
 if __name__ == "__main__":
