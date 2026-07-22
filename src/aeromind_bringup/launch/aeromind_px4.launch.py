@@ -187,6 +187,26 @@ def generate_launch_description():
         default_value="30.0",
         description="人员持续占用航迹时悬停等待的最长时间",
     )
+    autonomy_dynamic_planning_arg = DeclareLaunchArgument(
+        "autonomy_dynamic_planning_enabled",
+        default_value="true",
+        description="是否将语义世界动态目标预测接入局部轨迹评分",
+    )
+    autonomy_dynamic_timeout_arg = DeclareLaunchArgument(
+        "autonomy_dynamic_object_timeout_sec",
+        default_value="1.5",
+        description="动态对象快照失效时间",
+    )
+    autonomy_dynamic_radius_arg = DeclareLaunchArgument(
+        "autonomy_dynamic_object_radius_m",
+        default_value="0.45",
+        description="动态对象缺少尺寸时使用的基础半径",
+    )
+    autonomy_dynamic_sigma_arg = DeclareLaunchArgument(
+        "autonomy_dynamic_uncertainty_sigma",
+        default_value="2.0",
+        description="动态对象位置协方差的安全膨胀倍数",
+    )
     autonomy_odom_topic_arg = DeclareLaunchArgument(
         "autonomy_odom_topic",
         default_value="/sensor/odometry",
@@ -376,6 +396,10 @@ def generate_launch_description():
             {"semantic_guard_enabled": ParameterValue(LaunchConfiguration("autonomy_semantic_guard_enabled"), value_type=bool)},
             {"semantic_guard_clear_dwell_sec": ParameterValue(LaunchConfiguration("autonomy_semantic_clear_dwell_sec"), value_type=float)},
             {"semantic_guard_hold_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_semantic_hold_timeout_sec"), value_type=float)},
+            {"dynamic_planning_enabled": ParameterValue(LaunchConfiguration("autonomy_dynamic_planning_enabled"), value_type=bool)},
+            {"dynamic_object_timeout_sec": ParameterValue(LaunchConfiguration("autonomy_dynamic_object_timeout_sec"), value_type=float)},
+            {"dynamic_object_default_radius_m": ParameterValue(LaunchConfiguration("autonomy_dynamic_object_radius_m"), value_type=float)},
+            {"dynamic_object_uncertainty_sigma": ParameterValue(LaunchConfiguration("autonomy_dynamic_uncertainty_sigma"), value_type=float)},
             {"max_speed": ParameterValue(LaunchConfiguration("autonomy_velocity_limit"), value_type=float)},
             {"max_acceleration": ParameterValue(LaunchConfiguration("autonomy_accel_limit"), value_type=float)},
             {"min_flight_altitude": ParameterValue(LaunchConfiguration("autonomy_min_altitude"), value_type=float)},
@@ -473,6 +497,10 @@ def generate_launch_description():
         autonomy_semantic_guard_arg,
         autonomy_semantic_clear_dwell_arg,
         autonomy_semantic_hold_timeout_arg,
+        autonomy_dynamic_planning_arg,
+        autonomy_dynamic_timeout_arg,
+        autonomy_dynamic_radius_arg,
+        autonomy_dynamic_sigma_arg,
         autonomy_odom_topic_arg,
         autonomy_world_cloud_topic_arg,
         autonomy_max_position_variance_arg,

@@ -166,6 +166,10 @@ class RosTaskMappingTest(unittest.TestCase):
                 "fresh": False,
                 "state": "HOLD",
                 "nearest_obstacle_m": 3.2,
+                "dynamic_risk_active": True,
+                "dynamic_object_id": "person_0001",
+                "dynamic_clearance_m": 1.1,
+                "dynamic_ttc_sec": 2.4,
             },
             "detections": [{"class_name": "person", "confidence": 0.8}],
             "detections_stamp": 103.5,
@@ -189,6 +193,8 @@ class RosTaskMappingTest(unittest.TestCase):
         self.assertEqual(by_id["flight_state"]["source"], "/control/drone_state")
         self.assertTrue(by_id["flight_state"]["fresh"])
         self.assertFalse(by_id["autonomy"]["fresh"])
+        self.assertIn("person_0001", by_id["autonomy"]["summary"])
+        self.assertIn("2.4s", by_id["autonomy"]["summary"])
         self.assertEqual(by_id["detections"]["kind"], "model_inference")
         self.assertEqual(by_id["detections"]["stamp"], 103.5)
         self.assertIn("person", by_id["detections"]["summary"])

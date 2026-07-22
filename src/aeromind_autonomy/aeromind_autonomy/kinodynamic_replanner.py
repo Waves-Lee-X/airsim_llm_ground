@@ -19,6 +19,9 @@ class ReplanResult:
     command_velocity: tuple[float, float, float]
     trajectory: list[dict]
     message: str
+    dynamic_object_id: str = ""
+    dynamic_clearance: float = float("inf")
+    dynamic_ttc: float = float("inf")
 
 
 class KinodynamicReplanner:
@@ -62,8 +65,16 @@ class KinodynamicReplanner:
         position: tuple[float, float, float],
         velocity: tuple[float, float, float],
         goal: tuple[float, float, float] | None,
+        *,
+        dynamic_field=None,
+        now: float | None = None,
     ) -> ReplanResult:
         nearest = esdf.nearest_obstacle(position)
+        if dynamic_field is not None:
+            nearest = min(
+                nearest,
+                dynamic_field.current_clearance(position, now=now).clearance,
+            )
         if goal is None:
             self._last_tracking_strategy = None
             trajectory = sample_minimum_snap(
@@ -125,6 +136,14 @@ class KinodynamicReplanner:
                 points,
                 max_radius=max(3.0, self.safety_radius * 2.5),
             )
+            dynamic_risk = None
+            if dynamic_field is not None:
+                dynamic_risk = dynamic_field.trajectory_clearance(
+                    trajectory,
+                    now=now,
+                    max_radius=max(3.0, self.safety_radius * 2.5),
+                )
+                clearance = min(clearance, dynamic_risk.clearance)
             progress = target_distance - math.dist(end, goal)
             effort = math.dist(candidate_velocity, velocity)
             alignment = self._alignment(candidate_velocity, to_goal)
@@ -142,7 +161,15 @@ class KinodynamicReplanner:
             safe = clearance >= self.safety_radius
             if not safe:
                 score -= (self.safety_radius - clearance) * 10.0
-            entry = (score, safe, name, candidate_velocity, trajectory, clearance)
+            entry = (
+                score,
+                safe,
+                name,
+                candidate_velocity,
+                trajectory,
+                clearance,
+                dynamic_risk,
+            )
             evaluated.append(entry)
 
         safe_candidates = [entry for entry in evaluated if entry[1]]
@@ -163,7 +190,7 @@ class KinodynamicReplanner:
                 message="未找到可行运动基元，悬停等待重规划",
             )
 
-        _, safe, strategy, command_velocity, trajectory, clearance = best
+        _, safe, strategy, command_velocity, trajectory, clearance, dynamic_risk = best
         if clearance < self.blocked_enter_clearance:
             self._blocked_latched = True
         elif clearance >= self.blocked_exit_clearance:
@@ -182,6 +209,11 @@ class KinodynamicReplanner:
                 )
             else:
                 reason = f"轨迹最小安全距离 {clearance:.2f} m，小于安全半径"
+            if dynamic_risk is not None and dynamic_risk.object_id:
+                reason += (
+                    f"；动态目标 {dynamic_risk.object_id}，"
+                    f"TTC代理 {dynamic_risk.time_to_closest_sec:.2f}s"
+                )
             return ReplanResult(
                 state="BLOCKED",
                 strategy="safe_hover",
@@ -191,9 +223,28 @@ class KinodynamicReplanner:
                 command_velocity=command_velocity,
                 trajectory=trajectory,
                 message=f"{reason}，悬停",
+                dynamic_object_id=(
+                    dynamic_risk.object_id if dynamic_risk is not None else ""
+                ),
+                dynamic_clearance=(
+                    dynamic_risk.clearance
+                    if dynamic_risk is not None
+                    else float("inf")
+                ),
+                dynamic_ttc=(
+                    dynamic_risk.time_to_closest_sec
+                    if dynamic_risk is not None
+                    else float("inf")
+                ),
             )
 
         self._last_tracking_strategy = strategy
+        dynamic_detail = ""
+        if dynamic_risk is not None and dynamic_risk.object_id:
+            dynamic_detail = (
+                f"，动态目标={dynamic_risk.object_id}，"
+                f"TTC代理={dynamic_risk.time_to_closest_sec:.2f}s"
+            )
         return ReplanResult(
             state="TRACKING",
             strategy=strategy,
@@ -202,7 +253,23 @@ class KinodynamicReplanner:
             nearest_obstacle=nearest,
             command_velocity=command_velocity,
             trajectory=trajectory,
-            message=f"实时重规划完成：{strategy}，轨迹 clearance={clearance:.2f} m",
+            message=(
+                f"实时重规划完成：{strategy}，轨迹 clearance={clearance:.2f} m"
+                f"{dynamic_detail}"
+            ),
+            dynamic_object_id=(
+                dynamic_risk.object_id if dynamic_risk is not None else ""
+            ),
+            dynamic_clearance=(
+                dynamic_risk.clearance
+                if dynamic_risk is not None
+                else float("inf")
+            ),
+            dynamic_ttc=(
+                dynamic_risk.time_to_closest_sec
+                if dynamic_risk is not None
+                else float("inf")
+            ),
         )
 
     def _motion_primitives(
