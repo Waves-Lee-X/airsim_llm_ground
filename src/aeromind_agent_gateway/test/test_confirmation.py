@@ -3,6 +3,8 @@ import os
 import tempfile
 import unittest
 
+import numpy as np
+
 from aeromind_agent_gateway.confirmation import ConfirmationCenter, validate_action
 from aeromind_agent_gateway.events import EventBus
 from aeromind_agent_gateway.store import SessionStore
@@ -57,6 +59,56 @@ class ConfirmationCenterTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(repeated["idempotent"])
         self.assertIn("未重复执行", repeated["message"])
         self.assertEqual(len(self.executions), 1)
+
+    async def test_progress_with_numpy_float32_evidence_completes(self):
+        async def execute_with_ros_evidence(action, args, progress):
+            await progress(
+                "workflow_step",
+                {
+                    "message": "感知证据已更新",
+                    "evidence": {
+                        "position_covariance": [
+                            np.float32(0.1),
+                            np.float32(0.0),
+                        ]
+                    },
+                },
+            )
+            return {
+                "success": True,
+                "message": "workflow completed",
+                "physical_complete": True,
+            }
+
+        self.center._execute = execute_with_ros_evidence
+        created = await self.center.create(
+            "s1",
+            "u1",
+            "workflow",
+            {
+                "name": "带感知证据的任务",
+                "steps": [{"id": "report", "action": "mission_report"}],
+            },
+        )
+        confirmation_id = created["confirmation_id"]
+        await self.center.respond(confirmation_id, "u1", "approve")
+
+        for _ in range(30):
+            item = self.store.get_confirmation(confirmation_id)
+            if item["status"] == "completed":
+                break
+            await asyncio.sleep(0.01)
+
+        self.assertEqual(item["status"], "completed")
+        progress_event = next(
+            event
+            for event in self.store.events_after("s1")
+            if event["type"] == "control.progress"
+        )
+        covariance = progress_event["details"]["evidence"][
+            "position_covariance"
+        ]
+        self.assertAlmostEqual(covariance[0], 0.1)
 
     async def test_wrong_user_cannot_approve(self):
         created = await self.center.create("s1", "u1", "land", {})

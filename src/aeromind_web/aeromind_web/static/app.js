@@ -1146,6 +1146,11 @@ function updateMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta =
 function drawMissionMap(odom, goal, trajectory, worldObjects = [], worldMeta = null) {
   const canvas = els.missionMapCanvas;
   if (!canvas) return;
+  const frame = odom?.frame_id
+    || goal?.frame_id
+    || trajectory?.frame_id
+    || missionTrackFrame
+    || "odom";
   const rect = canvas.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.max(260, rect.width || 280);

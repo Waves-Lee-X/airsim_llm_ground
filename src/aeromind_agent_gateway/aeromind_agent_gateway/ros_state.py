@@ -27,6 +27,7 @@ from aeromind_interfaces.msg import (
     WorldModelHealth,
 )
 from aeromind_interfaces.srv import AnalyzeImage, ExecuteAction, QueryWorldModel
+from .json_support import json_dumps
 from .workflow import validate_workflow
 
 
@@ -231,7 +232,9 @@ class RosStateBridge(Node):
                         "z": float(item.velocity.z),
                     },
                     "dynamic": bool(item.dynamic),
-                    "position_covariance": list(item.position_covariance),
+                    "position_covariance": [
+                        float(value) for value in item.position_covariance
+                    ],
                     "position_std_m": _position_standard_deviation(
                         item.position_covariance
                     ),
@@ -1222,7 +1225,7 @@ class RosStateBridge(Node):
             }
         request = ExecuteAction.Request()
         request.action = action
-        request.args_json = json.dumps(args, ensure_ascii=False)
+        request.args_json = json_dumps(args)
         request.request_id = request_id
         ros_future = self._action_client.call_async(request)
         loop = asyncio.get_running_loop()
@@ -1723,7 +1726,7 @@ def _action_task(action: str, args: dict[str, Any]) -> tuple[str, str]:
                 for key in ("forward_m", "right_m", "up_m")
             }
             return (
-                "__aeromind_move_vector__:" + json.dumps(vector),
+                "__aeromind_move_vector__:" + json_dumps(vector),
                 "move_to",
             )
         return (

@@ -6,6 +6,7 @@ import asyncio
 from collections import defaultdict
 from typing import Any
 
+from .json_support import json_compatible
 from .store import SessionStore
 
 
@@ -49,7 +50,10 @@ class EventBus:
     async def emit(
         self, session_id: str, event_type: str, **payload: Any
     ) -> dict[str, Any]:
-        event = self._store.append_event(session_id, event_type, payload)
+        normalized_payload = json_compatible(payload)
+        event = self._store.append_event(
+            session_id, event_type, normalized_payload
+        )
         session = self._store.get_session(session_id)
         user_id = session["user_id"] if session else ""
         async with self._lock:

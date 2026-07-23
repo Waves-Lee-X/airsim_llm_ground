@@ -2,6 +2,8 @@ import os
 import tempfile
 import unittest
 
+import numpy as np
+
 from aeromind_agent_gateway.store import SessionStore
 
 
@@ -76,6 +78,32 @@ class SessionStoreTest(unittest.TestCase):
         )
         self.assertEqual(completed["status"], "completed")
         self.assertTrue(completed["result"]["success"])
+
+    def test_numpy_float32_workflow_evidence_is_persisted(self):
+        self.store.ensure_session("s1", "u1", "web", "sonnet")
+        item = self.store.create_confirmation(
+            "s1", "u1", "takeoff", {"altitude": 5.0}, "起飞", "high", 60
+        )
+        self.store.create_gateway_mission(item)
+        self.store.update_gateway_mission(
+            item["id"],
+            "executing",
+            {
+                "success": True,
+                "evidence": {
+                    "position_covariance": [
+                        np.float32(0.1),
+                        np.float32(0.0),
+                    ]
+                },
+            },
+            phase="workflow_step",
+        )
+
+        mission = self.store.gateway_mission_for_confirmation(item["id"])
+        self.assertAlmostEqual(
+            mission["result"]["evidence"]["position_covariance"][0], 0.1
+        )
 
     def test_gateway_mission_terminal_state_is_monotonic_and_revisioned(self):
         self.store.ensure_session("s1", "u1", "web", "sonnet")

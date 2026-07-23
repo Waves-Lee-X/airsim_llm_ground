@@ -12,6 +12,8 @@ import time
 import uuid
 from typing import Any
 
+from .json_support import json_dumps
+
 
 MISSION_TERMINAL_STATUSES = {"completed", "failed", "cancelled", "expired"}
 MISSION_ALLOWED_TRANSITIONS = {
@@ -355,7 +357,7 @@ class SessionStore:
                     item["id"],
                     session_id,
                     role,
-                    json.dumps(content, ensure_ascii=False),
+                    json_dumps(content),
                     provider,
                     model,
                     item["created_at"],
@@ -533,7 +535,7 @@ class SessionStore:
                         importance,
                         source_session_id,
                         fingerprint,
-                        json.dumps(metadata, ensure_ascii=False),
+                        json_dumps(metadata),
                         now,
                         now,
                     ),
@@ -619,7 +621,7 @@ class SessionStore:
                     session_id,
                     sequence,
                     event_type,
-                    json.dumps(payload, ensure_ascii=False),
+                    json_dumps(payload),
                     now,
                 ),
             )
@@ -712,7 +714,7 @@ class SessionStore:
                     session_id,
                     user_id,
                     action,
-                    json.dumps(args, ensure_ascii=False),
+                    json_dumps(args),
                     summary,
                     risk_level,
                     item["status"],
@@ -844,7 +846,7 @@ class SessionStore:
                     session["channel"],
                     confirmation["summary"],
                     confirmation["action"],
-                    json.dumps(confirmation["args"], ensure_ascii=False),
+                    json_dumps(confirmation["args"]),
                     "pending_confirmation",
                     "pending_confirmation",
                     now,
@@ -896,7 +898,7 @@ class SessionStore:
                 """,
                 (
                     status,
-                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    json_dumps(result) if result is not None else None,
                     final_phase,
                     ros_mission_id,
                     int(final_physical_complete) if final_physical_complete is not None else None,
@@ -978,7 +980,7 @@ class SessionStore:
                         revision=revision+1, updated_at=?
                     WHERE confirmation_id=?
                     """,
-                    (json.dumps(result, ensure_ascii=False), now, confirmation_id),
+                    (json_dumps(result), now, confirmation_id),
                 )
                 self._db.execute(
                     """
@@ -986,7 +988,7 @@ class SessionStore:
                     SET status='failed', result_json=?, resolved_at=?
                     WHERE id=? AND status='executing'
                     """,
-                    (json.dumps(result, ensure_ascii=False), now, confirmation_id),
+                    (json_dumps(result), now, confirmation_id),
                 )
         return [
             self.gateway_mission_for_confirmation(row["confirmation_id"])
@@ -1073,7 +1075,7 @@ class SessionStore:
                 """,
                 (
                     status,
-                    json.dumps(result, ensure_ascii=False),
+                    json_dumps(result),
                     time.time(),
                     confirmation_id,
                 ),
