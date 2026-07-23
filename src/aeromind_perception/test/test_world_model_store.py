@@ -1,3 +1,6 @@
+import numpy as np
+import pytest
+
 from aeromind_perception.world_model_store import WorldModelStore
 
 
@@ -64,3 +67,18 @@ def test_track_ids_remain_unique_across_store_restarts(tmp_path):
     assert second.allocate_track_id("person") == "person_000002"
     assert second.allocate_track_id("car") == "car_000003"
     second.close()
+
+
+def test_store_accepts_numpy_float32_covariance(tmp_path):
+    store = WorldModelStore(str(tmp_path / "world.db"))
+    record = _record("person_0001", "person", 1.0)
+    record["position_covariance"] = np.asarray(
+        [0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1],
+        dtype=np.float32,
+    )
+
+    assert store.record("odom", 100.0, [record]) == 1
+    history = store.query_history(object_id="person_0001")
+    assert len(history[0]["position_covariance"]) == 9
+    assert history[0]["position_covariance"][0] == pytest.approx(0.1)
+    store.close()

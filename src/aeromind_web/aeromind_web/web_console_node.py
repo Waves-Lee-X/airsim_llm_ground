@@ -40,6 +40,7 @@ from aeromind_interfaces.msg import (
     Trajectory,
 )
 from aeromind_interfaces.srv import ArmDrone, ExecuteTask, Land, ReturnHome, Takeoff
+from .json_support import json_compatible
 
 try:
     from aeromind_agent.skill_catalog import get_skill_catalog as get_agent_skill_catalog
@@ -447,7 +448,9 @@ class WebConsoleNode(Node):
                     "z": float(item.velocity.z),
                 },
                 "dynamic": bool(item.dynamic),
-                "position_covariance": list(item.position_covariance),
+                "position_covariance": [
+                    float(value) for value in item.position_covariance
+                ],
                 "position_std_m": _position_standard_deviation(
                     item.position_covariance
                 ),
@@ -1174,7 +1177,9 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             return {}
 
     def _json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(
+            json_compatible(data), ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -1265,7 +1270,9 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             return
 
     def _send_ws_json(self, payload):
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        data = json.dumps(
+            json_compatible(payload), ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
         header = bytearray([0x81])
         length = len(data)
         if length < 126:

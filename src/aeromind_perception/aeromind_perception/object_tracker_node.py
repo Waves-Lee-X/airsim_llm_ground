@@ -28,6 +28,7 @@ from aeromind_interfaces.srv import QueryWorldModel
 from .object_tracking import ConstantVelocityTrack, greedy_association
 from .semantic_relations import PathIntrusionMonitor, predicted_path_distance
 from .semantic_geometry import transform_point
+from .json_support import json_compatible
 from .world_model_store import WorldModelStore
 
 
@@ -564,7 +565,9 @@ class ObjectTrackerNode(Node):
                 default=0.0,
             )
         )
-        message.evidence_json = json.dumps(evidence, ensure_ascii=False)
+        message.evidence_json = json.dumps(
+            json_compatible(evidence), ensure_ascii=False, allow_nan=False
+        )
         self._events_publisher.publish(message)
         self.get_logger().warning(
             f"世界模型事件: {event_type}, objects={message.object_ids}"
@@ -582,7 +585,9 @@ class ObjectTrackerNode(Node):
             payload = self._health_payload()
             response.success = True
             response.message = "世界模型健康状态已读取"
-            response.result_json = json.dumps(payload, ensure_ascii=False)
+            response.result_json = json.dumps(
+                json_compatible(payload), ensure_ascii=False, allow_nan=False
+            )
             return response
         if query_type == "history":
             if self._store is None:
@@ -604,8 +609,15 @@ class ObjectTrackerNode(Node):
             response.success = True
             response.message = f"返回 {len(history)} 条历史观测"
             response.result_json = json.dumps(
-                {"query_type": "history", "count": len(history), "history": history},
+                json_compatible(
+                    {
+                        "query_type": "history",
+                        "count": len(history),
+                        "history": history,
+                    }
+                ),
                 ensure_ascii=False,
+                allow_nan=False,
             )
             return response
 
@@ -651,16 +663,19 @@ class ObjectTrackerNode(Node):
         response.message = f"返回 {len(items)} 个世界对象"
         response.objects = items
         response.result_json = json.dumps(
-            {
-                "query_type": query_type,
-                "count": len(items),
-                "frame_id": self._frame_id,
-                "reference_position_m": (
-                    {"x": reference[0], "y": reference[1], "z": reference[2]}
-                    if reference is not None else None
-                ),
-            },
+            json_compatible(
+                {
+                    "query_type": query_type,
+                    "count": len(items),
+                    "frame_id": self._frame_id,
+                    "reference_position_m": (
+                        {"x": reference[0], "y": reference[1], "z": reference[2]}
+                        if reference is not None else None
+                    ),
+                }
+            ),
             ensure_ascii=False,
+            allow_nan=False,
         )
         return response
 
@@ -734,8 +749,10 @@ def _track_record(item):
         "state": item.state,
         "hit_count": int(item.hit_count),
         "miss_count": int(item.miss_count),
-        "position_covariance": list(item.position_covariance),
-        "sources": list(item.sources),
+        "position_covariance": [
+            float(value) for value in item.position_covariance
+        ],
+        "sources": [str(value) for value in item.sources],
     }
 
 

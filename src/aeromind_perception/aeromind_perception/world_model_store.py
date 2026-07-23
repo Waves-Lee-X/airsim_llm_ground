@@ -8,6 +8,8 @@ import sqlite3
 import threading
 import time
 
+from .json_support import json_compatible
+
 
 class WorldModelStore:
     def __init__(self, path: str, retention_hours: float = 24.0, max_rows: int = 200000):
@@ -101,8 +103,23 @@ class WorldModelStore:
                     str(record.get("state", "unknown")),
                     int(record.get("hit_count", 0)),
                     int(record.get("miss_count", 0)),
-                    json.dumps(record.get("position_covariance") or []),
-                    json.dumps(record.get("sources") or [], ensure_ascii=False),
+                    json.dumps(
+                        json_compatible(
+                            record.get("position_covariance")
+                            if record.get("position_covariance") is not None
+                            else []
+                        ),
+                        allow_nan=False,
+                    ),
+                    json.dumps(
+                        json_compatible(
+                            record.get("sources")
+                            if record.get("sources") is not None
+                            else []
+                        ),
+                        ensure_ascii=False,
+                        allow_nan=False,
+                    ),
                 )
             )
         if not rows:

@@ -38,6 +38,7 @@ class SemanticFusionNode(Node):
         self.declare_parameter("depth_window_fraction", 0.35)
         self.declare_parameter("maximum_sync_delta_sec", 0.15)
         self.declare_parameter("sensor_timeout_sec", 2.0)
+        self.declare_parameter("tf_latest_fallback_max_age_sec", 0.5)
 
         self._world_frame = str(self.get_parameter("world_frame").value)
         self._lock = threading.RLock()
@@ -56,6 +57,7 @@ class SemanticFusionNode(Node):
             "observation_count": 0,
             "message": "等待检测数据",
         }
+        self._last_tf_fallback_delta_sec = None
         self._tf_buffer = Buffer(cache_time=Duration(seconds=10.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._publisher = self.create_publisher(
@@ -186,13 +188,23 @@ class SemanticFusionNode(Node):
                 )
             observations.append(observation)
         with self._lock:
+            fusion_message = "三维融合正常"
+            if self._last_tf_fallback_delta_sec is not None:
+                fusion_message = (
+                    "三维融合正常（使用最新 TF，"
+                    f"滞后 {self._last_tf_fallback_delta_sec:.3f}s）"
+                )
             self._last_health = {
                 "sync_delta_sec": sync_delta,
                 "depth_fresh": True,
                 "camera_info_valid": True,
                 "tf_available": transform is not None,
                 "observation_count": len(observations),
-                "message": "三维融合正常" if transform is not None else "TF 不可用，降级为二维观测",
+                "message": (
+                    fusion_message
+                    if transform is not None
+                    else "TF 不可用，降级为二维观测"
+                ),
             }
         self._publish_observations(msg, observations)
 
@@ -244,6 +256,7 @@ class SemanticFusionNode(Node):
     def _lookup_transform(self, source_frame: str, stamp):
         if not source_frame:
             return None
+        self._last_tf_fallback_delta_sec = None
         try:
             return self._tf_buffer.lookup_transform(
                 self._world_frame,
@@ -252,11 +265,43 @@ class SemanticFusionNode(Node):
                 timeout=Duration(seconds=0.1),
             )
         except TransformException as exc:
+            fallback = self._lookup_latest_transform(source_frame, stamp)
+            if fallback is not None:
+                return fallback
             self.get_logger().warning(
                 f"语义目标 TF 不可用: {self._world_frame} <- {source_frame}: {exc}",
                 throttle_duration_sec=5.0,
             )
             return None
+
+    def _lookup_latest_transform(self, source_frame: str, requested_stamp):
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self._world_frame,
+                source_frame,
+                Time(),
+                timeout=Duration(seconds=0.05),
+            )
+        except TransformException:
+            return None
+
+        requested_sec = _stamp_seconds(requested_stamp)
+        available_sec = _stamp_seconds(transform.header.stamp)
+        if requested_sec is None or available_sec is None:
+            return None
+        delta = requested_sec - available_sec
+        maximum = float(
+            self.get_parameter("tf_latest_fallback_max_age_sec").value
+        )
+        if delta < 0.0 or delta > maximum:
+            return None
+        self._last_tf_fallback_delta_sec = delta
+        self.get_logger().info(
+            f"语义目标 TF 精确时间暂不可用，使用最新变换 "
+            f"(滞后 {delta:.3f}s)",
+            throttle_duration_sec=5.0,
+        )
+        return transform
 
     def _publish_observations(self, source: DetectionArray, observations):
         message = SemanticObjectArray()
