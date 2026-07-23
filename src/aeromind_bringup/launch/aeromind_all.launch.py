@@ -57,6 +57,16 @@ def generate_launch_description():
         description="AirSim 宿主机 IP 地址（默认自动检测 WSL 网关）",
     )
     airsim_ip = LaunchConfiguration("airsim_ip")
+    airsim_vehicle_name_arg = DeclareLaunchArgument(
+        "airsim_vehicle_name",
+        default_value="",
+        description="可选 AirSim 车辆名称；留空使用默认车辆",
+    )
+    airsim_lidar_name_arg = DeclareLaunchArgument(
+        "airsim_lidar_name",
+        default_value="",
+        description="可选 AirSim LiDAR 名称；留空使用默认传感器",
+    )
     primary_rgbd_period_arg = DeclareLaunchArgument(
         "primary_rgbd_period_sec",
         default_value="0.1",
@@ -290,6 +300,8 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"airsim_ip": airsim_ip},
+            {"airsim_vehicle_name": LaunchConfiguration("airsim_vehicle_name")},
+            {"airsim_lidar_name": LaunchConfiguration("airsim_lidar_name")},
             {"primary_rgbd_period_sec": ParameterValue(LaunchConfiguration("primary_rgbd_period_sec"), value_type=float)},
             {"lidar_period_sec": ParameterValue(LaunchConfiguration("lidar_period_sec"), value_type=float)},
             {"publish_aux_cameras": ParameterValue(LaunchConfiguration("publish_aux_cameras"), value_type=bool)},
@@ -430,6 +442,8 @@ def generate_launch_description():
 
     return LaunchDescription([
         airsim_ip_arg,
+        airsim_vehicle_name_arg,
+        airsim_lidar_name_arg,
         primary_rgbd_period_arg,
         lidar_period_arg,
         publish_aux_cameras_arg,

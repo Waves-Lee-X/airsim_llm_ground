@@ -138,7 +138,15 @@ class CameraBridge:
     IMAGE_TYPE_SCENE = 0
     IMAGE_TYPE_DEPTH = 2  # DepthPerspective
 
-    def __init__(self, node, airsim_client):
+    def __init__(
+        self,
+        node,
+        airsim_client,
+        *,
+        lidar_client=None,
+        vehicle_name: str = "",
+        lidar_name: str = "",
+    ):
         """
         Args:
             node: rclpy Node
@@ -146,7 +154,11 @@ class CameraBridge:
         """
         self._node = node
         self._client = airsim_client
+        self._lidar_client = lidar_client or airsim_client
         self._logger = node.get_logger()
+        self._vehicle_name = str(vehicle_name).strip()
+        self._lidar_name = str(lidar_name).strip()
+        self._empty_lidar_reads = 0
 
         # 相机配置: (AirSim 相机名, ROS topic 后缀, FOV, width, height, ImageType int)
         # 使用整数常量避免类定义时依赖 airsim 包
@@ -264,13 +276,30 @@ class CameraBridge:
             return
         now = self._node.get_clock().now().to_msg()
         try:
-            lidar_data = self._client.getLidarData()
+            lidar_data = self._lidar_client.getLidarData(
+                lidar_name=self._lidar_name,
+                vehicle_name=self._vehicle_name,
+            )
             if lidar_data and len(lidar_data.point_cloud) > 0:
                 cloud_msg = airsim_lidar_to_pointcloud(lidar_data, frame_id="lidar")
                 cloud_msg.header.stamp = now
                 self._lidar_pub.publish(cloud_msg)
+                self._empty_lidar_reads = 0
+                return
+            self._empty_lidar_reads += 1
+            if self._empty_lidar_reads == 1 or self._empty_lidar_reads % 25 == 0:
+                self._logger.warn(
+                    "AirSim LiDAR 返回空数据: "
+                    f"vehicle={self._vehicle_name or '<default>'}, "
+                    f"sensor={self._lidar_name or '<default>'}；"
+                    "请检查 Windows settings.json 中的 Vehicles/Sensors 配置"
+                )
         except Exception as exc:
-            self._logger.warn(f"LiDAR 获取失败: {exc}")
+            self._logger.warn(
+                "LiDAR 获取失败: "
+                f"vehicle={self._vehicle_name or '<default>'}, "
+                f"sensor={self._lidar_name or '<default>'}: {exc}"
+            )
 
     def publish_all(self):
         """兼容原有调用；新链路应使用独立定时器。"""

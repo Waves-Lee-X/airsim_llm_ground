@@ -1,0 +1,62 @@
+name: mission.demo_main
+label: 固定演示主链
+version: 1.0.0
+risk_level: high
+description: 确定性检查后完成起飞、前飞、悬停、拍照、VLM 分析、报告和降落。
+example_task: 检查状态和环境，安全则起飞到10米，前飞10米，拍照分析并生成报告后降落
+workflow_name: "校赛演示主链：起飞 ${altitude} 米、前飞 ${distance} 米并降落"
+parameters:
+  altitude: {type: number, minimum: 1, maximum: 30, default: 10}
+  distance: {type: number, minimum: 0.5, maximum: 100, default: 10}
+  minimum_obstacle_distance: {type: number, minimum: 0.5, maximum: 20, default: 2}
+  require_gps: {type: boolean, default: true}
+workflow:
+  - id: safety-check
+    label: 检查飞控与起飞区域安全状态
+    action: safety_check
+    args:
+      require_gps: "${require_gps}"
+      check_takeoff_zone: true
+      minimum_obstacle_distance: "${minimum_obstacle_distance}"
+  - id: takeoff
+    label: "安全检查通过后起飞到 ${altitude} 米"
+    action: takeoff
+    args: {altitude: "${altitude}"}
+    depends_on: [safety-check]
+    condition: if_not_airborne
+  - id: move-forward
+    label: "向前飞行 ${distance} 米"
+    action: move
+    args: {direction: forward, distance: "${distance}"}
+    depends_on: [takeoff]
+    retries: 0
+  - id: hover
+    label: 到达目标点后悬停
+    action: hover
+    depends_on: [move-forward]
+    on_failure: continue
+  - id: capture
+    label: 悬停稳定后保存当前画面
+    action: capture_image
+    depends_on: [hover]
+    condition: {type: step_succeeded, step_id: hover}
+    on_failure: continue
+  - id: analyze
+    label: 使用 VLM 分析新位置画面
+    action: analyze_image
+    args:
+      prompt: 仅根据当前图像描述可见目标、相对方位、潜在障碍、可通行区域和不确定信息
+    depends_on: [capture]
+    condition: {type: step_succeeded, step_id: capture}
+    on_failure: continue
+  - id: report
+    label: 生成固定演示主链任务报告
+    action: mission_report
+    args: {title: 校赛演示主链任务报告}
+    depends_on: [move-forward]
+    on_failure: continue
+  - id: land
+    label: 任务结束后降落
+    action: land
+    depends_on: [move-forward]
+    condition: if_airborne

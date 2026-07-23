@@ -413,6 +413,23 @@ class SessionManager:
                     confirmation_id=created["confirmation_id"],
                     action=action,
                 )
+            elif (
+                not created_by_model
+                and not result.get("is_error")
+                and _claims_control_confirmation(text)
+            ):
+                text = (
+                    "模型生成了控制计划，但没有实际调用 Gateway 控制工具，"
+                    "因此本轮没有创建待确认任务，也没有向无人机下发动作。\n\n"
+                    "请重新提交任务；只有界面出现真实确认卡片，或 Gateway 返回"
+                    "持久化的 confirmation_id 后，才能发送“确认执行”。"
+                )
+                await self._events.emit(
+                    session_id,
+                    "control.request.rejected",
+                    request_id=request_id,
+                    reason="model_claimed_confirmation_without_tool_call",
+                )
             assistant_message = self._store.add_message(
                 session_id,
                 "assistant",
@@ -905,6 +922,32 @@ def _deterministic_control_fallback(
         for phrase in ("为什么", "如何", "怎么", "能不能", "可以吗", "是否", "解释", "介绍", "原理")
     ):
         return None
+    demo_markers = (
+        "起飞" in compact,
+        any(marker in compact for marker in ("前飞", "向前飞", "向前移动")),
+        "拍照" in compact,
+        "分析" in compact and any(marker in compact for marker in ("画面", "图像")),
+        "报告" in compact,
+        "降落" in compact,
+        "安全" in compact or "检查" in compact,
+    )
+    if all(demo_markers):
+        altitude_match = re.search(
+            r"起飞(?:到|至|高度为)?(\d+(?:\.\d+)?)(?:米|m)", compact
+        )
+        distance_match = re.search(
+            r"(?:前飞|向前飞行?|向前移动)(\d+(?:\.\d+)?)(?:米|m)", compact
+        )
+        workflow = build_skill(
+            "mission.demo_main",
+            {
+                "altitude": float(altitude_match.group(1)) if altitude_match else 10.0,
+                "distance": float(distance_match.group(1)) if distance_match else 10.0,
+                "minimum_obstacle_distance": 2.0,
+                "require_gps": True,
+            },
+        )
+        return "workflow", workflow
     if any(marker in compact for marker in ("v字", "v形", "v型")) and any(
         word in compact for word in ("飞", "执行", "轨迹任务")
     ):
@@ -968,6 +1011,15 @@ def _deterministic_control_fallback(
     if compact.rstrip("。！!") in {"加锁", "立即加锁", "无人机加锁"}:
         return "disarm", {}
     return None
+
+
+def _claims_control_confirmation(text: str) -> bool:
+    value = str(text or "")
+    return bool(
+        re.search(r"confirm-[A-Za-z0-9-]{8,}", value)
+        or re.search(r"(?:已创建|创建了|已提交).{0,16}(?:确认请求|组合任务)", value)
+        or ("等待确认" in value and any(word in value for word in ("任务", "请求", "执行")))
+    )
 
 
 def _is_current_image_analysis_request(content: str) -> bool:

@@ -419,6 +419,65 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
     def test_v_shape_question_does_not_create_control_fallback(self):
         self.assertIsNone(_deterministic_control_fallback("如何飞 V 字形轨迹？"))
 
+    def test_fixed_demo_chain_uses_real_registered_workflow(self):
+        action, workflow = _deterministic_control_fallback(
+            "检查当前飞控状态和前方环境，如果安全则起飞到10米，"
+            "向前飞行10米，到达后悬停并拍照，分析当前画面，"
+            "生成任务报告，最后降落。"
+        )
+        self.assertEqual(action, "workflow")
+        self.assertIn("校赛演示主链", workflow["name"])
+        self.assertEqual(
+            [step["action"] for step in workflow["steps"]],
+            [
+                "safety_check", "takeoff", "move", "hover",
+                "capture_image", "analyze_image", "mission_report", "land",
+            ],
+        )
+        self.assertEqual(workflow["steps"][1]["args"]["altitude"], 10.0)
+        self.assertEqual(workflow["steps"][2]["args"]["distance"], 10.0)
+        self.assertEqual(workflow["steps"][2]["retries"], 0)
+
+    async def test_fixed_demo_chain_creates_persisted_confirmation(self):
+        session = self.sessions.ensure_session(
+            "demo-chain", "web-local", "web"
+        )
+        await self.sessions._run_chat(
+            session["id"],
+            "检查状态和环境，安全则起飞到8米，前飞12米，"
+            "悬停拍照，分析画面，生成报告并降落",
+            "request-demo",
+        )
+
+        pending = self.store.pending_confirmations_for_user(session["user_id"])
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["action"], "workflow")
+        self.assertEqual(pending[0]["args"]["steps"][1]["args"]["altitude"], 8.0)
+        self.assertEqual(pending[0]["args"]["steps"][2]["args"]["distance"], 12.0)
+        latest = self.store.messages(session["id"], limit=1)[0]
+        self.assertIn(pending[0]["id"], latest["content"])
+
+    async def test_fabricated_confirmation_without_tool_is_rejected(self):
+        session = self.sessions.ensure_session(
+            "fabricated-confirmation", "web-local", "web"
+        )
+        self.sessions._runtimes[session["id"]] = FakeNoToolRuntime()
+
+        await self.sessions._run_chat(
+            session["id"], "沿河道执行自定义巡检任务", "request-fake"
+        )
+
+        self.assertEqual(
+            self.store.pending_confirmations_for_user(session["user_id"]), []
+        )
+        latest = self.store.messages(session["id"], limit=1)[0]
+        self.assertNotIn("confirm-fabricated", latest["content"])
+        self.assertIn("没有实际调用 Gateway 控制工具", latest["content"])
+        event_types = [
+            item["type"] for item in self.sessions.events_after(session["id"])
+        ]
+        self.assertIn("control.request.rejected", event_types)
+
     def test_direct_takeoff_has_deterministic_confirmation_fallback(self):
         self.assertEqual(
             _deterministic_control_fallback("起飞到10米"),

@@ -70,6 +70,8 @@ class AirSimBridgeNode(Node):
         # 声明参数
         self.declare_parameter("mode", "airsim")
         self.declare_parameter("airsim_ip", "192.168.1.100")
+        self.declare_parameter("airsim_vehicle_name", "")
+        self.declare_parameter("airsim_lidar_name", "")
         self.declare_parameter("publish_drone_state", True)
         self.declare_parameter("primary_rgbd_period_sec", 0.1)
         self.declare_parameter("aux_camera_period_sec", 1.0)
@@ -77,6 +79,12 @@ class AirSimBridgeNode(Node):
         self.declare_parameter("publish_aux_cameras", True)
         self._mode = self.get_parameter("mode").value
         self._airsim_ip = self.get_parameter("airsim_ip").value
+        self._airsim_vehicle_name = str(
+            self.get_parameter("airsim_vehicle_name").value
+        ).strip()
+        self._airsim_lidar_name = str(
+            self.get_parameter("airsim_lidar_name").value
+        ).strip()
         self._publish_drone_state = bool(
             self.get_parameter("publish_drone_state").value
         )
@@ -90,6 +98,7 @@ class AirSimBridgeNode(Node):
         # AirSim 图像 RPC 可能阻塞一秒以上，必须与飞控遥测分离执行。
         self._flight_callback_group = MutuallyExclusiveCallbackGroup()
         self._camera_callback_group = MutuallyExclusiveCallbackGroup()
+        self._lidar_callback_group = MutuallyExclusiveCallbackGroup()
 
         # 创建发布者（两种模式共用）
         self._odom_pub = self.create_publisher(Odometry, "/sensor/odometry", 10)
@@ -108,6 +117,7 @@ class AirSimBridgeNode(Node):
 
         # 根据模式初始化
         self._client = None  # AirSim 客户端（sensor 数据用）
+        self._lidar_client = None
         if self._mode == "airsim":
             self._init_airsim()
         else:
@@ -142,7 +152,14 @@ class AirSimBridgeNode(Node):
             callback_group=self._flight_callback_group,
         )
 
-        self._camera_bridge = CameraBridge(self, self._client)
+        self._init_lidar_client()
+        self._camera_bridge = CameraBridge(
+            self,
+            self._client,
+            lidar_client=self._lidar_client,
+            vehicle_name=self._airsim_vehicle_name,
+            lidar_name=self._airsim_lidar_name,
+        )
         self._init_camera_timers()
 
         # 缓存 IMU 所需的最新状态
@@ -161,8 +178,29 @@ class AirSimBridgeNode(Node):
             self._client = None
             return
 
-        self._camera_bridge = CameraBridge(self, self._client)
+        self._init_lidar_client()
+        self._camera_bridge = CameraBridge(
+            self,
+            self._client,
+            lidar_client=self._lidar_client,
+            vehicle_name=self._airsim_vehicle_name,
+            lidar_name=self._airsim_lidar_name,
+        )
         self._init_camera_timers()
+
+    def _init_lidar_client(self):
+        """Use an independent RPC connection so slow image calls cannot starve LiDAR."""
+        if not HAS_AIRSIM or self._client is None:
+            self._lidar_client = self._client
+            return
+        try:
+            self._lidar_client = airsim.MultirotorClient(ip=self._airsim_ip)
+            self._lidar_client.ping()
+        except Exception as exc:
+            self.get_logger().warn(
+                f"AirSim LiDAR 独立连接失败，回退共用连接: {exc}"
+            )
+            self._lidar_client = self._client
 
     def _airsim_timer_callback(self):
         """AirSim 定时器：读取状态并发布 ROS 消息"""
@@ -260,7 +298,7 @@ class AirSimBridgeNode(Node):
         self._lidar_timer = self.create_timer(
             lidar_period,
             self._lidar_timer_callback,
-            callback_group=self._camera_callback_group,
+            callback_group=self._lidar_callback_group,
         )
         self._aux_camera_timer = None
         if bool(self.get_parameter("publish_aux_cameras").value):

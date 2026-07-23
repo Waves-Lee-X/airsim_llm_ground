@@ -21,6 +21,8 @@ def generate_launch_description():
         DeclareLaunchArgument("yolo_confidence", default_value="0.35"),
         DeclareLaunchArgument("vlm_enabled", default_value="true"),
         DeclareLaunchArgument("auto_analyze_enabled", default_value="false"),
+        DeclareLaunchArgument("airsim_vehicle_name", default_value=""),
+        DeclareLaunchArgument("airsim_lidar_name", default_value=""),
         DeclareLaunchArgument("host", default_value="0.0.0.0"),
         DeclareLaunchArgument("web_port", default_value="8080"),
         DeclareLaunchArgument("agent_port", default_value="8090"),
@@ -44,6 +46,8 @@ def generate_launch_description():
             "vlm_enabled": LaunchConfiguration("vlm_enabled"),
             "auto_analyze_enabled": LaunchConfiguration("auto_analyze_enabled"),
             "auto_analyze_use_vlm": "false",
+            "airsim_vehicle_name": LaunchConfiguration("airsim_vehicle_name"),
+            "airsim_lidar_name": LaunchConfiguration("airsim_lidar_name"),
         }.items(),
     )
 

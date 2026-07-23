@@ -102,7 +102,21 @@ def evaluate_status(
         point_count = pointcloud.get("sampled_points", pointcloud.get("points", 0))
         if isinstance(point_count, list):
             point_count = len(point_count)
-        checks.append(_boolean_check("点云", bool(pointcloud) and bool(point_count), f"采样点数 {point_count}", "点云数据缺失", "/sensor/lidar/points"))
+        pointcloud_ready = bool(pointcloud) and bool(point_count)
+        health = web_status.get("perception_health") or {}
+        lidar_health = health.get("pointcloud") or {}
+        lidar_detail = (
+            f"状态 {lidar_health.get('status', 'MISSING')}，"
+            f"频率 {float(lidar_health.get('rate_hz') or 0.0):.2f} Hz，"
+            f"年龄 {_format_age(lidar_health.get('age_s'))}"
+        )
+        checks.append(_boolean_check(
+            "点云",
+            pointcloud_ready,
+            f"采样点数 {point_count}；{lidar_detail}",
+            f"未收到有效 PointCloud2；{lidar_detail}",
+            "/sensor/lidar/points",
+        ))
         services = web_status.get("services") or {}
         unavailable = [name for name in ("arm", "takeoff", "land", "agent") if not services.get(name)]
         checks.append(_check(
@@ -176,6 +190,13 @@ def _environment_check(
 
 def _boolean_check(name: str, value: Any, ok: str, bad: str, source: str) -> dict[str, str]:
     return _check(name, "PASS" if bool(value) else "FAIL", ok if value else bad, source)
+
+
+def _format_age(value: Any) -> str:
+    try:
+        return f"{float(value):.2f}s"
+    except (TypeError, ValueError):
+        return "--"
 
 
 def build_report(checks: list[dict[str, str]]) -> dict[str, Any]:

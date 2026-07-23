@@ -1,0 +1,14 @@
+---
+name: mission-demo-main
+description: Run the fixed, repeatable contest demonstration mission with one real confirmation.
+---
+
+# 固定演示主链
+
+适用于重复稳定性测试和正式演示。
+
+参数：`altitude`、`distance`、`minimum_obstacle_distance`、`require_gps`。
+
+流程：确定性检查飞控和起飞区域；通过后起飞到目标高度；向机头前方移动；悬停并保存图像；使用 VLM 分析到达位置的新画面；生成状态与感知报告；最后降落。
+
+整个流程只创建一次真实确认。移动步骤不自动重试。拍照、VLM 或报告失败会被记录，但降落步骤仍根据已完成的飞行航段执行，避免非关键感知失败使任务停留在空中。
