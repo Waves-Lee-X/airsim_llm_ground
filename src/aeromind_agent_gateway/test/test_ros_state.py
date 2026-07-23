@@ -82,6 +82,75 @@ class RosTaskMappingTest(unittest.TestCase):
         self.assertTrue(result["terminal"])
         self.assertFalse(result["success"])
 
+    def test_land_waits_for_px4_landed_and_disarmed(self):
+        descending = self._snapshot(
+            armed=True,
+            altitude=-1.4,
+            stamp=101.0,
+            mode="AUTO_LAND",
+            landed=False,
+            landed_valid=True,
+            velocity_z=-0.25,
+        )
+        result = _evaluate_action_completion(
+            "land", {}, descending, started_at=100.0
+        )
+        self.assertFalse(result["terminal"])
+        self.assertIn("接地检测", result["message"])
+
+        touching_down = self._snapshot(
+            armed=True,
+            altitude=-1.5,
+            stamp=102.0,
+            mode="AUTO_LAND",
+            landed=True,
+            landed_valid=True,
+        )
+        result = _evaluate_action_completion(
+            "land", {}, touching_down, started_at=100.0
+        )
+        self.assertFalse(result["terminal"])
+        self.assertIn("自动加锁", result["message"])
+
+        complete = self._snapshot(
+            armed=False,
+            altitude=-1.5,
+            stamp=103.0,
+            mode="AUTO_LAND",
+            landed=True,
+            landed_valid=True,
+        )
+        result = _evaluate_action_completion(
+            "land", {}, complete, started_at=100.0
+        )
+        self.assertTrue(result["terminal"])
+        self.assertTrue(result["success"])
+        self.assertIn("落地并加锁", result["message"])
+
+    def test_land_fallback_requires_disarmed_and_stable_without_detector(self):
+        moving = self._snapshot(
+            armed=False,
+            stamp=101.0,
+            landed_valid=False,
+            velocity_z=-0.4,
+        )
+        result = _evaluate_action_completion(
+            "land", {}, moving, started_at=100.0
+        )
+        self.assertFalse(result["terminal"])
+
+        stable = self._snapshot(
+            armed=False,
+            stamp=102.0,
+            landed_valid=False,
+            velocity_z=0.0,
+        )
+        result = _evaluate_action_completion(
+            "land", {}, stable, started_at=100.0
+        )
+        self.assertTrue(result["success"])
+        self.assertIn("无接地遥测", result["message"])
+
     def test_move_recovery_message_is_not_terminal_failure(self):
         recovering = self._snapshot(
             stamp=101.0,
@@ -254,13 +323,23 @@ class RosTaskMappingTest(unittest.TestCase):
         autonomy_state="ACTIVE",
         strategy="direct_goal",
         message="",
+        mode="OFFBOARD",
+        landed=False,
+        landed_valid=False,
+        velocity_z=0.0,
     ):
         return {
-            "state": {"stamp": stamp, "armed": armed, "mode": "OFFBOARD"},
+            "state": {
+                "stamp": stamp,
+                "armed": armed,
+                "mode": mode,
+                "landed": landed,
+                "landed_valid": landed_valid,
+            },
             "odometry": {
                 "stamp": stamp,
                 "position_m": {"x": 0.0, "y": 0.0, "z": altitude},
-                "velocity_mps": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "velocity_mps": {"x": 0.0, "y": 0.0, "z": velocity_z},
             },
             "autonomy": {
                 "stamp": stamp,

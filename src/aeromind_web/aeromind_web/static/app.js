@@ -972,7 +972,9 @@ function renderStatus(data, source = "HTTP") {
     updateBadge(els.linkBadge, source === "WS" ? "实时连接" : "HTTP 轮询", "badge");
   }
   if (state && stateFresh) {
-    updateBadge(els.armedBadge, state.armed ? "已解锁" : "未解锁", state.armed ? "badge" : "badge bad");
+    const landed = state.landed_valid === true && state.landed === true;
+    const armedText = state.armed ? "已解锁" : (landed ? "已落地/加锁" : "未解锁");
+    updateBadge(els.armedBadge, armedText, state.armed ? "badge" : (landed ? "badge neutral" : "badge bad"));
     updateBadge(els.modeBadge, state.mode || "未知模式", state.mode === "OFFBOARD" ? "badge" : "badge neutral");
     updateBadge(els.ekfBadge, state.ekf_healthy ? "EKF 正常" : "EKF 异常", state.ekf_healthy ? "badge" : "badge bad");
 
@@ -985,8 +987,8 @@ function renderStatus(data, source = "HTTP") {
     els.gpsValue.textContent = gpsLabels[Number(state.gps_fix)] || "--";
     els.ekfValue.textContent = state.ekf_healthy ? "正常" : "异常";
     els.hudMode.textContent = `MODE ${state.mode || "--"}`;
-    els.chatArmedValue.textContent = state.armed ? "已解锁" : "未解锁";
-    els.chatArmedValue.className = state.armed ? "status-ok" : "status-warn";
+    els.chatArmedValue.textContent = armedText;
+    els.chatArmedValue.className = state.armed ? "status-ok" : (landed ? "" : "status-warn");
     els.chatModeValue.textContent = state.mode || "--";
     els.chatBatteryValue.textContent = Number(state.battery) > 0
       ? `${fmt(state.battery, 1)} V`

@@ -131,6 +131,8 @@ class RosStateBridge(Node):
                 "gps_fix": int(msg.gps_fix),
                 "gps_usable": int(msg.gps_fix) >= 2,
                 "ekf_healthy": bool(msg.ekf_healthy),
+                "landed": bool(msg.landed),
+                "landed_valid": bool(msg.landed_valid),
             }
 
     def _odom_cb(self, msg: Odometry):
@@ -1347,6 +1349,8 @@ def _evaluate_action_completion(
     odom_fresh = _record_is_fresh(odom, started_at)
     autonomy_fresh = _record_is_fresh(autonomy, started_at)
     armed = bool(state.get("armed"))
+    landed = bool(state.get("landed"))
+    landed_valid = bool(state.get("landed_valid"))
     position = odom.get("position_m") or {}
     velocity = odom.get("velocity_mps") or {}
     altitude = float(position.get("z", 0.0))
@@ -1367,10 +1371,28 @@ def _evaluate_action_completion(
                 f"里程计确认起飞高度已达到 {altitude:.2f} 米",
                 snapshot,
             )
+    land_wait_message = ""
     if action == "land" and state_fresh and odom_fresh:
-        landed = altitude <= 0.35 and abs(float(velocity.get("z", 0.0))) <= 0.3
-        if not armed or landed:
-            return _verification_result(True, "飞控遥测确认无人机已落地", snapshot)
+        stable = speed <= 0.25
+        if landed_valid:
+            if landed and not armed and stable:
+                return _verification_result(
+                    True,
+                    "PX4 接地检测和飞控遥测确认无人机已落地并加锁",
+                    snapshot,
+                )
+            if landed and armed:
+                land_wait_message = "PX4 已检测接地，等待自动加锁"
+            elif not landed:
+                land_wait_message = "等待 PX4 接地检测确认"
+        elif not armed and stable:
+            return _verification_result(
+                True,
+                "飞控已加锁且里程计速度稳定，确认降落完成（无接地遥测）",
+                snapshot,
+            )
+        else:
+            land_wait_message = "等待飞控加锁和速度稳定"
     if action == "move" and autonomy_fresh:
         autonomy_state = str(autonomy.get("state", ""))
         strategy = str(autonomy.get("active_strategy", ""))
@@ -1415,7 +1437,7 @@ def _evaluate_action_completion(
         "terminal": False,
         "success": False,
         "phase": "verifying",
-        "message": "等待物理状态验证",
+        "message": land_wait_message or "等待物理状态验证",
         "evidence": _verification_evidence(snapshot),
     }
 
@@ -1524,6 +1546,8 @@ def _verification_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
         "armed": state.get("armed"),
         "mode": state.get("mode"),
+        "landed": state.get("landed"),
+        "landed_valid": state.get("landed_valid"),
         "position_m": odom.get("position_m"),
         "velocity_mps": odom.get("velocity_mps"),
         "autonomy_state": autonomy.get("state"),
@@ -1565,7 +1589,8 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             state,
             (
                 f"armed={state.get('armed')} mode={state.get('mode', 'unknown')} "
-                f"ekf={state.get('ekf_healthy')}"
+                f"ekf={state.get('ekf_healthy')} "
+                f"landed={state.get('landed')}"
             ),
         ),
         _evidence_record(

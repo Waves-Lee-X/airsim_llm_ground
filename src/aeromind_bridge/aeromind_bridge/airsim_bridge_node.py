@@ -281,6 +281,8 @@ class AirSimBridgeNode(Node):
         drone_state.battery = 11.1
         drone_state.gps_fix = 3
         drone_state.ekf_healthy = True
+        drone_state.landed = False
+        drone_state.landed_valid = False
         self._state_pub.publish(drone_state)
 
     def _init_camera_timers(self):
@@ -646,6 +648,8 @@ class AirSimBridgeNode(Node):
         drone_state.battery = 0.0
         drone_state.gps_fix = 0
         drone_state.ekf_healthy = False
+        drone_state.landed = False
+        drone_state.landed_valid = False
         self._state_pub.publish(drone_state)
 
 

@@ -6,12 +6,15 @@ import io
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
 from collections import deque
 
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
@@ -144,6 +147,10 @@ class PerceptionNode(Node):
         self._auto_analyze_interval_sec = max(1.0, float(self.get_parameter("auto_analyze_interval_sec").value))
         self._auto_analyze_use_vlm = bool(self.get_parameter("auto_analyze_use_vlm").value)
         self._capture_dir = os.path.expanduser(str(self.get_parameter("capture_dir").value))
+        self._data_lock = threading.RLock()
+        self._sensor_callback_group = MutuallyExclusiveCallbackGroup()
+        self._capture_callback_group = MutuallyExclusiveCallbackGroup()
+        self._vlm_callback_group = MutuallyExclusiveCallbackGroup()
         self._latest_image = None
         self._latest_detections = []
         self._latest_detections_at = 0.0
@@ -178,25 +185,71 @@ class PerceptionNode(Node):
 
         # 订阅相机图像，供 CaptureImageSkill 保存最近一帧
         self._image_sub = self.create_subscription(
-            Image, self._image_topic, self._image_callback, 10
+            Image,
+            self._image_topic,
+            self._image_callback,
+            10,
+            callback_group=self._sensor_callback_group,
         )
-        self.create_subscription(Image, self._depth_topic, self._depth_callback, 10)
-        self.create_subscription(CameraInfo, self._camera_info_topic, self._camera_info_callback, 10)
-        self.create_subscription(PointCloud2, self._pointcloud_topic, self._pointcloud_callback, 10)
+        self.create_subscription(
+            Image,
+            self._depth_topic,
+            self._depth_callback,
+            10,
+            callback_group=self._sensor_callback_group,
+        )
+        self.create_subscription(
+            CameraInfo,
+            self._camera_info_topic,
+            self._camera_info_callback,
+            10,
+            callback_group=self._sensor_callback_group,
+        )
+        self.create_subscription(
+            PointCloud2,
+            self._pointcloud_topic,
+            self._pointcloud_callback,
+            10,
+            callback_group=self._sensor_callback_group,
+        )
         self._detections_sub = self.create_subscription(
-            DetectionArray, self._detections_topic, self._detections_callback, 10
+            DetectionArray,
+            self._detections_topic,
+            self._detections_callback,
+            10,
+            callback_group=self._sensor_callback_group,
         )
-        self.create_subscription(String, self._detector_status_topic, self._detector_status_callback, 10)
+        self.create_subscription(
+            String,
+            self._detector_status_topic,
+            self._detector_status_callback,
+            10,
+            callback_group=self._sensor_callback_group,
+        )
 
         self._capture_srv = self.create_service(
-            CaptureImage, "/perception/capture_image", self._capture_image_callback
+            CaptureImage,
+            "/perception/capture_image",
+            self._capture_image_callback,
+            callback_group=self._capture_callback_group,
         )
         self._analyze_srv = self.create_service(
-            AnalyzeImage, "/perception/analyze_image", self._analyze_image_callback
+            AnalyzeImage,
+            "/perception/analyze_image",
+            self._analyze_image_callback,
+            callback_group=self._vlm_callback_group,
         )
 
-        self._health_timer = self.create_timer(0.5, self._publish_health)
-        self._auto_analyze_timer = self.create_timer(1.0, self._auto_analyze_callback)
+        self._health_timer = self.create_timer(
+            0.5,
+            self._publish_health,
+            callback_group=self._sensor_callback_group,
+        )
+        self._auto_analyze_timer = self.create_timer(
+            1.0,
+            self._auto_analyze_callback,
+            callback_group=self._vlm_callback_group,
+        )
 
         self.get_logger().info(
             f"感知节点已启动：image_topic={self._image_topic}, capture_dir={self._capture_dir}, "
@@ -208,17 +261,21 @@ class PerceptionNode(Node):
 
     def _image_callback(self, msg: Image):
         """缓存最近一帧图像，供拍照服务保存。"""
-        self._latest_image = msg
-        self._record_signal("rgb")
+        with self._data_lock:
+            self._latest_image = msg
+            self._record_signal("rgb")
 
     def _depth_callback(self, _msg: Image):
-        self._record_signal("depth")
+        with self._data_lock:
+            self._record_signal("depth")
 
     def _camera_info_callback(self, _msg: CameraInfo):
-        self._record_signal("camera_info")
+        with self._data_lock:
+            self._record_signal("camera_info")
 
     def _pointcloud_callback(self, _msg: PointCloud2):
-        self._record_signal("pointcloud")
+        with self._data_lock:
+            self._record_signal("pointcloud")
 
     def _detections_callback(self, msg: DetectionArray):
         detections = []
@@ -233,9 +290,10 @@ class PerceptionNode(Node):
                 "width": float(item.width),
                 "height": float(item.height),
             })
-        self._latest_detections = detections
-        self._latest_detections_at = time.time()
-        self._record_signal("detections", self._latest_detections_at)
+        with self._data_lock:
+            self._latest_detections = detections
+            self._latest_detections_at = time.time()
+            self._record_signal("detections", self._latest_detections_at)
 
     def _detector_status_callback(self, msg: String):
         try:
@@ -243,12 +301,17 @@ class PerceptionNode(Node):
         except json.JSONDecodeError:
             payload = {"status": "ERROR", "message": "检测器状态消息格式错误"}
         status = str(payload.get("status", "MISSING")).upper()
-        self._detector_message = str(payload.get("message", ""))
-        self._detector_error = self._detector_message if status == "ERROR" else ""
+        with self._data_lock:
+            self._detector_message = str(payload.get("message", ""))
+            self._detector_error = (
+                self._detector_message if status == "ERROR" else ""
+            )
 
     def _capture_image_callback(self, request, response):
         self.get_logger().info("收到拍照保存请求")
-        if self._latest_image is None or not self._latest_image.data:
+        with self._data_lock:
+            msg = self._latest_image
+        if msg is None or not msg.data:
             response.success = False
             response.message = f"暂无可保存图像，请确认 {self._image_topic} 有数据"
             self.get_logger().warn(response.message)
@@ -256,7 +319,6 @@ class PerceptionNode(Node):
 
         try:
             os.makedirs(self._capture_dir, exist_ok=True)
-            msg = self._latest_image
             stamp = self.get_clock().now().to_msg()
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             label = self._safe_label(request.label or "front_rgb")
@@ -278,7 +340,8 @@ class PerceptionNode(Node):
 
     def _analyze_image_callback(self, request, response):
         prompt = request.prompt.strip() or "请分析前视相机画面中的场景、目标、风险和下一步建议。"
-        msg = self._latest_image
+        with self._data_lock:
+            msg = self._latest_image
         if msg is None or not msg.data:
             response.success = False
             response.message = f"暂无可分析图像，请确认 {self._image_topic} 有数据"
@@ -299,12 +362,15 @@ class PerceptionNode(Node):
         return response
 
     def _analyze_latest_image(self, prompt: str, use_vlm_request: bool):
-        msg = self._latest_image
-        detections = (
-            list(self._latest_detections)
-            if time.time() - self._latest_detections_at <= 2.0
-            else []
-        )
+        with self._data_lock:
+            msg = self._latest_image
+            detections = (
+                list(self._latest_detections)
+                if time.time() - self._latest_detections_at <= 2.0
+                else []
+            )
+        if msg is None or not msg.data:
+            raise RuntimeError(f"暂无可分析图像，请确认 {self._image_topic} 有数据")
         fallback = self._rule_image_analysis(msg, prompt, detections)
         analysis_payload = dict(fallback)
         use_vlm = bool(use_vlm_request and self._vlm_enabled and self._vlm_api_url and self._vlm_model)
@@ -314,9 +380,10 @@ class PerceptionNode(Node):
 
         try:
             vlm = self._call_vlm(msg, prompt, fallback)
-            self._vlm_last_at = time.time()
-            self._vlm_error = ""
-            self._vlm_message = "最近一次 VLM 分析成功"
+            with self._data_lock:
+                self._vlm_last_at = time.time()
+                self._vlm_error = ""
+                self._vlm_message = "最近一次 VLM 分析成功"
             message = vlm.get("message") or vlm.get("summary") or fallback["message"]
             scene = vlm.get("scene") or fallback["scene"]
             risk_level = vlm.get("risk_level") or fallback["risk_level"]
@@ -338,9 +405,10 @@ class PerceptionNode(Node):
                 "raw_response": vlm,
             }
         except Exception as exc:
-            self._vlm_last_at = time.time()
-            self._vlm_error = str(exc)
-            self._vlm_message = f"VLM 调用失败: {exc}"
+            with self._data_lock:
+                self._vlm_last_at = time.time()
+                self._vlm_error = str(exc)
+                self._vlm_message = f"VLM 调用失败: {exc}"
             analysis_payload["message"] = f"{fallback['message']}（VLM 调用失败，已使用规则摘要：{exc}）"
             analysis_payload["source"] = "rule+detection+vlm_failed"
             analysis_payload["vlm_error"] = str(exc)
@@ -352,11 +420,12 @@ class PerceptionNode(Node):
         if not self._auto_analyze_enabled:
             return
         now = time.time()
-        if now - self._last_auto_analysis_time < self._auto_analyze_interval_sec:
-            return
-        if self._latest_image is None or not self._latest_image.data:
-            return
-        self._last_auto_analysis_time = now
+        with self._data_lock:
+            if now - self._last_auto_analysis_time < self._auto_analyze_interval_sec:
+                return
+            if self._latest_image is None or not self._latest_image.data:
+                return
+            self._last_auto_analysis_time = now
         self._analyze_latest_image(
             "自动低频分析当前无人机前视画面，输出场景、目标、风险和是否建议继续飞行。",
             self._auto_analyze_use_vlm,
@@ -365,7 +434,8 @@ class PerceptionNode(Node):
     def _publish_image_analysis(self, payload: dict):
         payload = dict(payload)
         payload["stamp"] = time.time()
-        self._latest_analysis = payload
+        with self._data_lock:
+            self._latest_analysis = payload
         msg = String()
         msg.data = json.dumps(payload, ensure_ascii=False)
         self._image_analysis_pub.publish(msg)
@@ -596,7 +666,19 @@ class PerceptionNode(Node):
 
     def _publish_health(self):
         now = time.time()
-        ages = {name: self._signal_age(name, now) for name in self._signal_times}
+        with self._data_lock:
+            ages = {
+                name: self._signal_age(name, now)
+                for name in self._signal_times
+            }
+            rates = {
+                name: self._signal_rate(name)
+                for name in self._signal_times
+            }
+            detector_error = self._detector_error
+            vlm_error = self._vlm_error
+            vlm_last_at = self._vlm_last_at
+            vlm_message = self._vlm_message
         statuses = {
             "rgb": classify_signal(ages["rgb"], self._sensor_timeout_sec),
             "depth": classify_signal(ages["depth"], self._sensor_timeout_sec),
@@ -604,12 +686,12 @@ class PerceptionNode(Node):
             "pointcloud": classify_signal(ages["pointcloud"], self._sensor_timeout_sec),
             "detections": classify_signal(
                 ages["detections"], self._sensor_timeout_sec,
-                enabled=self._yolo_enabled, error=self._detector_error,
+                enabled=self._yolo_enabled, error=detector_error,
             ),
         }
         if not self._vlm_enabled:
             vlm_status = "DISABLED"
-        elif self._vlm_error:
+        elif vlm_error:
             vlm_status = "ERROR"
         else:
             vlm_status = "OK"
@@ -629,23 +711,23 @@ class PerceptionNode(Node):
         msg.vlm_enabled = self._vlm_enabled
         msg.rgb_status = statuses["rgb"]
         msg.rgb_age_sec = self._age_value(ages["rgb"])
-        msg.rgb_rate_hz = float(self._signal_rate("rgb"))
+        msg.rgb_rate_hz = float(rates["rgb"])
         msg.depth_status = statuses["depth"]
         msg.depth_age_sec = self._age_value(ages["depth"])
-        msg.depth_rate_hz = float(self._signal_rate("depth"))
+        msg.depth_rate_hz = float(rates["depth"])
         msg.camera_info_status = statuses["camera_info"]
         msg.camera_info_age_sec = self._age_value(ages["camera_info"])
         msg.pointcloud_status = statuses["pointcloud"]
         msg.pointcloud_age_sec = self._age_value(ages["pointcloud"])
-        msg.pointcloud_rate_hz = float(self._signal_rate("pointcloud"))
+        msg.pointcloud_rate_hz = float(rates["pointcloud"])
         msg.detections_status = statuses["detections"]
         msg.detections_age_sec = self._age_value(ages["detections"])
-        msg.detections_rate_hz = float(self._signal_rate("detections"))
+        msg.detections_rate_hz = float(rates["detections"])
         msg.vlm_status = vlm_status
         msg.vlm_age_sec = self._age_value(
-            max(0.0, now - self._vlm_last_at) if self._vlm_last_at else None
+            max(0.0, now - vlm_last_at) if vlm_last_at else None
         )
-        msg.vlm_message = self._vlm_message
+        msg.vlm_message = vlm_message
         msg.message = (
             f"RGB={statuses['rgb']} Depth={statuses['depth']} "
             f"CameraInfo={statuses['camera_info']} LiDAR={statuses['pointcloud']} "
@@ -657,11 +739,14 @@ class PerceptionNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = PerceptionNode()
+    executor = MultiThreadedExecutor(num_threads=3)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

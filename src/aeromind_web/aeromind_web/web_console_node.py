@@ -337,6 +337,8 @@ class WebConsoleNode(Node):
                 "battery": float(msg.battery),
                 "gps_fix": int(msg.gps_fix),
                 "ekf_healthy": bool(msg.ekf_healthy),
+                "landed": bool(msg.landed),
+                "landed_valid": bool(msg.landed_valid),
             }
             self._state_received_at = received_at
 

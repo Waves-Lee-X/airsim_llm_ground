@@ -1,6 +1,8 @@
 import math
 
-from aeromind_perception.perception_node import classify_signal
+import rclpy
+
+from aeromind_perception.perception_node import PerceptionNode, classify_signal
 
 
 def test_signal_status_distinguishes_disabled_missing_stale_and_ok():
@@ -16,3 +18,18 @@ def test_signal_error_has_priority_over_age():
 
 def test_missing_age_is_representable_as_nan_in_ros_float_field():
     assert math.isnan(float("nan"))
+
+
+def test_vlm_service_uses_callback_group_separate_from_sensor_subscriptions():
+    started_context = not rclpy.ok()
+    if started_context:
+        rclpy.init()
+    node = PerceptionNode()
+    try:
+        assert node._analyze_srv.callback_group is node._vlm_callback_group
+        assert node._image_sub.callback_group is node._sensor_callback_group
+        assert node._vlm_callback_group is not node._sensor_callback_group
+    finally:
+        node.destroy_node()
+        if started_context:
+            rclpy.shutdown()

@@ -302,6 +302,8 @@ class ControlNode(Node):
         self._battery_voltage = 0.0
         self._gps_fix = 0
         self._ekf_healthy = None
+        self._landed = False
+        self._landed_valid = False
         self._latest_odom = None
         self._latest_odom_received_at = 0.0
         self._active_trajectory_until = 0.0
@@ -371,6 +373,7 @@ class ControlNode(Node):
             BatteryStatus,
             EstimatorStatusFlags,
             SensorGps,
+            VehicleLandDetected,
             VehicleStatus,
         )
 
@@ -410,8 +413,14 @@ class ControlNode(Node):
             self._px4_estimator_callback,
             px4_qos,
         )
+        self._px4_land_detected_sub = self.create_subscription(
+            VehicleLandDetected,
+            "/fmu/out/vehicle_land_detected",
+            self._px4_land_detected_callback,
+            px4_qos,
+        )
         self.get_logger().info(
-            "PX4 控制模式已初始化，订阅电池、GPS 与 EKF 遥测"
+            "PX4 控制模式已初始化，订阅电池、GPS、EKF 与接地遥测"
         )
 
     def _px4_battery_callback(self, msg):
@@ -427,6 +436,16 @@ class ControlNode(Node):
 
     def _px4_estimator_callback(self, msg):
         self._ekf_healthy = estimator_status_flags_healthy(msg)
+
+    def _px4_land_detected_callback(self, msg):
+        previous = self._landed if self._landed_valid else None
+        self._landed = bool(msg.landed)
+        self._landed_valid = True
+        if previous is not None and previous != self._landed:
+            self.get_logger().info(
+                "PX4 接地状态更新: "
+                + ("已接地" if self._landed else "已离地")
+            )
 
     def _px4_status_callback(self, msg):
         """PX4 状态更新：同步 armed 和发布 drone_state"""
@@ -466,6 +485,8 @@ class ControlNode(Node):
             if self._ekf_healthy is not None
             else bool(getattr(msg, "pre_flight_checks_pass", False))
         )
+        state.landed = bool(self._landed)
+        state.landed_valid = bool(self._landed_valid)
         self._state_pub.publish(state)
 
     def _odom_callback(self, msg: Odometry):
