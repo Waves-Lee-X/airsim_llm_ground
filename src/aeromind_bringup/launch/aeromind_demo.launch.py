@@ -28,6 +28,13 @@ def generate_launch_description():
         DeclareLaunchArgument("agent_port", default_value="8090"),
         DeclareLaunchArgument("agent_provider", default_value=_env("AEROMIND_AGENT_PROVIDER", "deepseek")),
         DeclareLaunchArgument("agent_model", default_value=_env("AEROMIND_AGENT_MODEL", "deepseek-chat")),
+        DeclareLaunchArgument(
+            "agent_db",
+            default_value=_env(
+                "AEROMIND_AGENT_DB",
+                "~/.aeromind/agent_gateway.db",
+            ),
+        ),
     ]
 
     px4_launch = IncludeLaunchDescription(
@@ -63,6 +70,7 @@ def generate_launch_description():
             "agent_port": LaunchConfiguration("agent_port"),
             "agent_provider": LaunchConfiguration("agent_provider"),
             "agent_model": LaunchConfiguration("agent_model"),
+            "agent_db": LaunchConfiguration("agent_db"),
         }.items(),
     )
 
