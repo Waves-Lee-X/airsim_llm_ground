@@ -431,7 +431,8 @@ class GatewayApiTest(unittest.IsolatedAsyncioTestCase):
             [step["action"] for step in workflow["steps"]],
             [
                 "safety_check", "takeoff", "move", "hover",
-                "capture_image", "analyze_image", "mission_report", "land",
+                "capture_image", "analyze_image", "return_to_start",
+                "mission_report", "land",
             ],
         )
         self.assertEqual(workflow["steps"][1]["args"]["altitude"], 10.0)

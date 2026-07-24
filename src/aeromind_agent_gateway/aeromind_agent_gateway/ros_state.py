@@ -137,7 +137,14 @@ class RosStateBridge(Node):
 
     def _odom_cb(self, msg: Odometry):
         position = msg.pose.pose.position
+        orientation = msg.pose.pose.orientation
         velocity = msg.twist.twist.linear
+        yaw = _yaw_from_quaternion(
+            orientation.x,
+            orientation.y,
+            orientation.z,
+            orientation.w,
+        )
         with self._lock:
             self._odom = {
                 "stamp": time.time(),
@@ -146,6 +153,13 @@ class RosStateBridge(Node):
                     "x": float(position.x),
                     "y": float(position.y),
                     "z": float(position.z),
+                },
+                "orientation": {
+                    "x": float(orientation.x),
+                    "y": float(orientation.y),
+                    "z": float(orientation.z),
+                    "w": float(orientation.w),
+                    "yaw": yaw,
                 },
                 "velocity_mps": {
                     "x": float(velocity.x),
@@ -658,6 +672,19 @@ class RosStateBridge(Node):
         workflow = validate_workflow(value)
         workflow_id = workflow["workflow_id"]
         results: dict[str, dict[str, Any]] = {}
+        start_snapshot = self.snapshot()
+        start_odom = start_snapshot.get("odometry") or {}
+        start_position = start_odom.get("position_m") or {}
+        workflow_context = {
+            "start_pose": {
+                "frame_id": str(start_odom.get("frame_id") or ""),
+                "x": _finite_or_none(start_position.get("x", float("nan"))),
+                "y": _finite_or_none(start_position.get("y", float("nan"))),
+                "z": _finite_or_none(start_position.get("z", float("nan"))),
+                "valid": _record_is_current(start_odom, 2.0),
+            },
+            "started_at": time.time(),
+        }
         with self._lock:
             self._workflow_controls[workflow_id] = "running"
         try:
@@ -702,7 +729,11 @@ class RosStateBridge(Node):
                         )
 
                     child = asyncio.create_task(
-                        self._execute_workflow_step(step, child_progress)
+                        self._execute_workflow_step(
+                            step,
+                            child_progress,
+                            workflow_context,
+                        )
                     )
                     interrupted = False
                     while not child.done():
@@ -746,6 +777,7 @@ class RosStateBridge(Node):
                         "message": f"组合任务失败：{step['label']}；{failure_detail}",
                         "workflow": workflow,
                         "step_results": results,
+                        "workflow_context": workflow_context,
                     }
             return {
                 "success": True,
@@ -755,6 +787,7 @@ class RosStateBridge(Node):
                 "message": f"组合任务完成：{workflow['name']}",
                 "workflow": workflow,
                 "step_results": results,
+                "workflow_context": workflow_context,
             }
         finally:
             with self._lock:
@@ -827,6 +860,7 @@ class RosStateBridge(Node):
         self,
         step: dict[str, Any],
         progress: ProgressCallback,
+        workflow_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         action = step["action"]
         if action == "safety_check":
@@ -872,9 +906,132 @@ class RosStateBridge(Node):
             return result
         if action == "follow_waypoints":
             return await self._execute_waypoint_action(step["args"], progress)
+        if action == "return_to_start":
+            return await self._execute_return_to_start(
+                step["args"],
+                progress,
+                workflow_context or {},
+            )
         return await self.execute_confirmed_action(
             action, step["args"], progress
         )
+
+    async def _execute_return_to_start(
+        self,
+        args: dict[str, Any],
+        progress: ProgressCallback,
+        workflow_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        start = workflow_context.get("start_pose") or {}
+        snapshot = self.snapshot()
+        odom = snapshot.get("odometry") or {}
+        current = odom.get("position_m") or {}
+        orientation = odom.get("orientation") or {}
+        if (
+            not start.get("valid")
+            or start.get("x") is None
+            or start.get("y") is None
+            or current.get("x") is None
+            or current.get("y") is None
+            or not _record_is_current(odom, 2.0)
+        ):
+            return {
+                "success": False,
+                "physical_complete": False,
+                "message": "无法返回任务起点：Workflow 起点或实时里程计不可用",
+                "start_pose": start,
+            }
+        start_frame = str(start.get("frame_id") or "")
+        current_frame = str(odom.get("frame_id") or "")
+        if start_frame and current_frame and start_frame != current_frame:
+            return {
+                "success": False,
+                "physical_complete": False,
+                "message": (
+                    "无法返回任务起点：里程计坐标系已变化 "
+                    f"({start_frame} -> {current_frame})"
+                ),
+                "start_pose": start,
+            }
+
+        dx = float(start["x"]) - float(current["x"])
+        dy = float(start["y"]) - float(current["y"])
+        initial_error = math.hypot(dx, dy)
+        tolerance = float(args.get("horizontal_tolerance_m", 1.0))
+        if initial_error <= tolerance:
+            return {
+                "success": True,
+                "physical_complete": True,
+                "message": f"已在本轮任务起点容差内，水平误差 {initial_error:.2f} 米",
+                "start_pose": start,
+                "horizontal_error_m": initial_error,
+                "moved": False,
+            }
+
+        yaw = _finite_or_none(orientation.get("yaw"))
+        if yaw is None:
+            return {
+                "success": False,
+                "physical_complete": False,
+                "message": "无法返回任务起点：当前航向不可用",
+                "start_pose": start,
+            }
+        # Inverse of Agent's body-to-odom convention:
+        # forward=(-sin(yaw), cos(yaw)), right=(cos(yaw), sin(yaw)).
+        move_args = {
+            "forward_m": -math.sin(yaw) * dx + math.cos(yaw) * dy,
+            "right_m": math.cos(yaw) * dx + math.sin(yaw) * dy,
+            "up_m": 0.0,
+        }
+        await progress(
+            "returning",
+            {
+                "message": (
+                    f"正在返回本轮任务起点，初始水平距离 {initial_error:.2f} 米"
+                ),
+                "start_pose": start,
+                "physical_complete": False,
+            },
+        )
+        result = await self.execute_confirmed_action("move", move_args, progress)
+        if not result.get("success"):
+            return {
+                **result,
+                "message": f"返回任务起点失败：{result.get('message', '移动未完成')}",
+                "start_pose": start,
+                "initial_horizontal_error_m": initial_error,
+            }
+
+        final_snapshot = self.snapshot()
+        final_position = (
+            (final_snapshot.get("odometry") or {}).get("position_m") or {}
+        )
+        final_x = _finite_or_none(final_position.get("x"))
+        final_y = _finite_or_none(final_position.get("y"))
+        final_error = (
+            math.hypot(float(start["x"]) - final_x, float(start["y"]) - final_y)
+            if final_x is not None and final_y is not None
+            else float("inf")
+        )
+        success = math.isfinite(final_error) and final_error <= tolerance
+        return {
+            **result,
+            "success": success,
+            "physical_complete": success,
+            "message": (
+                f"已返回本轮任务起点上方，水平误差 {final_error:.2f} 米"
+                if success
+                else (
+                    f"规划器已结束回程，但水平误差 {final_error:.2f} 米，"
+                    f"超过容差 {tolerance:.2f} 米"
+                )
+            ),
+            "start_pose": start,
+            "initial_horizontal_error_m": initial_error,
+            "horizontal_error_m": final_error,
+            "tolerance_m": tolerance,
+            "moved": True,
+        }
 
     async def _execute_waypoint_action(
         self, args: dict[str, Any], progress: ProgressCallback
@@ -1453,8 +1610,21 @@ def _age_seconds(stamp: float | None) -> float | None:
 
 
 def _finite_or_none(value: Any) -> float | None:
-    number = float(value)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
     return number if math.isfinite(number) else None
+
+
+def _yaw_from_quaternion(x: Any, y: Any, z: Any, w: Any) -> float:
+    x_value = float(x)
+    y_value = float(y)
+    z_value = float(z)
+    w_value = float(w)
+    siny_cosp = 2.0 * (w_value * z_value + x_value * y_value)
+    cosy_cosp = 1.0 - 2.0 * (y_value * y_value + z_value * z_value)
+    return math.atan2(siny_cosp, cosy_cosp)
 
 
 def _health_signal(status: str, age_sec: Any, rate_hz: Any = None) -> dict[str, Any]:

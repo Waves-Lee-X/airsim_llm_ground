@@ -198,6 +198,26 @@ WORKFLOW_ACTION_SPECS: dict[str, dict[str, Any]] = {
         "preconditions": ["airborne", "odometry_healthy", "autonomy_available"],
         "effects": ["waypoint_sequence_completed"],
     },
+    "return_to_start": {
+        "label": "返回任务起点",
+        "risk_level": "high",
+        "mode": "composite",
+        "description": "返回本轮 Workflow 启动时记录的水平位置，在当前安全高度保持飞行。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "horizontal_tolerance_m": {
+                    "type": "number",
+                    "minimum": 0.3,
+                    "maximum": 5.0,
+                    "default": 1.0,
+                },
+            },
+            "additionalProperties": False,
+        },
+        "preconditions": ["airborne", "odometry_healthy", "autonomy_available"],
+        "effects": ["workflow_start_reached"],
+    },
     "return_home": {
         "label": "返航",
         "risk_level": "high",
@@ -237,6 +257,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {"name": "flight.land", "label": "降落", "category": "flight", "risk_level": "high", "mode": "action", "action": "land", "interface": "/control/land", "description": "执行 PX4 原生降落。", "example_task": "降落"},
     {"name": "flight.move_relative", "label": "相对移动", "category": "flight", "risk_level": "high", "mode": "action", "action": "move", "interface": "/autonomy/goal", "description": "按机头坐标系发布相对三维目标并由自主规划器执行。", "example_task": "向前飞10米"},
     {"name": "flight.follow_waypoints", "label": "航点序列", "category": "flight", "risk_level": "high", "mode": "composite", "action": "follow_waypoints", "interface": "/autonomy/follow_waypoints (ROS 2 Action)", "description": "连续执行多个相对航点，使用 Minimum Snap 轨迹经过中间点而不逐点刹停。", "example_task": "飞一个三角形并在顶点拍照"},
+    {"name": "flight.return_to_start", "label": "返回任务起点", "category": "flight", "risk_level": "high", "mode": "composite", "action": "return_to_start", "interface": "Gateway workflow + /autonomy/goal", "description": "记录 Workflow 起点，经自主规划返回起点上方并校验水平误差。", "example_task": "完成巡检后返回起飞位置再降落"},
     {"name": "flight.hover", "label": "悬停", "category": "flight", "risk_level": "medium", "mode": "action", "action": "hover", "interface": "/autonomy/cancel + /control/cmd_vel", "description": "取消自主目标并进入悬停保持。", "example_task": "原地悬停"},
     {"name": "flight.return_home", "label": "返航", "category": "flight", "risk_level": "high", "mode": "action", "action": "return_home", "interface": "/control/return_home", "description": "触发 PX4 原生 RTL。", "example_task": "返航"},
     {"name": "perception.capture_image", "label": "拍照保存", "category": "perception", "risk_level": "low", "mode": "action", "action": "capture_image", "interface": "/perception/capture_image", "description": "保存当前前视 RGB 图像并返回路径。", "example_task": "拍一张前方照片"},

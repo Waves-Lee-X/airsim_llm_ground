@@ -163,8 +163,10 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         schema_text = str(workflow_json_schema())
         self.assertIn("follow_waypoints", schema_text)
         self.assertIn("analyze_image", schema_text)
+        self.assertIn("return_to_start", schema_text)
         capabilities = {item["name"]: item for item in capability_catalog()}
         self.assertIn("parameters", capabilities["flight.follow_waypoints"])
+        self.assertIn("parameters", capabilities["flight.return_to_start"])
         self.assertIn("preconditions", capabilities["perception.semantic_image"])
         with self.assertRaises(ValueError):
             validate_workflow(
@@ -456,6 +458,141 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(waypoint_requests[0]["points"]), 2)
         self.assertEqual(result["step_results"]["vision"]["source"], "vlm")
         self.assertIn("snapshot", result["step_results"]["report"])
+
+    async def test_demo_skill_returns_to_recorded_start_before_landing(self):
+        bridge = self._bridge()
+        pose = {"x": 2.0, "y": -3.0, "z": 0.0}
+        yaw = 0.0
+
+        def snapshot():
+            return {
+                "available": True,
+                "state": {
+                    "stamp": time.time(),
+                    "armed": pose["z"] > 0.5,
+                    "ekf_healthy": True,
+                    "gps_fix": 3,
+                },
+                "odometry": {
+                    "stamp": time.time(),
+                    "frame_id": "odom",
+                    "position_m": dict(pose),
+                    "orientation": {"yaw": yaw},
+                },
+                "autonomy": {
+                    "stamp": time.time(),
+                    "nearest_obstacle_m": 8.0,
+                    "takeoff_clearance_valid": True,
+                    "takeoff_clearance_m": 8.0,
+                },
+                "detections": [],
+            }
+
+        bridge.snapshot = snapshot
+        calls = []
+
+        async def execute(action, args, progress):
+            calls.append((action, dict(args)))
+            if action == "takeoff":
+                pose["z"] = float(args["altitude"])
+            elif action == "move":
+                direction = args.get("direction")
+                distance = float(args.get("distance", 0.0))
+                pose["x"] += float(args.get("right_m", 0.0))
+                pose["y"] += float(args.get("forward_m", 0.0))
+                if direction == "forward":
+                    pose["y"] += distance
+                elif direction == "backward":
+                    pose["y"] -= distance
+            elif action == "land":
+                pose["z"] = 0.0
+            return {"success": True, "physical_complete": True, "message": "done"}
+
+        bridge.execute_confirmed_action = execute
+        bridge.analyze_current_image = lambda _prompt: asyncio.sleep(
+            0,
+            result={"success": True, "message": "done", "source": "vlm"},
+        )
+
+        async def progress(_phase, _details):
+            return None
+
+        result = await bridge._execute_workflow(
+            build_skill(
+                "mission.demo_main",
+                {
+                    "altitude": 10,
+                    "distance": 10,
+                    "minimum_obstacle_distance": 2,
+                    "require_gps": True,
+                },
+            ),
+            progress,
+        )
+
+        self.assertTrue(result["success"])
+        actions = [item[0] for item in calls]
+        self.assertEqual(actions[:3], ["takeoff", "move", "hover"])
+        self.assertEqual(actions[-2:], ["move", "land"])
+        self.assertAlmostEqual(calls[-2][1]["forward_m"], -10.0)
+        self.assertAlmostEqual(pose["x"], 2.0)
+        self.assertAlmostEqual(pose["y"], -3.0)
+        self.assertEqual(
+            result["step_results"]["return-to-start"]["horizontal_error_m"],
+            0.0,
+        )
+        self.assertEqual(
+            result["workflow_context"]["start_pose"]["frame_id"],
+            "odom",
+        )
+
+    async def test_return_to_start_rejects_final_position_outside_tolerance(self):
+        bridge = self._bridge()
+        snapshots = [
+            {
+                "odometry": {
+                    "stamp": time.time(),
+                    "frame_id": "odom",
+                    "position_m": {"x": 5.0, "y": 0.0, "z": 8.0},
+                    "orientation": {"yaw": 0.0},
+                }
+            },
+            {
+                "odometry": {
+                    "stamp": time.time(),
+                    "frame_id": "odom",
+                    "position_m": {"x": 2.0, "y": 0.0, "z": 8.0},
+                    "orientation": {"yaw": 0.0},
+                }
+            },
+        ]
+        bridge.snapshot = lambda: snapshots.pop(0) if len(snapshots) > 1 else snapshots[0]
+
+        async def execute(_action, _args, _progress):
+            return {"success": True, "physical_complete": True, "message": "goal reached"}
+
+        bridge.execute_confirmed_action = execute
+
+        async def progress(_phase, _details):
+            return None
+
+        result = await bridge._execute_return_to_start(
+            {"horizontal_tolerance_m": 1.0},
+            progress,
+            {
+                "start_pose": {
+                    "frame_id": "odom",
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                    "valid": True,
+                }
+            },
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["horizontal_error_m"], 2.0)
+        self.assertIn("超过容差", result["message"])
 
     async def test_vlm_semantic_and_risk_conditions_select_safe_branch(self):
         bridge = self._bridge()

@@ -184,6 +184,8 @@ def summarize(
     records: list[dict[str, Any]],
     expected_runs: int = 0,
     target_success_rate: float = 0.9,
+    require_takeoff_completed: bool = False,
+    require_return_to_start: bool = False,
 ) -> dict[str, Any]:
     terminal = [item for item in records if item["status"] in TERMINAL_STATES]
     completed = [item for item in terminal if item["status"] in SUCCESS_STATES]
@@ -207,6 +209,12 @@ def summarize(
     )
     consistent = sum(bool(item.get("terminal_consistent", True)) for item in terminal)
     event_traced = sum(bool(item.get("event_trace_available")) for item in terminal)
+    takeoff_completed = sum(
+        item.get("takeoff_status") == "completed" for item in terminal
+    )
+    returned_to_start = sum(
+        item.get("return_to_start_within_tolerance") is True for item in terminal
+    )
     expected_runs = max(0, int(expected_runs))
     target_success_rate = min(1.0, max(0.0, float(target_success_rate)))
     campaign_ready = None
@@ -220,6 +228,14 @@ def summarize(
             and duplicate_terminal_events == 0
             and consistent == denominator
             and event_traced == denominator
+            and (
+                not require_takeoff_completed
+                or takeoff_completed == denominator
+            )
+            and (
+                not require_return_to_start
+                or returned_to_start == denominator
+            )
         )
     return {
         "total": len(records),
@@ -235,6 +251,16 @@ def summarize(
         **_timing_summary("verification", verification_durations),
         "terminal_consistency_rate": round(consistent / denominator, 4) if denominator else None,
         "event_trace_rate": round(event_traced / denominator, 4) if denominator else None,
+        "takeoff_completed": takeoff_completed,
+        "takeoff_completion_rate": (
+            round(takeoff_completed / denominator, 4) if denominator else None
+        ),
+        "return_to_start_completed": returned_to_start,
+        "return_to_start_rate": (
+            round(returned_to_start / denominator, 4) if denominator else None
+        ),
+        "require_takeoff_completed": bool(require_takeoff_completed),
+        "require_return_to_start": bool(require_return_to_start),
         "duplicate_terminal_events": duplicate_terminal_events,
         "failed_steps": _counts(
             str(item.get("failed_step") or "未记录步骤")
@@ -264,6 +290,9 @@ def write_outputs(report: dict[str, Any], output_dir: Path, prefix: str) -> dict
             "revision", "phase", "created_at", "updated_at", "duration_sec",
             "confirmation_latency_sec", "execution_duration_sec", "verification_duration_sec",
             "event_trace_available", "terminal_event_count", "terminal_consistent",
+            "takeoff_status", "return_to_start_status",
+            "return_to_start_error_m", "return_to_start_tolerance_m",
+            "return_to_start_within_tolerance",
             "failed_step", "failure_reason", "title",
         ])
         writer.writeheader()
@@ -292,6 +321,8 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- 目标成功率：{rate(summary.get('target_success_rate'))}",
         f"- 终态一致率：{rate(summary.get('terminal_consistency_rate'))}",
         f"- 事件链覆盖率：{rate(summary.get('event_trace_rate'))}",
+        f"- 完整起飞率：{rate(summary.get('takeoff_completion_rate'))}",
+        f"- 返回任务起点率：{rate(summary.get('return_to_start_rate'))}",
         f"- 重复终态事件：{summary.get('duplicate_terminal_events', 0)}", "",
         "## 链路耗时", "",
         "| 阶段 | 平均 | P95 |", "|---|---:|---:|",
@@ -311,11 +342,16 @@ def _markdown(report: dict[str, Any]) -> str:
         lines.extend(f"| {key.replace('|', '/')} | {value} |" for key, value in summary["failed_steps"].items())
     else:
         lines.append("| 暂无失败步骤 | 0 |")
-    lines.extend(["", "## 明细", "", "| ID | 动作 | 状态 | 物理完成 | 总耗时 | 执行耗时 | 失败步骤 |", "|---|---|---|---:|---:|---:|---|"])
+    lines.extend(["", "## 明细", "", "| ID | 动作 | 状态 | 物理完成 | 回程误差 | 总耗时 | 执行耗时 | 失败步骤 |", "|---|---|---|---:|---:|---:|---:|---|"])
     for item in report["records"]:
+        return_error = item.get("return_to_start_error_m")
+        return_error_label = (
+            "--" if return_error is None else f"{float(return_error):.2f}m"
+        )
         lines.append(
             f"| {item['id']} | {item['action']} | {item['status']} | "
-            f"{'是' if item.get('physical_complete') else '否'} | {duration(item.get('duration_sec'))} | "
+            f"{'是' if item.get('physical_complete') else '否'} | "
+            f"{return_error_label} | {duration(item.get('duration_sec'))} | "
             f"{duration(item.get('execution_duration_sec'))} | {str(item.get('failed_step') or '').replace('|', '/')} |"
         )
     return "\n".join(lines) + "\n"
@@ -403,12 +439,56 @@ def _workflow_metrics(result: dict[str, Any]) -> dict[str, Any]:
         (step for step in steps if isinstance(step, dict) and _status(step.get("status")) == "failed"),
         None,
     )
+    takeoff = next(
+        (
+            step for step in steps
+            if isinstance(step, dict) and step.get("action") == "takeoff"
+        ),
+        None,
+    )
+    return_step = next(
+        (
+            step for step in steps
+            if isinstance(step, dict) and step.get("action") == "return_to_start"
+        ),
+        None,
+    )
+    step_results = result.get("step_results")
+    if not isinstance(step_results, dict):
+        step_results = {}
+    return_result = (
+        step_results.get(str(return_step.get("id")))
+        if isinstance(return_step, dict)
+        else None
+    )
+    if not isinstance(return_result, dict):
+        return_result = {}
+    return_error = _number(return_result.get("horizontal_error_m"))
+    return_tolerance = _number(return_result.get("tolerance_m"))
+    if return_tolerance is None and isinstance(return_step, dict):
+        return_tolerance = _number(
+            (return_step.get("args") or {}).get("horizontal_tolerance_m")
+        )
+    return_status = _status((return_step or {}).get("status")) if return_step else ""
+    return_within_tolerance = None
+    if return_step:
+        return_within_tolerance = bool(
+            return_status == "completed"
+            and return_error is not None
+            and return_tolerance is not None
+            and return_error <= return_tolerance
+        )
     return {
         "workflow_step_total": len(steps),
         "workflow_step_completed": statuses.count("completed"),
         "workflow_step_failed": statuses.count("failed"),
         "workflow_step_skipped": statuses.count("skipped"),
         "failed_step": str((failed or {}).get("label") or (failed or {}).get("id") or ""),
+        "takeoff_status": _status((takeoff or {}).get("status")) if takeoff else "",
+        "return_to_start_status": return_status,
+        "return_to_start_error_m": return_error,
+        "return_to_start_tolerance_m": return_tolerance,
+        "return_to_start_within_tolerance": return_within_tolerance,
     }
 
 
@@ -488,6 +568,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--latest", type=int, help="仅保留筛选后的最近 N 次任务")
     parser.add_argument("--expected-runs", type=int, default=0, help="固定验收样本数")
     parser.add_argument("--target-success-rate", type=float, default=0.9)
+    parser.add_argument(
+        "--require-takeoff-completed",
+        action="store_true",
+        help="要求每个样本的 takeoff 步骤均完成，跳过起飞不计通过",
+    )
+    parser.add_argument(
+        "--require-return-to-start",
+        action="store_true",
+        help="要求每个样本在配置容差内完成 return_to_start",
+    )
     parser.add_argument("--strict", action="store_true", help="门禁未通过时返回退出码 2")
     parser.add_argument("--output-dir", type=Path, default=Path("missions/contest"))
     parser.add_argument("--prefix", default="mission-metrics")
@@ -498,7 +588,13 @@ def main(argv: list[str] | None = None) -> int:
     records.extend(item for item in load_file_missions(args.mission_root) if item["id"] not in known)
     records = filter_records(records, args.since_hours)
     records = select_campaign(records, args.action, args.title_contains, args.latest)
-    summary = summarize(records, args.expected_runs, args.target_success_rate)
+    summary = summarize(
+        records,
+        args.expected_runs,
+        args.target_success_rate,
+        require_takeoff_completed=args.require_takeoff_completed,
+        require_return_to_start=args.require_return_to_start,
+    )
     report = {
         "schema_version": 2,
         "generated_at": time.time(),
@@ -507,6 +603,8 @@ def main(argv: list[str] | None = None) -> int:
             "action": args.action,
             "title_contains": args.title_contains,
             "latest": args.latest,
+            "require_takeoff_completed": args.require_takeoff_completed,
+            "require_return_to_start": args.require_return_to_start,
         },
         "summary": summary,
         "records": records,

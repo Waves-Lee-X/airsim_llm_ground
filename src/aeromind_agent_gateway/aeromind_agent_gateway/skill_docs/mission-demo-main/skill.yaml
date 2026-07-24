@@ -1,10 +1,10 @@
 name: mission.demo_main
 label: 固定演示主链
-version: 1.0.0
+version: 1.1.0
 risk_level: high
-description: 确定性检查后完成起飞、前飞、悬停、拍照、VLM 分析、报告和降落。
-example_task: 检查状态和环境，安全则起飞到10米，前飞10米，拍照分析并生成报告后降落
-workflow_name: "校赛演示主链：起飞 ${altitude} 米、前飞 ${distance} 米并降落"
+description: 确定性检查后完成起飞、前飞、悬停、拍照、VLM 分析、返回任务起点、报告和降落。
+example_task: 检查状态和环境，安全则起飞到10米，前飞10米，拍照分析，返回起飞位置并生成报告后降落
+workflow_name: "校赛演示主链：起飞 ${altitude} 米、前飞 ${distance} 米、返起点并降落"
 parameters:
   altitude: {type: number, minimum: 1, maximum: 30, default: 10}
   distance: {type: number, minimum: 0.5, maximum: 100, default: 10}
@@ -49,14 +49,19 @@ workflow:
     depends_on: [capture]
     condition: {type: step_succeeded, step_id: capture}
     on_failure: continue
+  - id: return-to-start
+    label: 返回本轮任务起飞位置上方
+    action: return_to_start
+    args: {horizontal_tolerance_m: 1.0}
+    depends_on: [move-forward]
   - id: report
     label: 生成固定演示主链任务报告
     action: mission_report
     args: {title: 校赛演示主链任务报告}
-    depends_on: [move-forward]
+    depends_on: [return-to-start]
     on_failure: continue
   - id: land
-    label: 任务结束后降落
+    label: 返回任务起点后原生降落
     action: land
-    depends_on: [move-forward]
+    depends_on: [return-to-start]
     condition: if_airborne

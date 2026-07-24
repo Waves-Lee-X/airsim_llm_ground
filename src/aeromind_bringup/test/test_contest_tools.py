@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from aeromind_bringup_tools.mission_metrics import (
+    _workflow_metrics,
     load_file_missions,
     load_gateway_missions,
     select_campaign,
@@ -189,6 +190,63 @@ class MissionMetricsTest(unittest.TestCase):
         summary = summarize([record], expected_runs=1, target_success_rate=1.0)
         self.assertFalse(summary["campaign_ready"])
         self.assertEqual(summary["duplicate_terminal_events"], 1)
+
+    def test_campaign_can_require_takeoff_and_return_to_start(self):
+        result = {
+            "workflow": {
+                "steps": [
+                    {"id": "takeoff", "action": "takeoff", "status": "completed"},
+                    {
+                        "id": "return",
+                        "action": "return_to_start",
+                        "args": {"horizontal_tolerance_m": 1.0},
+                        "status": "completed",
+                    },
+                    {"id": "land", "action": "land", "status": "completed"},
+                ]
+            },
+            "step_results": {
+                "return": {
+                    "success": True,
+                    "horizontal_error_m": 0.42,
+                    "tolerance_m": 1.0,
+                }
+            },
+        }
+        record = {
+            "status": "completed",
+            "physical_complete": True,
+            "duration_sec": 10.0,
+            "action": "workflow",
+            "failure_reason": "",
+            "terminal_event_count": 1,
+            "terminal_consistent": True,
+            "event_trace_available": True,
+            **_workflow_metrics(result),
+        }
+
+        summary = summarize(
+            [record],
+            expected_runs=1,
+            target_success_rate=1.0,
+            require_takeoff_completed=True,
+            require_return_to_start=True,
+        )
+
+        self.assertTrue(summary["campaign_ready"])
+        self.assertEqual(summary["takeoff_completion_rate"], 1.0)
+        self.assertEqual(summary["return_to_start_rate"], 1.0)
+        self.assertEqual(record["return_to_start_error_m"], 0.42)
+
+        record["takeoff_status"] = "skipped"
+        rejected = summarize(
+            [record],
+            expected_runs=1,
+            target_success_rate=1.0,
+            require_takeoff_completed=True,
+            require_return_to_start=True,
+        )
+        self.assertFalse(rejected["campaign_ready"])
 
 
 if __name__ == "__main__":

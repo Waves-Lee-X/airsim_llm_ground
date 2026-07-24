@@ -500,6 +500,11 @@ def _validate_step_args(action: str, args: dict[str, Any]) -> dict[str, Any]:
     if action == "mission_report":
         title = " ".join(str(args.get("title") or "任务报告").split())[:120]
         return {"title": title or "任务报告"}
+    if action == "return_to_start":
+        tolerance = float(args.get("horizontal_tolerance_m", 1.0))
+        if not math.isfinite(tolerance) or not 0.3 <= tolerance <= 5.0:
+            raise ValueError("返回任务起点水平容差必须在 0.3 到 5.0 米之间")
+        return {"horizontal_tolerance_m": tolerance}
     if action == "follow_waypoints":
         raw_points = args.get("points")
         if not isinstance(raw_points, list) or not 1 <= len(raw_points) <= 20:
@@ -585,6 +590,10 @@ def _step_label(action: str, args: dict[str, Any]) -> str:
         "arm": "解锁无人机",
         "disarm": "加锁无人机",
         "land": "降落",
+        "return_to_start": (
+            f"返回本轮任务起点（容差 "
+            f"{args.get('horizontal_tolerance_m', 1.0):.1f} 米）"
+        ),
         "return_home": "RTL 返航",
         "hover": "悬停",
         "capture_image": "保存当前相机图像",
