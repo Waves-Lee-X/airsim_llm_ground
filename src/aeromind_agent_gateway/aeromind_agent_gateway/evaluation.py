@@ -424,14 +424,27 @@ def _planning_prompt(text: str, schema_enabled: bool) -> str:
                 "risk_level": item["risk_level"],
                 "parameters": item.get("parameters", {}),
                 "description": item["description"],
+                "workflow_actions": item.get("workflow_actions", []),
             }
             for item in skill_catalog()
         ]
+        allowed_actions = sorted({
+            str(item.get("action"))
+            for item in capabilities
+            if item.get("action")
+        })
         context = (
             "\n只能使用以下已注册能力和技能。参数越界、能力不存在、要求绕过确认"
             "或直接操作电机时必须 rejected=true。所有飞行动作 need_confirm=true。\n"
             f"capabilities={json.dumps(capabilities, ensure_ascii=False)}\n"
             f"skills={json.dumps(skills, ensure_ascii=False)}\n"
+            f"allowed_actions={json.dumps(allowed_actions, ensure_ascii=False)}\n"
+            "actions 和 workflow_actions 中只能填写 capability 的 action 值，"
+            "不得填写 capability name、skill name、自然语言描述或带参数的字符串。"
+            "匹配技能时 intent 仍必须为 workflow，并按照该技能的 "
+            "workflow_actions 展开为底层 action；include_if 对应参数为 false 时"
+            "省略该动作。多步骤任务必须使用 intent=workflow，并把全部底层动作"
+            "按执行顺序写入 workflow_actions。\n"
         )
     else:
         context = (
@@ -440,7 +453,7 @@ def _planning_prompt(text: str, schema_enabled: bool) -> str:
         )
     return (
         f"用户任务：{text}\n{context}"
-        "intent 必须从 status、safety_check、arm、disarm、takeoff、land、"
+        "intent 必须严格从 status、safety_check、arm、disarm、takeoff、land、"
         "move、return_home、hover、capture_image、analyze_image、"
         "perception_check、workflow、information、reject、unknown 中选择。"
         "任何将调用 action 或组合 Workflow 的任务都需要 need_confirm=true；"

@@ -33,6 +33,7 @@ def register_skill(
     builder: SkillBuilder,
     document: str | None = None,
     parameters: dict[str, Any] | None = None,
+    workflow_actions: list[dict[str, str]] | None = None,
 ) -> None:
     clean_name = name.strip()
     if not clean_name or clean_name in SKILLS:
@@ -49,6 +50,7 @@ def register_skill(
         "description": description,
         "example_task": example_task,
         "parameters": parameters or {},
+        "workflow_actions": workflow_actions or [],
         "builder": builder,
         "document": document,
     }
@@ -107,6 +109,15 @@ def _load_builtin_manifests() -> None:
             builder=_manifest_builder(manifest),
             document=f"{path.parent.name}/SKILL.md",
             parameters=parameters,
+            workflow_actions=[
+                {
+                    key: str(step[key])
+                    for key in ("action", "include_if")
+                    if step.get(key) is not None
+                }
+                for step in (manifest.get("workflow") or [])
+                if isinstance(step, dict) and step.get("action")
+            ],
         )
     _BUILTINS_LOADED = True
 

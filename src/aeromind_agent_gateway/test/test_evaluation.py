@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from aeromind_agent_gateway.evaluation import (
+    _planning_prompt,
     evaluate_case,
     load_cases,
     normalize_plan,
@@ -73,6 +74,13 @@ class EvaluationTest(unittest.TestCase):
         plan = normalize_plan({"intent": "TAKEOFF", "actions": "takeoff"})
         self.assertEqual(plan["intent"], "takeoff")
         self.assertEqual(plan["actions"], [])
+
+    def test_schema_prompt_requires_primitive_workflow_actions(self):
+        prompt = _planning_prompt("飞一个正方形", schema_enabled=True)
+        self.assertIn('"name": "flight.square"', prompt)
+        self.assertIn('"action": "follow_waypoints"', prompt)
+        self.assertIn("不得填写 capability name、skill name", prompt)
+        self.assertIn("intent=workflow", prompt)
 
 
 if __name__ == "__main__":
