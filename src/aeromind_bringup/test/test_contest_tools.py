@@ -30,6 +30,7 @@ class PreflightTest(unittest.TestCase):
     def test_ready_system_has_no_failed_checks_and_hides_secrets(self):
         web = {
             "telemetry_meta": {"state_fresh": True, "odom_fresh": True},
+            "state": {"preflight_valid": True, "preflight_ok": True},
             "depth": {"valid_samples": 100},
             "pointcloud": {"sampled_points": 500},
             "services": {"arm": True, "takeoff": True, "land": True, "agent": True},
@@ -45,6 +46,35 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(report["summary"]["FAIL"], 0)
         self.assertNotIn("secret-llm", json.dumps(report))
         self.assertNotIn("secret-vlm", json.dumps(report))
+
+    @patch.dict(
+        "os.environ",
+        {
+            "AEROMIND_LLM_API_KEY": "secret-llm",
+            "AEROMIND_VLM_API_KEY": "secret-vlm",
+            "AEROMIND_VLM_API_URL": "https://example.invalid/v1",
+            "AEROMIND_VLM_MODEL": "vision-model",
+        },
+        clear=True,
+    )
+    def test_px4_preflight_failure_blocks_demo_readiness(self):
+        web = {
+            "telemetry_meta": {"state_fresh": True, "odom_fresh": True},
+            "state": {"preflight_valid": True, "preflight_ok": False},
+            "depth": {"valid_samples": 100},
+            "pointcloud": {"sampled_points": 500},
+            "services": {"arm": True, "takeoff": True, "land": True, "agent": True},
+        }
+        checks = evaluate_status(
+            web, "", {"success": True, "width": 1280, "height": 720}, "",
+            {"ros_state_available": True}, "", set(REQUIRED_TOPICS), "",
+            require_yolo=False, require_vlm=False,
+        )
+        report = build_report(checks)
+        preflight = next(item for item in checks if item["name"] == "PX4 解锁预检")
+        self.assertFalse(report["ready"])
+        self.assertEqual(preflight["status"], "FAIL")
+        self.assertIn("health_and_arming_checks", preflight["detail"])
 
     @patch.dict("os.environ", {}, clear=True)
     def test_stale_telemetry_and_missing_topics_fail(self):

@@ -90,6 +90,23 @@ def evaluate_status(
         checks.append(_check("Web 控制台", "PASS", "8080 状态接口可访问", "/api/status"))
         flight = web_status.get("telemetry_meta") or {}
         checks.append(_boolean_check("飞控遥测", flight.get("state_fresh"), "数据实时", "数据缺失或过期", "/control/drone_state"))
+        state = web_status.get("state") or {}
+        preflight_valid = state.get("preflight_valid") is True
+        preflight_ok = state.get("preflight_ok") is True
+        if not preflight_valid:
+            preflight_detail = "未收到有效 PX4 解锁预检状态"
+        elif not preflight_ok:
+            preflight_detail = (
+                "PX4 解锁预检未通过，请查看 PX4 health_and_arming_checks 日志"
+            )
+        else:
+            preflight_detail = "PX4 解锁预检通过"
+        checks.append(_check(
+            "PX4 解锁预检",
+            "PASS" if preflight_valid and preflight_ok else "FAIL",
+            preflight_detail,
+            "/control/drone_state",
+        ))
         checks.append(_boolean_check("里程计", flight.get("odom_fresh"), "数据实时", "数据缺失或过期", "/sensor/odometry"))
         camera_ready = bool(camera_status and camera_status.get("success"))
         camera_detail = (
