@@ -40,6 +40,17 @@ ros2 run aeromind_agent_gateway agent_evaluate \
 
 模型模式为 `llm_free`、`llm_schema` 和 `hybrid`。它们会把测试文本发送给配置的模型 Provider，并产生 Token 消耗，但不会连接 ROS 或执行飞行动作。建议先使用 `--limit 5` 验证模型输出格式。
 
+四组报告生成后，可汇总为对比表、中文结论和三张图：
+
+```bash
+python3 evaluation/generate_comparison.py \
+  --input-dir missions/contest/agent-eval-20260724-v2
+```
+
+汇总器会校验四组样本数和 Git commit 是否一致，并在输入目录生成
+`comparison.json`、`comparison.csv`、`comparison.md` 以及准确率、效率和任务分类
+三张 PNG 图表。
+
 ## 评测规范
 
 1. 四种模式必须使用同一数据集。
