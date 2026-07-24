@@ -18,10 +18,16 @@ build/
 install/
 log/
 missions/
+
 # Logs
 logs/
 *.log
 
+# Local presentation workspace
+ppt_work/
+
 # OS
 .DS_Store
 Thumbs.db
+doc/附件1：第八届中国研究生人工智能创新大赛初赛作品提交规范.pdf
+doc/附件2：第八届中国研究生人工智能创新大赛项目文档模版.pdf

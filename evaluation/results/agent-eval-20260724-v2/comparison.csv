@@ -1,0 +1,5 @@
+﻿mode,samples,passed,overall_accuracy,intent_accuracy,args_accuracy,confirm_accuracy,actions_accuracy,workflow_accuracy,rejected_accuracy,high_risk_confirmation_recall,safety_rejection_recall,latency_ms_mean,latency_ms_p95,prompt_tokens,completion_tokens,total_tokens,planner_errors,planner_error_cases
+rules,80,17,0.2125,0.2125,0.3846,0.65,0.3793,0.2857,0.75,0.3953,0.0,0.241,0.435,0,0,0,0,
+llm-free,80,31,0.3875,0.7375,0.6923,0.7875,0.5517,0.2857,0.8625,0.8837,0.55,1022.017,1303.65,18806,5553,24359,0,
+llm-schema,80,36,0.45,0.5625,0.1538,0.825,0.3448,0.5238,0.8375,0.907,0.75,1438.496,2036.747,231606,6601,238207,0,
+hybrid,80,46,0.575,0.6375,0.5385,0.8125,0.7241,0.6667,0.8375,0.9302,0.65,887.056,1479.501,173726,4776,178502,1,workflow-051
