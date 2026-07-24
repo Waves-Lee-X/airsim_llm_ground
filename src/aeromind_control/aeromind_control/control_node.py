@@ -485,6 +485,10 @@ class ControlNode(Node):
             if self._ekf_healthy is not None
             else bool(getattr(msg, "pre_flight_checks_pass", False))
         )
+        state.preflight_ok = bool(
+            getattr(msg, "pre_flight_checks_pass", False)
+        )
+        state.preflight_valid = True
         state.landed = bool(self._landed)
         state.landed_valid = bool(self._landed_valid)
         self._state_pub.publish(state)
@@ -547,10 +551,18 @@ class ControlNode(Node):
             response.message = "PX4 控制器未初始化"
             return response
 
+        readiness_error = self._px4_preflight_error()
+        if readiness_error:
+            self._control_mode = "IDLE"
+            self._takeoff_target_altitude = None
+            response.success = False
+            response.message = f"拒绝起飞：{readiness_error}"
+            self.get_logger().warn(response.message)
+            return response
+
         try:
             # 使用 Offboard 位置控制起飞：PX4 收到连续 setpoint 后解锁并切 OFFBOARD。
             self._px4_ctrl.offboard_takeoff(altitude)
-            self._armed = True
             response.success = True
             response.message = f"PX4 Offboard 起飞已启动，目标高度={altitude}m"
         except Exception as e:
@@ -599,7 +611,6 @@ class ControlNode(Node):
             return response
         try:
             self._px4_ctrl.land()
-            self._armed = False
             response.success = True
             response.message = "PX4 降落指令已发送"
         except Exception as e:
@@ -752,12 +763,18 @@ class ControlNode(Node):
             response.success = False
             response.message = "PX4 控制器未初始化"
             return response
+        if arm:
+            readiness_error = self._px4_preflight_error()
+            if readiness_error:
+                response.success = False
+                response.message = f"拒绝解锁：{readiness_error}"
+                self.get_logger().warn(response.message)
+                return response
         try:
             if arm:
                 self._px4_ctrl.arm()
             else:
                 self._px4_ctrl.disarm()
-            self._armed = arm
             response.success = True
             response.message = f"PX4 {'解锁' if arm else '加锁'}指令已发送"
         except Exception as e:
@@ -765,6 +782,18 @@ class ControlNode(Node):
             response.message = f"PX4 {'解锁' if arm else '加锁'}失败: {e}"
         self.get_logger().info(response.message)
         return response
+
+    def _px4_preflight_error(self) -> str:
+        status = self._latest_vehicle_status
+        age = time.monotonic() - self._latest_vehicle_status_received_at
+        if status is None or age > 2.0:
+            return "VehicleStatus 遥测不可用或已超时"
+        if not bool(getattr(status, "pre_flight_checks_pass", False)):
+            return (
+                "PX4 解锁预检未通过，请查看 health_and_arming_checks "
+                "日志并排除 IMU、估计器、电源或传感器故障"
+            )
+        return ""
 
     # ============================================================
     # 路径跟随

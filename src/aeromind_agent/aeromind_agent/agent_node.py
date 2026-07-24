@@ -327,6 +327,8 @@ class AgentNode(Node):
             "battery": float(msg.battery),
             "gps_fix": int(msg.gps_fix),
             "ekf_healthy": bool(msg.ekf_healthy),
+            "preflight_ok": bool(msg.preflight_ok),
+            "preflight_valid": bool(msg.preflight_valid),
             "landed": bool(msg.landed),
             "landed_valid": bool(msg.landed_valid),
         }
@@ -617,11 +619,33 @@ class AgentNode(Node):
             add("takeoff_service", "起飞服务就绪", self._takeoff_client.service_is_ready(), "/control/takeoff")
             if self._latest_state is not None:
                 add("ekf_healthy", "EKF 健康", bool(self._latest_state.get("ekf_healthy")), str(self._latest_state.get("ekf_healthy")))
+                add(
+                    "px4_preflight",
+                    "PX4 解锁预检",
+                    bool(self._latest_state.get("preflight_valid"))
+                    and bool(self._latest_state.get("preflight_ok")),
+                    (
+                        "已通过"
+                        if self._latest_state.get("preflight_ok")
+                        else "未通过或状态不可用"
+                    ),
+                )
                 add("gps_fix", "GPS/定位可用", int(self._latest_state.get("gps_fix", 0)) >= 2, f"gps_fix={self._latest_state.get('gps_fix')}")
         elif intent == "arm":
             add("arm_service", "解锁服务就绪", self._arm_client.service_is_ready(), "/control/arm")
             if self._latest_state is not None:
                 add("ekf_healthy", "EKF 健康", bool(self._latest_state.get("ekf_healthy")), str(self._latest_state.get("ekf_healthy")))
+                add(
+                    "px4_preflight",
+                    "PX4 解锁预检",
+                    bool(self._latest_state.get("preflight_valid"))
+                    and bool(self._latest_state.get("preflight_ok")),
+                    (
+                        "已通过"
+                        if self._latest_state.get("preflight_ok")
+                        else "未通过或状态不可用"
+                    ),
+                )
         elif intent == "disarm":
             add("arm_service", "加锁服务就绪", self._arm_client.service_is_ready(), "/control/arm")
         elif intent == "land":
@@ -1542,7 +1566,8 @@ class AgentNode(Node):
             f"mode={self._latest_state['mode']}, "
             f"battery={self._latest_state['battery']:.1f}V, "
             f"gps_fix={self._latest_state['gps_fix']}, "
-            f"ekf_healthy={self._latest_state['ekf_healthy']}"
+            f"ekf_healthy={self._latest_state['ekf_healthy']}, "
+            f"preflight_ok={self._latest_state['preflight_ok']}"
         )
         response.result = self._agent_result(
             parsed,
@@ -2930,6 +2955,14 @@ class AgentNode(Node):
             f"- 是否解锁：{'是' if state.get('armed') else '否'}",
             f"- 当前高度：{self._format_meters(altitude)}",
             f"- EKF/GPS：{'正常' if state.get('ekf_healthy') else '未知/异常'} / gps_fix={state.get('gps_fix', '--')}",
+            (
+                "- PX4 解锁预检："
+                + (
+                    "通过"
+                    if state.get("preflight_valid") and state.get("preflight_ok")
+                    else "未通过或状态不可用"
+                )
+            ),
             f"- 最近任务：{last_task.get('final_status') if last_task else '暂无'}",
             f"- 感知结论：{perception['summary']}",
             f"- 图像语义：{semantic.get('scene', '暂无最近图像语义分析')}",

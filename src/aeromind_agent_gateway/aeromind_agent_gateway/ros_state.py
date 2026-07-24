@@ -131,6 +131,8 @@ class RosStateBridge(Node):
                 "gps_fix": int(msg.gps_fix),
                 "gps_usable": int(msg.gps_fix) >= 2,
                 "ekf_healthy": bool(msg.ekf_healthy),
+                "preflight_ok": bool(msg.preflight_ok),
+                "preflight_valid": bool(msg.preflight_valid),
                 "landed": bool(msg.landed),
                 "landed_valid": bool(msg.landed_valid),
             }
@@ -1211,6 +1213,12 @@ class RosStateBridge(Node):
             issues.append("飞控状态已过期")
         if state and not state.get("ekf_healthy", False):
             issues.append("EKF 状态异常")
+        if state and state.get("preflight_valid") is False:
+            issues.append("PX4 解锁预检状态不可用")
+        elif state and state.get("preflight_valid") and not state.get("preflight_ok"):
+            issues.append(
+                "PX4 解锁预检未通过，请检查 health_and_arming_checks 日志"
+            )
         if args.get("require_gps", True) and int(state.get("gps_fix", 0)) < 2:
             issues.append("GPS 定位质量不足")
         minimum = float(args.get("minimum_obstacle_distance", 2.0))
@@ -1240,6 +1248,8 @@ class RosStateBridge(Node):
             "message": "安全检查通过" if success else "安全检查未通过：" + "；".join(issues),
             "checks": {
                 "ekf_healthy": state.get("ekf_healthy"),
+                "preflight_ok": state.get("preflight_ok"),
+                "preflight_valid": state.get("preflight_valid"),
                 "gps_fix": state.get("gps_fix"),
                 "gps_usable": state.get("gps_usable"),
                 "nearest_obstacle_m": obstacle,
@@ -1716,6 +1726,8 @@ def _verification_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
         "armed": state.get("armed"),
         "mode": state.get("mode"),
+        "preflight_ok": state.get("preflight_ok"),
+        "preflight_valid": state.get("preflight_valid"),
         "landed": state.get("landed"),
         "landed_valid": state.get("landed_valid"),
         "position_m": odom.get("position_m"),
@@ -1760,6 +1772,7 @@ def _snapshot_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             (
                 f"armed={state.get('armed')} mode={state.get('mode', 'unknown')} "
                 f"ekf={state.get('ekf_healthy')} "
+                f"preflight={state.get('preflight_ok')} "
                 f"landed={state.get('landed')}"
             ),
         ),

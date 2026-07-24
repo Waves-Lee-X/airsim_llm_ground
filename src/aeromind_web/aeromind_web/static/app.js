@@ -973,10 +973,15 @@ function renderStatus(data, source = "HTTP") {
   }
   if (state && stateFresh) {
     const landed = state.landed_valid === true && state.landed === true;
+    const preflightFailed = state.preflight_valid === true && state.preflight_ok !== true;
+    const flightHealthOk = state.ekf_healthy === true && !preflightFailed;
+    const flightHealthText = preflightFailed
+      ? "PX4 预检失败"
+      : (state.ekf_healthy ? "EKF 正常" : "EKF 异常");
     const armedText = state.armed ? "已解锁" : (landed ? "已落地/加锁" : "未解锁");
     updateBadge(els.armedBadge, armedText, state.armed ? "badge" : (landed ? "badge neutral" : "badge bad"));
     updateBadge(els.modeBadge, state.mode || "未知模式", state.mode === "OFFBOARD" ? "badge" : "badge neutral");
-    updateBadge(els.ekfBadge, state.ekf_healthy ? "EKF 正常" : "EKF 异常", state.ekf_healthy ? "badge" : "badge bad");
+    updateBadge(els.ekfBadge, flightHealthText, flightHealthOk ? "badge" : "badge bad");
 
     els.armedValue.textContent = state.armed ? "是" : "否";
     els.modeValue.textContent = state.mode || "--";
@@ -985,7 +990,9 @@ function renderStatus(data, source = "HTTP") {
       : "--";
     const gpsLabels = {0: "无定位", 1: "2D", 2: "3D", 3: "差分", 4: "RTK"};
     els.gpsValue.textContent = gpsLabels[Number(state.gps_fix)] || "--";
-    els.ekfValue.textContent = state.ekf_healthy ? "正常" : "异常";
+    els.ekfValue.textContent = preflightFailed
+      ? `${state.ekf_healthy ? "EKF正常" : "EKF异常"} / 预检失败`
+      : (state.ekf_healthy ? "正常" : "异常");
     els.hudMode.textContent = `MODE ${state.mode || "--"}`;
     els.chatArmedValue.textContent = armedText;
     els.chatArmedValue.className = state.armed ? "status-ok" : (landed ? "" : "status-warn");
@@ -994,8 +1001,10 @@ function renderStatus(data, source = "HTTP") {
       ? `${fmt(state.battery, 1)} V`
       : "--";
     els.chatGpsValue.textContent = gpsLabels[Number(state.gps_fix)] || "--";
-    els.chatEkfValue.textContent = state.ekf_healthy ? "正常" : "异常";
-    els.chatEkfValue.className = state.ekf_healthy ? "status-ok" : "status-bad";
+    els.chatEkfValue.textContent = preflightFailed
+      ? "预检失败"
+      : (state.ekf_healthy ? "正常" : "异常");
+    els.chatEkfValue.className = flightHealthOk ? "status-ok" : "status-bad";
   } else {
     updateBadge(els.armedBadge, "状态未知", "badge bad");
     updateBadge(els.modeBadge, "遥测超时", "badge neutral");

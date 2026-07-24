@@ -337,6 +337,8 @@ class WebConsoleNode(Node):
                 "battery": float(msg.battery),
                 "gps_fix": int(msg.gps_fix),
                 "ekf_healthy": bool(msg.ekf_healthy),
+                "preflight_ok": bool(msg.preflight_ok),
+                "preflight_valid": bool(msg.preflight_valid),
                 "landed": bool(msg.landed),
                 "landed_valid": bool(msg.landed_valid),
             }

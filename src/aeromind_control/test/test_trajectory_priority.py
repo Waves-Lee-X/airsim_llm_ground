@@ -1,7 +1,9 @@
 import unittest
+import time
 from types import SimpleNamespace
 
 from aeromind_control.control_node import (
+    ControlNode,
     autonomy_trajectory_action,
     estimator_status_flags_healthy,
     interpolate_trajectory,
@@ -15,6 +17,23 @@ from aeromind_control.px4_control import PX4Controller, _state_to_trajectory_set
 
 
 class TrajectoryPriorityTest(unittest.TestCase):
+    def test_px4_preflight_gate_rejects_failed_or_stale_status(self):
+        node = ControlNode.__new__(ControlNode)
+        node._latest_vehicle_status = SimpleNamespace(
+            pre_flight_checks_pass=False
+        )
+        node._latest_vehicle_status_received_at = time.monotonic()
+
+        error = node._px4_preflight_error()
+
+        self.assertIn("PX4 解锁预检未通过", error)
+
+        node._latest_vehicle_status.pre_flight_checks_pass = True
+        self.assertEqual(node._px4_preflight_error(), "")
+
+        node._latest_vehicle_status_received_at = time.monotonic() - 3.0
+        self.assertIn("遥测不可用或已超时", node._px4_preflight_error())
+
     def test_px4_gps_fix_is_mapped_to_drone_state_levels(self):
         self.assertEqual(px4_gps_fix_to_drone_fix(0), 0)
         self.assertEqual(px4_gps_fix_to_drone_fix(2), 1)

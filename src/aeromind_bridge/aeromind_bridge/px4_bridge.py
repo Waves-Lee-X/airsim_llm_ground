@@ -296,6 +296,10 @@ def vehicle_status_to_drone_state(px4_msg) -> DroneState:
     state.battery = 0.0   # VehicleStatus 不含电池信息
     state.gps_fix = 2     # 默认值，GPS 信息需从 SensorGps 话题获取
     state.ekf_healthy = (px4_msg.pre_flight_checks_pass if hasattr(px4_msg, 'pre_flight_checks_pass') else True)
+    state.preflight_ok = bool(
+        getattr(px4_msg, "pre_flight_checks_pass", False)
+    )
+    state.preflight_valid = hasattr(px4_msg, "pre_flight_checks_pass")
     state.landed = False
     state.landed_valid = False
     return state

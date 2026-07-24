@@ -795,6 +795,34 @@ class WorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("起飞区域净空证据不可用", result["message"])
         self.assertIsNone(result["checks"]["nearest_obstacle_m"])
 
+    def test_takeoff_safety_rejects_px4_preflight_failure(self):
+        bridge = self._bridge()
+        now = time.time()
+        bridge.snapshot = lambda: {
+            "available": True,
+            "state": {
+                "stamp": now,
+                "armed": False,
+                "ekf_healthy": True,
+                "preflight_valid": True,
+                "preflight_ok": False,
+                "gps_fix": 2,
+            },
+            "autonomy": {
+                "stamp": now,
+                "takeoff_clearance_valid": True,
+                "takeoff_clearance_m": 6.0,
+                "takeoff_clearance_source": "test",
+            },
+            "evidence": [],
+        }
+
+        result = bridge._safety_check({"check_takeoff_zone": True})
+
+        self.assertFalse(result["success"])
+        self.assertIn("PX4 解锁预检未通过", result["message"])
+        self.assertFalse(result["checks"]["preflight_ok"])
+
     def test_workflow_control_state_machine(self):
         bridge = self._bridge()
         bridge._workflow_controls["workflow-1"] = "running"
