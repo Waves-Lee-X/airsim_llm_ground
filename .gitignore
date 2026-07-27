@@ -26,8 +26,15 @@ logs/
 # Local presentation workspace
 ppt_work/
 
+# Competition materials (local only)
+/doc/参赛材料/
+/doc/09-研究生人工智能创新大赛参赛方案.md
+/doc/10-校赛参赛冲刺计划.md
+/doc/附件1：第八届中国研究生人工智能创新大赛初赛作品提交规范.pdf
+/doc/附件2：第八届中国研究生人工智能创新大赛项目文档模版.*
+/面向无人机的视觉语言感知*.pptx
+/面向无人机的视觉语言感知*.tmp
+
 # OS
 .DS_Store
 Thumbs.db
-doc/附件1：第八届中国研究生人工智能创新大赛初赛作品提交规范.pdf
-doc/附件2：第八届中国研究生人工智能创新大赛项目文档模版.pdf
