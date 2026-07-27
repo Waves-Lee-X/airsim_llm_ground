@@ -12,21 +12,40 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 
 ROOT = Path(__file__).resolve().parent
 TITLE = "智航灵枢：面向复杂任务的多模态具身智能无人机系统"
 BODY = (
-    "传统无人机地面站依赖专业操作，直接使用大模型又面临幻觉、越权和执行不可验证等风险。"
-    "本作品构建智航灵枢多模态具身智能无人机系统：LLM融合飞控遥测、RGB、深度、点云、YOLO与VLM证据，"
-    "将开放指令转化为Capability、Skill和Workflow；确定性网关完成参数校验、高风险确认，ROS 2/PX4负责实时执行，"
-    "遥测验证物理终态。系统已实现AirSim/PX4闭环、Web/飞书交互、航点飞行、避障重规划、拍照分析和任务报告。"
-    "在80条任务四组消融实验中，混合Agent严格通过率57.5%，为纯规则的2.7倍；固定任务10次闭环成功率100%。"
+    "传统无人机地面站操作门槛高，直接使用大模型则存在幻觉、越权和结果难验证等风险。"
+    "智航灵枢构建多模态具身智能无人机系统：LLM融合飞控遥测、RGB-D、点云、YOLO与VLM证据，"
+    "将开放指令转化为受约束、可确认的任务流程；确定性网关校验参数并触发高风险确认，"
+    "ROS 2/PX4执行飞行，遥测验证物理终态。系统已实现跨端交互、航点飞行、避障重规划、拍照分析和任务报告。"
+    "80条任务四组对比中，混合Agent严格通过率57.5%，约为纯规则的2.7倍；"
+    "在AirSim/PX4仿真中，固定任务10次闭环成功率100%。"
     "项目面向巡检、搜救、园区安防与科研教学。"
 )
 COUNT = len(BODY)
 assert COUNT <= 300, f"正文超过 300 字：{COUNT}"
+PDF_FONT = "STSong-Light"
+
+
+def register_pdf_font():
+    global PDF_FONT
+    candidates = [
+        Path(r"C:\Windows\Fonts\msyh.ttc"),
+        Path("/mnt/c/Windows/Fonts/msyh.ttc"),
+        Path("/mnt/c/Windows/Fonts/NotoSansSC-VF.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            pdfmetrics.registerFont(TTFont("AeroMindCJK", str(candidate), subfontIndex=0))
+            PDF_FONT = "AeroMindCJK"
+            return
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
 
 
 def set_run_font(run, name: str, size: float, bold: bool = False, color=None):
@@ -91,7 +110,7 @@ def build_docx():
 
 
 def build_pdf():
-    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    register_pdf_font()
     out = ROOT / "智航灵枢_参赛作品简介.pdf"
     doc = SimpleDocTemplate(
         str(out),
@@ -105,7 +124,7 @@ def build_pdf():
     )
     title_style = ParagraphStyle(
         "TitleCN",
-        fontName="STSong-Light",
+        fontName=PDF_FONT,
         fontSize=20,
         leading=29,
         alignment=TA_CENTER,
@@ -114,7 +133,7 @@ def build_pdf():
     )
     label_style = ParagraphStyle(
         "LabelCN",
-        fontName="STSong-Light",
+        fontName=PDF_FONT,
         fontSize=11,
         leading=16,
         alignment=TA_CENTER,
@@ -123,7 +142,7 @@ def build_pdf():
     )
     body_style = ParagraphStyle(
         "BodyCN",
-        fontName="STSong-Light",
+        fontName=PDF_FONT,
         fontSize=12,
         leading=24,
         alignment=TA_JUSTIFY,
@@ -132,7 +151,7 @@ def build_pdf():
     )
     note_style = ParagraphStyle(
         "NoteCN",
-        fontName="STSong-Light",
+        fontName=PDF_FONT,
         fontSize=9,
         leading=14,
         alignment=TA_CENTER,

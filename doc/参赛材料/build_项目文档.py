@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 import re
@@ -20,6 +21,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Image,
     LongTable,
@@ -33,16 +35,17 @@ from reportlab.platypus import (
 
 
 ROOT = Path(__file__).resolve().parent
-SOURCE = ROOT / "智航灵枢_项目文档.md"
-DOCX_OUT = ROOT / "智航灵枢_项目文档.docx"
-PDF_OUT = ROOT / "智航灵枢_项目文档.pdf"
+SOURCE = ROOT / "翼策_项目文档.md"
+DOCX_OUT = ROOT / "翼策_项目文档.docx"
+PDF_OUT = ROOT / "翼策_项目文档.pdf"
 
-PROJECT = "智航灵枢：面向复杂任务的多模态具身智能无人机系统"
-VERSION = "V1.0"
+PROJECT = "翼策——面向复杂低空任务的多模态具身智能无人机系统"
+VERSION = "V2.0 正式版"
 DATE = "2026.07.24"
-TEAM = "【团队名称待填写】"
-SCHOOL = "【学校及学院待填写】"
-GROUP = "【参赛组别待填写】"
+TEAM = "翼策项目团队"
+GROUP = "开放赛题（赛题四：机器人与具身智能）"
+STAGE = "AirSim/PX4 仿真研究原型"
+DOCUMENT_KIND = "初赛项目文档正式稿"
 
 NAVY = "173A5E"
 TEAL = "1E7A78"
@@ -50,6 +53,23 @@ PALE = "EAF2F4"
 LIGHT = "F5F7F9"
 TEXT = "26333D"
 MUTED = "647481"
+PDF_FONT = "STSong-Light"
+
+
+def register_pdf_font():
+    global PDF_FONT
+    candidates = [
+        Path(r"C:\Windows\Fonts\msyh.ttc"),
+        Path("/mnt/c/Windows/Fonts/msyh.ttc"),
+        Path("/mnt/c/Windows/Fonts/NotoSansSC-VF.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            pdfmetrics.registerFont(TTFont("AeroMindCJK", str(candidate), subfontIndex=0))
+            PDF_FONT = "AeroMindCJK"
+            return
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
 
 
 @dataclass
@@ -303,9 +323,9 @@ def add_docx_cover(doc: Document):
         ("版本", VERSION),
         ("日期", DATE),
         ("团队名称", TEAM),
-        ("学校及学院", SCHOOL),
         ("参赛组别", GROUP),
-        ("项目负责人", "【待填写】"),
+        ("当前阶段", STAGE),
+        ("文档性质", DOCUMENT_KIND),
     ]
     for row, (key, value) in zip(table.rows, values):
         row.cells[0].width = Cm(4.0)
@@ -321,7 +341,7 @@ def add_docx_cover(doc: Document):
     note.alignment = WD_ALIGN_PARAGRAPH.CENTER
     note.paragraph_format.space_before = Pt(36)
     set_docx_font(
-        note.add_run("研究原型｜AirSim/PX4 仿真验证｜身份信息提交前填写"),
+        note.add_run("开放赛题四｜AirSim/PX4 仿真验证｜V2.0 正式版"),
         "微软雅黑",
         9,
         False,
@@ -420,6 +440,16 @@ def add_docx_blocks(doc: Document, blocks: list[Block]):
 
 def build_docx(blocks: list[Block]):
     doc = Document()
+    props = doc.core_properties
+    props.title = PROJECT
+    props.subject = "第八届中国研究生人工智能创新大赛项目文档"
+    props.author = TEAM
+    props.last_modified_by = TEAM
+    props.category = GROUP
+    props.keywords = "多模态具身智能, 无人机, ROS 2, PX4, Agent"
+    props.comments = "V2.0 正式版"
+    props.created = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    props.modified = datetime(2026, 7, 24, tzinfo=timezone.utc)
     configure_docx_styles(doc)
     add_docx_cover(doc)
 
@@ -431,7 +461,7 @@ def build_docx(blocks: list[Block]):
     section = doc.sections[-1]
     header = section.header.paragraphs[0]
     header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    set_docx_font(header.add_run("智航灵枢｜项目文档"), "微软雅黑", 8, False, MUTED)
+    set_docx_font(header.add_run("翼策｜项目文档"), "微软雅黑", 8, False, MUTED)
     add_docx_page_number(section.footer.paragraphs[0])
     add_docx_blocks(doc, blocks)
 
@@ -453,7 +483,7 @@ def pdf_styles():
         "title": ParagraphStyle(
             "CNTitle",
             parent=base["Title"],
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=22,
             leading=32,
             alignment=TA_CENTER,
@@ -463,7 +493,7 @@ def pdf_styles():
         ),
         "subtitle": ParagraphStyle(
             "CNSubtitle",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=15,
             leading=22,
             alignment=TA_CENTER,
@@ -473,7 +503,7 @@ def pdf_styles():
         ),
         "h1": ParagraphStyle(
             "CNH1",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=15,
             leading=22,
             textColor=colors.HexColor(f"#{NAVY}"),
@@ -484,7 +514,7 @@ def pdf_styles():
         ),
         "h2": ParagraphStyle(
             "CNH2",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=12.5,
             leading=19,
             textColor=colors.HexColor(f"#{TEAL}"),
@@ -495,7 +525,7 @@ def pdf_styles():
         ),
         "h3": ParagraphStyle(
             "CNH3",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=11,
             leading=17,
             textColor=colors.HexColor(f"#{NAVY}"),
@@ -506,7 +536,7 @@ def pdf_styles():
         ),
         "body": ParagraphStyle(
             "CNBody",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=9.5,
             leading=16,
             alignment=TA_JUSTIFY,
@@ -517,7 +547,7 @@ def pdf_styles():
         ),
         "list": ParagraphStyle(
             "CNList",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=9.5,
             leading=15,
             leftIndent=18,
@@ -528,7 +558,7 @@ def pdf_styles():
         ),
         "quote": ParagraphStyle(
             "CNQuote",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=9.5,
             leading=16,
             leftIndent=14,
@@ -544,7 +574,7 @@ def pdf_styles():
         ),
         "code": ParagraphStyle(
             "CNCode",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=8.5,
             leading=13,
             leftIndent=10,
@@ -558,7 +588,7 @@ def pdf_styles():
         ),
         "caption": ParagraphStyle(
             "CNCaption",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=8.5,
             leading=13,
             alignment=TA_CENTER,
@@ -568,7 +598,7 @@ def pdf_styles():
         ),
         "table": ParagraphStyle(
             "CNTable",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=7.2,
             leading=10,
             textColor=colors.HexColor(f"#{TEXT}"),
@@ -576,7 +606,7 @@ def pdf_styles():
         ),
         "table_head": ParagraphStyle(
             "CNTableHead",
-            fontName="STSong-Light",
+            fontName=PDF_FONT,
             fontSize=7.2,
             leading=10,
             alignment=TA_CENTER,
@@ -627,7 +657,7 @@ def pdf_table(rows, styles, available_width):
 
 
 def build_pdf(blocks: list[Block]):
-    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    register_pdf_font()
     styles = pdf_styles()
     doc = SimpleDocTemplate(
         str(PDF_OUT),
@@ -637,7 +667,7 @@ def build_pdf(blocks: list[Block]):
         topMargin=1.8 * cm,
         bottomMargin=1.7 * cm,
         title=PROJECT,
-        author="智航灵枢项目团队",
+        author=TEAM,
         subject="第八届中国研究生人工智能创新大赛项目文档",
     )
     available_width = A4[0] - 3.6 * cm
@@ -653,9 +683,9 @@ def build_pdf(blocks: list[Block]):
         ["版本", VERSION],
         ["日期", DATE],
         ["团队名称", TEAM],
-        ["学校及学院", SCHOOL],
         ["参赛组别", GROUP],
-        ["项目负责人", "【待填写】"],
+        ["当前阶段", STAGE],
+        ["文档性质", DOCUMENT_KIND],
     ]
     cover_table = Table(
         [
@@ -685,7 +715,7 @@ def build_pdf(blocks: list[Block]):
             cover_table,
             Spacer(1, 1.0 * cm),
             Paragraph(
-                "研究原型｜AirSim/PX4 仿真验证｜身份信息提交前填写",
+                "开放赛题四｜AirSim/PX4 仿真验证｜V2.0 正式版",
                 styles["caption"],
             ),
             PageBreak(),
@@ -754,9 +784,9 @@ def build_pdf(blocks: list[Block]):
 
     def page(canvas, _doc):
         canvas.saveState()
-        canvas.setFont("STSong-Light", 7.5)
+        canvas.setFont(PDF_FONT, 7.5)
         canvas.setFillColor(colors.HexColor(f"#{MUTED}"))
-        canvas.drawString(1.8 * cm, 0.85 * cm, "智航灵枢｜项目文档")
+        canvas.drawString(1.8 * cm, 0.85 * cm, "翼策｜项目文档")
         canvas.drawRightString(A4[0] - 1.8 * cm, 0.85 * cm, str(_doc.page))
         canvas.restoreState()
 

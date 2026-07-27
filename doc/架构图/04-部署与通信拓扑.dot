@@ -1,0 +1,57 @@
+digraph DeploymentTopology {
+  graph [rankdir=LR, bgcolor="#08111F", pad="0.4", nodesep="0.34", ranksep="0.62", splines=ortho, fontname="Microsoft YaHei", size="13.333,7.5!", ratio="fill", dpi=180];
+  node [shape=rect, style="rounded,filled", fontname="Microsoft YaHei", fontcolor="#EAF2FF", color="#263B55", fillcolor="#101D2D", penwidth=1.2, margin="0.18,0.12"];
+  edge [fontname="Microsoft YaHei", color="#4F6A86", penwidth=2.0, arrowsize=0.72, fontsize=9, fontcolor="#A9B8CA"];
+
+  title [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+    <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="24" COLOR="#F4F8FF"><B>系统部署与通信拓扑</B></FONT></TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="11" COLOR="#7F93AD">Windows / WSL2 / ROS 2 / PX4 / 云端模型之间的运行边界与通信协议</FONT></TD></TR>
+  </TABLE>>];
+
+  subgraph cluster_user {
+    label="操作终端"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#8FA6C1"; color="#1A2A3E"; fillcolor="#0B1625"; style="rounded,filled"; margin=18;
+    browser [label=<<B>Web 浏览器</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">地面站 · 确认 · 态势 · 报告</FONT>>, width=2.45];
+    feishu [label=<<B>飞书客户端</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">移动任务入口 · 消息通知</FONT>>, width=2.45];
+  }
+
+  subgraph cluster_windows {
+    label="Windows 宿主环境"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#87B4FF"; color="#284D8A"; fillcolor="#0D1B31"; style="rounded,filled"; margin=18;
+    airsim [label=<<FONT POINT-SIZE="14"><B>AirSim</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">场景 · RGB · Depth · LiDAR</FONT>>, fillcolor="#153561", color="#3C77D8", width=2.55];
+    px4 [label=<<FONT POINT-SIZE="14"><B>PX4 SITL</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">飞行状态 · 模式 · 姿态控制</FONT>>, fillcolor="#153561", color="#3C77D8", width=2.55];
+  }
+
+  subgraph cluster_wsl {
+    label="WSL2 / Ubuntu 22.04 / ROS 2 Humble"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#7FE1D1"; color="#1F675F"; fillcolor="#0A1D21"; style="rounded,filled"; margin=18;
+    web [label=<<B>aeromind_web</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">HTTP / WebSocket · 8080</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.55];
+    gateway [label=<<B>Agent Gateway</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">会话 · 确认 · Workflow · 8090</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.75];
+    ros [label=<<B>ROS 2 DDS 节点</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">Bridge · Perception · Autonomy · Control</FONT>>, fillcolor="#113B3B", color="#2B9486", width=3.0];
+    xrce [label=<<B>Micro XRCE-DDS Agent</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">UDP 8888 · uORB ↔ DDS</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.75];
+    db [label=<<B>SQLite / Mission 归档</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">会话 · 确认 · 事件 · 截图 · 报告</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.75];
+  }
+
+  subgraph cluster_cloud {
+    label="低频云端推理"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#D8BA78"; color="#8C6A2F"; fillcolor="#201A11"; style="rounded,filled"; margin=18;
+    llm [label=<<B>LLM API</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">复杂任务理解与结构化规划</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.65];
+    vlm [label=<<B>VLM API</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">单帧场景语义与风险建议</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.65];
+  }
+
+  principle [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="8" CELLPADDING="7"><TR>
+    <TD BGCOLOR="#172538"><FONT COLOR="#7DAAFF"><B>实时链</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A8B8CB">PX4 与 ROS 2 本地闭环</FONT></TD>
+    <TD BGCOLOR="#2B2418"><FONT COLOR="#E6B95F"><B>智能链</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#CFC1A3">LLM/VLM 仅参与低频决策</FONT></TD>
+    <TD BGCOLOR="#14291F"><FONT COLOR="#70D496"><B>审计链</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A9C7B4">任务与证据可持久化追溯</FONT></TD>
+  </TR></TABLE>>];
+
+  title -> browser [style=invis];
+  browser -> web [dir=both, color="#735E9E", label="HTTP / WebSocket"];
+  feishu -> gateway [dir=both, color="#735E9E", label="长连接"];
+  web -> ros [dir=both, color="#35B9A8", label="ROS 2 接口"];
+  web -> gateway [dir=both, color="#35B9A8", label="任务 / 确认"];
+  gateway -> ros [dir=both, color="#35B9A8", label="Service / Action"];
+  gateway -> db [dir=both, color="#735E9E", label="持久化"];
+  gateway -> llm [dir=both, color="#D29A3A", label="OpenAI-compatible API"];
+  ros -> vlm [dir=both, color="#D29A3A", label="按需图像分析"];
+  airsim -> ros [dir=both, color="#43C8D8", label="AirSim RPC"];
+  px4 -> xrce [dir=both, color="#6E9CF2", label="uXRCE-DDS / UDP"];
+  xrce -> ros [dir=both, color="#6E9CF2", label="ROS 2 DDS"];
+  db -> principle [style=invis];
+}

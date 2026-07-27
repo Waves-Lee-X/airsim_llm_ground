@@ -1,0 +1,71 @@
+digraph EvidenceWorldModel {
+  graph [rankdir=TB, bgcolor="#08111F", pad="0.4", nodesep="0.34", ranksep="0.62", splines=ortho, fontname="Microsoft YaHei", size="13.333,7.5!", ratio="fill", dpi=180];
+  node [shape=rect, style="rounded,filled", fontname="Microsoft YaHei", fontcolor="#EAF2FF", color="#263B55", fillcolor="#101D2D", penwidth=1.2, margin="0.18,0.12"];
+  edge [fontname="Microsoft YaHei", color="#4F6A86", penwidth=2.0, arrowsize=0.72, fontsize=9, fontcolor="#9FB2CA"];
+
+  title [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+    <TR><TD><FONT POINT-SIZE="24" COLOR="#F4F8FF"><B>多模态证据与语义世界模型</B></FONT></TD></TR>
+    <TR><TD><FONT POINT-SIZE="11" COLOR="#7F93AD">区分传感器事实、模型推断、融合对象和派生事件，为任务规划提供带来源与时间的信息</FONT></TD></TR>
+  </TABLE>>];
+
+  subgraph cluster_source {
+    label="原始观测与飞控事实"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#8FA6C1"; color="#1A2A3E"; fillcolor="#0B1625"; style="rounded,filled"; margin=16;
+    rgb [label=<<B>RGB 图像</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">纹理 · 目标外观</FONT>>, width=2.2];
+    depth [label=<<B>DepthPlanar</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">像素级几何距离</FONT>>, width=2.2];
+    lidar [label=<<B>LiDAR 点云</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">空间障碍结构</FONT>>, width=2.2];
+    state [label=<<B>PX4 / 里程计</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">模式 · 位置 · 速度 · 健康</FONT>>, width=2.2];
+    {rank=same; rgb; depth; lidar; state;}
+  }
+
+  subgraph cluster_inference {
+    label="感知推断"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#7FE1D1"; color="#1F675F"; fillcolor="#0A1D21"; style="rounded,filled"; margin=16;
+    yolo [label=<<B>YOLO 检测</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">类别 · 置信度 · 检测框</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.45];
+    geometry [label=<<B>几何定位</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">深度关联 · TF 变换 · ENU 坐标</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.55];
+    vlm [label=<<B>VLM 语义分析</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">场景关系 · 风险 · 可通行建议</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.55];
+    health [label=<<B>数据健康检查</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">频率 · 年龄 · 同步差 · TF</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.55];
+    {rank=same; yolo; geometry; vlm; health;}
+  }
+
+  subgraph cluster_world {
+    label="时序融合与世界事实"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#9DBBFF"; color="#284D8A"; fillcolor="#0D1B31"; style="rounded,filled"; margin=16;
+    fusion [label=<<FONT POINT-SIZE="14"><B>Semantic Fusion</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">类别、位置、置信度、协方差与来源</FONT>>, fillcolor="#153561", color="#3C77D8", width=3.0];
+    tracker [label=<<FONT POINT-SIZE="14"><B>Object Tracker</B></FONT><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">对象 ID · 命中/漏检 · 动静态 · 年龄</FONT>>, fillcolor="#153561", color="#3C77D8", width=3.0];
+    relations [label=<<B>关系与事件</B><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">邻近 · 进入风险区 · 轨迹冲突</FONT>>, fillcolor="#153561", color="#3C77D8", width=2.7];
+    {rank=same; fusion; tracker; relations;}
+  }
+
+  subgraph cluster_consumer {
+    label="任务消费者"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#D8BA78"; color="#8C6A2F"; fillcolor="#201A11"; style="rounded,filled"; margin=16;
+    agent [label=<<B>Agent / Workflow</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">查询当前事实 · 条件分支 · 报告</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.7];
+    autonomy [label=<<B>自主规划</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">障碍约束 · 局部重规划</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.7];
+    web [label=<<B>Web 与证据归档</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">可视化 · 截图 · 来源 · 时间</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.7];
+    {rank=same; agent; autonomy; web;}
+  }
+
+  legend [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="8" CELLPADDING="7"><TR>
+    <TD BGCOLOR="#172538"><FONT COLOR="#7DAAFF"><B>sensor_fact</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A8B8CB">传感器或飞控直接事实</FONT></TD>
+    <TD BGCOLOR="#2B2418"><FONT COLOR="#E6B95F"><B>model_inference</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#CFC1A3">模型推断，保留不确定性</FONT></TD>
+    <TD BGCOLOR="#14291F"><FONT COLOR="#70D496"><B>fused_world_fact</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A9C7B4">多源融合并带追踪状态</FONT></TD>
+  </TR></TABLE>>];
+
+  title -> rgb [style=invis];
+  rgb -> yolo [color="#43C8D8"];
+  rgb -> vlm [color="#43C8D8"];
+  depth -> geometry [color="#43C8D8"];
+  lidar -> geometry [color="#43C8D8"];
+  state -> geometry [color="#6E9CF2"];
+  rgb -> health [color="#6E9CF2"];
+  depth -> health [color="#6E9CF2"];
+  lidar -> health [color="#6E9CF2"];
+  yolo -> fusion [color="#35B9A8"];
+  geometry -> fusion [color="#35B9A8"];
+  vlm -> fusion [color="#35B9A8"];
+  health -> fusion [color="#35B9A8", label="新鲜度门控"];
+  fusion -> tracker [color="#598EF0"];
+  tracker -> relations [color="#598EF0"];
+  tracker -> agent [color="#D29A3A"];
+  relations -> agent [color="#D29A3A"];
+  geometry -> autonomy [color="#D29A3A"];
+  fusion -> web [color="#D29A3A"];
+  relations -> legend [style=invis];
+}

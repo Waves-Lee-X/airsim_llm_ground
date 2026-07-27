@@ -1,0 +1,48 @@
+digraph MissionStateMachine {
+  graph [rankdir=LR, bgcolor="#08111F", pad="0.4", nodesep="0.38", ranksep="0.68", splines=spline, fontname="Microsoft YaHei", size="13.333,7.5!", ratio="fill", dpi=180];
+  node [shape=rect, style="rounded,filled", fontname="Microsoft YaHei", fontcolor="#EAF2FF", color="#263B55", fillcolor="#101D2D", penwidth=1.3, margin="0.18,0.12", width=1.8, height=0.72];
+  edge [fontname="Microsoft YaHei", color="#4F6A86", penwidth=2.0, arrowsize=0.72, fontsize=9, fontcolor="#9FB2CA"];
+
+  title [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+    <TR><TD><FONT POINT-SIZE="24" COLOR="#F4F8FF"><B>任务生命周期与异常收敛状态机</B></FONT></TD></TR>
+    <TR><TD><FONT POINT-SIZE="11" COLOR="#7F93AD">高风险任务不可绕过确认；进程中断后不自动恢复飞行；每次任务只能产生一个终态</FONT></TD></TR>
+  </TABLE>>];
+
+  created [label=<<B>created</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">任务已接收</FONT>>, fillcolor="#14243A", color="#355E91"];
+  planned [label=<<B>planned</B><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">结构化计划已生成</FONT>>, fillcolor="#153561", color="#3C77D8"];
+  awaiting [label=<<B>awaiting_confirmation</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">等待人工授权</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.35];
+  running [label=<<B>running</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">执行步骤与验证</FONT>>, fillcolor="#113B3B", color="#2B9486"];
+  paused [label=<<B>paused</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">人工暂停或等待条件</FONT>>, fillcolor="#302719", color="#8C6A2F"];
+  recovering [label=<<B>recovering</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">有限重试 / 重规划</FONT>>, fillcolor="#302719", color="#8C6A2F"];
+
+  completed [label=<<B>completed</B><BR/><FONT POINT-SIZE="10" COLOR="#A9D7B5">物理终态满足</FONT>>, fillcolor="#173823", color="#398452"];
+  failed [label=<<B>failed</B><BR/><FONT POINT-SIZE="10" COLOR="#E5A3A1">不可恢复失败</FONT>>, fillcolor="#351D22", color="#8E424A"];
+  cancelled [label=<<B>cancelled</B><BR/><FONT POINT-SIZE="10" COLOR="#E5A3A1">用户取消并安全收敛</FONT>>, fillcolor="#351D22", color="#8E424A"];
+  interrupted [label=<<B>interrupted</B><BR/><FONT POINT-SIZE="10" COLOR="#E5A3A1">进程重启 / 会话中断</FONT>>, fillcolor="#351D22", color="#8E424A"];
+  rejected [label=<<B>rejected</B><BR/><FONT POINT-SIZE="10" COLOR="#E5A3A1">校验失败 / 未授权</FONT>>, fillcolor="#351D22", color="#8E424A"];
+
+  invariant [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="8" CELLPADDING="7"><TR>
+    <TD BGCOLOR="#172538"><FONT COLOR="#7DAAFF"><B>唯一终态</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A8B8CB">重复终态事件计为缺陷</FONT></TD>
+    <TD BGCOLOR="#2B2418"><FONT COLOR="#E6B95F"><B>中断不自动续飞</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#CFC1A3">须由操作员检查后重新规划</FONT></TD>
+    <TD BGCOLOR="#14291F"><FONT COLOR="#70D496"><B>完成依赖物理证据</B></FONT><BR/><FONT POINT-SIZE="9" COLOR="#A9C7B4">接口受理不等于完成</FONT></TD>
+  </TR></TABLE>>];
+
+  title -> created [style=invis];
+  created -> planned [label="解析成功", color="#598EF0"];
+  created -> rejected [label="无法映射能力", color="#C75A65"];
+  planned -> awaiting [label="高风险", color="#D29A3A"];
+  planned -> running [label="低风险且校验通过", color="#35B9A8"];
+  planned -> rejected [label="Schema / 参数失败", color="#C75A65"];
+  awaiting -> running [label="确认通过", color="#35B9A8"];
+  awaiting -> rejected [label="拒绝 / 过期", color="#C75A65"];
+  running -> paused [label="人工暂停 / 条件等待", color="#D29A3A"];
+  paused -> running [label="恢复", color="#35B9A8"];
+  running -> recovering [label="可恢复异常", color="#D29A3A"];
+  recovering -> running [label="有限重试成功", color="#35B9A8"];
+  recovering -> failed [label="重试耗尽", color="#C75A65"];
+  running -> completed [label="终态验证通过", color="#50B56C"];
+  running -> failed [label="不可恢复失败", color="#C75A65"];
+  running -> cancelled [label="取消并安全收敛", color="#C75A65"];
+  running -> interrupted [label="进程 / 会话中断", color="#C75A65"];
+  completed -> invariant [style=invis];
+}

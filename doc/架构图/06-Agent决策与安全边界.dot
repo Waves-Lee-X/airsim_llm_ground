@@ -1,0 +1,62 @@
+digraph AgentSafety {
+  graph [rankdir=TB, bgcolor="#08111F", pad="0.4", nodesep="0.34", ranksep="0.58", splines=ortho, fontname="Microsoft YaHei", size="13.333,7.5!", ratio="fill", dpi=180];
+  node [shape=rect, style="rounded,filled", fontname="Microsoft YaHei", fontcolor="#EAF2FF", color="#263B55", fillcolor="#101D2D", penwidth=1.2, margin="0.18,0.12"];
+  edge [fontname="Microsoft YaHei", color="#4F6A86", penwidth=2.0, arrowsize=0.72, fontsize=9, fontcolor="#9FB2CA"];
+
+  title [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+    <TR><TD><FONT POINT-SIZE="24" COLOR="#F4F8FF"><B>Agent 决策与确定性安全边界</B></FONT></TD></TR>
+    <TR><TD><FONT POINT-SIZE="11" COLOR="#7F93AD">模型负责理解和组合，网关负责授权与校验，ROS/PX4 负责可验证的物理执行</FONT></TD></TR>
+  </TABLE>>];
+
+  input [label=<<B>自然语言任务 + 当前证据</B><BR/><FONT POINT-SIZE="10" COLOR="#9FB2CA">用户目标 · 会话上下文 · 状态快照</FONT>>, width=3.2];
+
+  subgraph cluster_reason {
+    label="非确定性智能区"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#9DBBFF"; color="#284D8A"; fillcolor="#0D1B31"; style="rounded,filled"; margin=16;
+    router [shape=diamond, label=<<B>任务是否明确且已注册？</B>>, fillcolor="#172846", color="#426AAE", width=2.5, height=1.0];
+    rules [label=<<B>确定性路由</B><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">明确命令 · 已知参数</FONT>>, fillcolor="#153561", color="#3C77D8", width=2.45];
+    llm [label=<<B>LLM + Schema 规划</B><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">开放表达 · 复杂条件 · 任务拆解</FONT>>, fillcolor="#153561", color="#3C77D8", width=2.65];
+    plan [label=<<B>结构化计划候选</B><BR/><FONT POINT-SIZE="10" COLOR="#AFC5E8">Capability / Skill / Workflow</FONT>>, fillcolor="#153561", color="#3C77D8", width=2.75];
+  }
+
+  subgraph cluster_guard {
+    label="确定性治理区"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#D8BA78"; color="#8C6A2F"; fillcolor="#201A11"; style="rounded,filled"; margin=16;
+    schema [label=<<B>Schema 与能力白名单</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">字段 · 类型 · 枚举 · 已注册接口</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.65];
+    bounds [label=<<B>参数与状态门禁</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">高度/距离边界 · 数据新鲜度 · 预检</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.75];
+    risk [shape=diamond, label=<<B>是否高风险？</B>>, fillcolor="#302719", color="#8C6A2F", width=2.0, height=0.95];
+    confirm [label=<<B>持久化人工确认</B><BR/><FONT POINT-SIZE="10" COLOR="#D8BA78">用户/会话绑定 · 有效期 · 幂等</FONT>>, fillcolor="#302719", color="#8C6A2F", width=2.65];
+  }
+
+  subgraph cluster_execute {
+    label="可验证执行区"; labelloc=t; labeljust=l; fontsize=14; fontcolor="#7FE1D1"; color="#1F675F"; fillcolor="#0A1D21"; style="rounded,filled"; margin=16;
+    workflow [label=<<B>Workflow 执行器</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">依赖 · 条件 · 超时 · 重试 · 终态</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.75];
+    ros [label=<<B>ROS 2 能力适配器</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">Service · Action · Topic</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.65];
+    px4 [label=<<B>Autonomy / PX4</B><BR/><FONT POINT-SIZE="10" COLOR="#8FC8C1">规划 · 轨迹跟踪 · 飞控闭环</FONT>>, fillcolor="#113B3B", color="#2B9486", width=2.65];
+    verify [shape=diamond, label=<<B>物理终态是否满足？</B>>, fillcolor="#113B3B", color="#2B9486", width=2.35, height=1.0];
+  }
+
+  success [label=<<B>完成并归档</B><BR/><FONT POINT-SIZE="10" COLOR="#A9D7B5">遥测 · 截图 · 事件 · 报告</FONT>>, fillcolor="#173823", color="#398452", width=2.55];
+  recover [label=<<B>受控恢复</B><BR/><FONT POINT-SIZE="10" COLOR="#E4C179">暂停 · 重试 · 重规划</FONT>>, fillcolor="#312719", color="#8C6A2F", width=2.45];
+  reject [label=<<B>拒绝或安全终止</B><BR/><FONT POINT-SIZE="10" COLOR="#E5A3A1">不执行 · 悬停 · 降落 · RTL</FONT>>, fillcolor="#351D22", color="#8E424A", width=2.65];
+
+  title -> input [style=invis];
+  input -> router [color="#598EF0"];
+  router -> rules [label="是", color="#598EF0"];
+  router -> llm [label="否", color="#598EF0"];
+  rules -> plan [color="#598EF0"];
+  llm -> plan [color="#598EF0"];
+  plan -> schema [color="#D29A3A"];
+  schema -> bounds [color="#D29A3A"];
+  bounds -> risk [color="#D29A3A"];
+  bounds -> reject [label="不通过", color="#C75A65"];
+  risk -> confirm [label="是", color="#D29A3A"];
+  risk -> workflow [label="否", color="#35B9A8"];
+  confirm -> workflow [label="确认通过", color="#35B9A8"];
+  confirm -> reject [label="拒绝 / 过期", color="#C75A65"];
+  workflow -> ros [color="#35B9A8"];
+  ros -> px4 [color="#35B9A8"];
+  px4 -> verify [color="#35B9A8"];
+  verify -> success [label="是", color="#50B56C"];
+  verify -> recover [label="未完成 / 可恢复", color="#D29A3A"];
+  verify -> reject [label="风险不可接受", color="#C75A65"];
+  recover -> workflow [label="有限重试", color="#D29A3A", constraint=false];
+}
