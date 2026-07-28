@@ -1,0 +1,1340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "1.0",
+  "schemas": {
+    "fleet_config": {
+      "$defs": {
+        "DeploymentMode": {
+          "enum": [
+            "sim",
+            "real"
+          ],
+          "title": "DeploymentMode",
+          "type": "string"
+        },
+        "FcuConnection": {
+          "additionalProperties": false,
+          "properties": {
+            "baudrate": {
+              "anyOf": [
+                {
+                  "maximum": 2000000,
+                  "minimum": 9600,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Baudrate"
+            },
+            "endpoint": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Endpoint",
+              "type": "string"
+            },
+            "source_system": {
+              "maximum": 254,
+              "minimum": 200,
+              "title": "Source System",
+              "type": "integer"
+            },
+            "target_component": {
+              "default": 1,
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Target Component",
+              "type": "integer"
+            },
+            "target_system": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Target System",
+              "type": "integer"
+            },
+            "transport": {
+              "$ref": "#/$defs/FcuTransport"
+            }
+          },
+          "required": [
+            "transport",
+            "endpoint",
+            "source_system",
+            "target_system"
+          ],
+          "title": "FcuConnection",
+          "type": "object"
+        },
+        "FcuTransport": {
+          "enum": [
+            "udp",
+            "serial"
+          ],
+          "title": "FcuTransport",
+          "type": "string"
+        },
+        "SensorSourceKind": {
+          "enum": [
+            "airsim",
+            "realsense",
+            "replay"
+          ],
+          "title": "SensorSourceKind",
+          "type": "string"
+        },
+        "VehicleRuntimeConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "credential_env": {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "title": "Credential Env",
+              "type": "string"
+            },
+            "fcu": {
+              "$ref": "#/$defs/FcuConnection"
+            },
+            "frame_calibration_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Frame Calibration Id",
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "runtime_host": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "title": "Runtime Host",
+              "type": "string"
+            },
+            "sensor_source": {
+              "$ref": "#/$defs/SensorSourceKind"
+            },
+            "setpoint_rate_hz": {
+              "default": 20.0,
+              "maximum": 50.0,
+              "minimum": 10.0,
+              "title": "Setpoint Rate Hz",
+              "type": "number"
+            },
+            "trajectory_timeout_ms": {
+              "default": 1000,
+              "maximum": 10000,
+              "minimum": 250,
+              "title": "Trajectory Timeout Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "name",
+            "runtime_host",
+            "frame_calibration_id",
+            "credential_env",
+            "sensor_source",
+            "fcu"
+          ],
+          "title": "VehicleRuntimeConfig",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "fleet_name": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Fleet Name",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/DeploymentMode"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "vehicles": {
+          "items": {
+            "$ref": "#/$defs/VehicleRuntimeConfig"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Vehicles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "fleet_name",
+        "vehicles"
+      ],
+      "title": "FleetConfig",
+      "type": "object"
+    },
+    "wire_message": {
+      "$defs": {
+        "AckStatus": {
+          "enum": [
+            "accepted",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            "expired"
+          ],
+          "title": "AckStatus",
+          "type": "string"
+        },
+        "BoxFace": {
+          "enum": [
+            "front",
+            "back",
+            "left",
+            "right",
+            "top",
+            "unknown"
+          ],
+          "title": "BoxFace",
+          "type": "string"
+        },
+        "CoordinateFrame": {
+          "enum": [
+            "none",
+            "map",
+            "local_ned",
+            "global_wgs84",
+            "body_frd",
+            "camera_optical"
+          ],
+          "title": "CoordinateFrame",
+          "type": "string"
+        },
+        "FormationCommand": {
+          "additionalProperties": false,
+          "properties": {
+            "created_at_utc": {
+              "format": "date-time",
+              "title": "Created At Utc",
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame",
+              "default": "none"
+            },
+            "frame_calibration_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Frame Calibration Id"
+            },
+            "message_id": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            },
+            "message_type": {
+              "const": "formation_command",
+              "default": "formation_command",
+              "title": "Message Type",
+              "type": "string"
+            },
+            "mission_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Id"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "session_id": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/$defs/FormationShape"
+            },
+            "spacing_m": {
+              "maximum": 50.0,
+              "minimum": 2.0,
+              "title": "Spacing M",
+              "type": "number"
+            },
+            "starts_at_utc": {
+              "format": "date-time",
+              "title": "Starts At Utc",
+              "type": "string"
+            },
+            "transition_duration_s": {
+              "maximum": 60.0,
+              "minimum": 1.0,
+              "title": "Transition Duration S",
+              "type": "number"
+            },
+            "ttl_ms": {
+              "default": 5000,
+              "maximum": 300000,
+              "minimum": 100,
+              "title": "Ttl Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "virtual_leader_position_m": {
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "sequence",
+            "session_id",
+            "shape",
+            "spacing_m",
+            "transition_duration_s",
+            "starts_at_utc",
+            "virtual_leader_position_m"
+          ],
+          "title": "FormationCommand",
+          "type": "object"
+        },
+        "FormationShape": {
+          "enum": [
+            "line",
+            "v",
+            "square"
+          ],
+          "title": "FormationShape",
+          "type": "string"
+        },
+        "Heartbeat": {
+          "additionalProperties": false,
+          "properties": {
+            "configuration_hash": {
+              "maxLength": 128,
+              "minLength": 8,
+              "title": "Configuration Hash",
+              "type": "string"
+            },
+            "created_at_utc": {
+              "format": "date-time",
+              "title": "Created At Utc",
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame",
+              "default": "none"
+            },
+            "frame_calibration_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Frame Calibration Id"
+            },
+            "last_command_message_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Command Message Id"
+            },
+            "message_id": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            },
+            "message_type": {
+              "const": "heartbeat",
+              "default": "heartbeat",
+              "title": "Message Type",
+              "type": "string"
+            },
+            "mission_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Id"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "session_id": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            },
+            "software_version": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Software Version",
+              "type": "string"
+            },
+            "ttl_ms": {
+              "default": 5000,
+              "maximum": 300000,
+              "minimum": 100,
+              "title": "Ttl Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "sequence",
+            "session_id",
+            "software_version",
+            "configuration_hash"
+          ],
+          "title": "Heartbeat",
+          "type": "object"
+        },
+        "MissionAck": {
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged_message_id": {
+              "format": "uuid",
+              "title": "Acknowledged Message Id",
+              "type": "string"
+            },
+            "apm_command_result": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Apm Command Result"
+            },
+            "created_at_utc": {
+              "format": "date-time",
+              "title": "Created At Utc",
+              "type": "string"
+            },
+            "detail": {
+              "default": "",
+              "maxLength": 512,
+              "title": "Detail",
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame",
+              "default": "none"
+            },
+            "frame_calibration_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Frame Calibration Id"
+            },
+            "message_id": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            },
+            "message_type": {
+              "const": "mission_ack",
+              "default": "mission_ack",
+              "title": "Message Type",
+              "type": "string"
+            },
+            "mission_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Id"
+            },
+            "physical_completion_confirmed": {
+              "default": false,
+              "title": "Physical Completion Confirmed",
+              "type": "boolean"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "session_id": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/$defs/AckStatus"
+            },
+            "ttl_ms": {
+              "default": 5000,
+              "maximum": 300000,
+              "minimum": 100,
+              "title": "Ttl Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "sequence",
+            "session_id",
+            "acknowledged_message_id",
+            "status"
+          ],
+          "title": "MissionAck",
+          "type": "object"
+        },
+        "Quaternion": {
+          "additionalProperties": false,
+          "properties": {
+            "w": {
+              "title": "W",
+              "type": "number"
+            },
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "w",
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Quaternion",
+          "type": "object"
+        },
+        "SemanticObservation": {
+          "additionalProperties": false,
+          "properties": {
+            "box_id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Box Id",
+              "type": "string"
+            },
+            "color": {
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Color",
+              "type": "string"
+            },
+            "confidence": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "created_at_utc": {
+              "format": "date-time",
+              "title": "Created At Utc",
+              "type": "string"
+            },
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "face": {
+              "$ref": "#/$defs/BoxFace"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame",
+              "default": "none"
+            },
+            "frame_calibration_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Frame Calibration Id"
+            },
+            "message_id": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            },
+            "message_type": {
+              "const": "semantic_observation",
+              "default": "semantic_observation",
+              "title": "Message Type",
+              "type": "string"
+            },
+            "mission_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Id"
+            },
+            "model_name": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Model Name"
+            },
+            "observed_at_utc": {
+              "format": "date-time",
+              "title": "Observed At Utc",
+              "type": "string"
+            },
+            "position_m": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "session_id": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            },
+            "ttl_ms": {
+              "default": 5000,
+              "maximum": 300000,
+              "minimum": 100,
+              "title": "Ttl Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "sequence",
+            "session_id",
+            "observed_at_utc",
+            "box_id",
+            "color",
+            "face",
+            "confidence",
+            "evidence_ids"
+          ],
+          "title": "SemanticObservation",
+          "type": "object"
+        },
+        "TrajectoryPoint": {
+          "additionalProperties": false,
+          "properties": {
+            "position_m": {
+              "$ref": "#/$defs/Vector3"
+            },
+            "time_from_start_ms": {
+              "maximum": 300000,
+              "minimum": 0,
+              "title": "Time From Start Ms",
+              "type": "integer"
+            },
+            "velocity_m_s": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "yaw_rad": {
+              "anyOf": [
+                {
+                  "maximum": 3.141593,
+                  "minimum": -3.141593,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Yaw Rad"
+            }
+          },
+          "required": [
+            "time_from_start_ms",
+            "position_m"
+          ],
+          "title": "TrajectoryPoint",
+          "type": "object"
+        },
+        "TrajectorySegment": {
+          "additionalProperties": false,
+          "properties": {
+            "created_at_utc": {
+              "format": "date-time",
+              "title": "Created At Utc",
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame",
+              "default": "none"
+            },
+            "frame_calibration_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Frame Calibration Id"
+            },
+            "max_accel_m_s2": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 10.0,
+              "title": "Max Accel M S2",
+              "type": "number"
+            },
+            "max_speed_m_s": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 15.0,
+              "title": "Max Speed M S",
+              "type": "number"
+            },
+            "message_id": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            },
+            "message_type": {
+              "const": "trajectory_segment",
+              "default": "trajectory_segment",
+              "title": "Message Type",
+              "type": "string"
+            },
+            "mission_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Id"
+            },
+            "points": {
+              "items": {
+                "$ref": "#/$defs/TrajectoryPoint"
+              },
+              "maxItems": 500,
+              "minItems": 2,
+              "title": "Points",
+              "type": "array"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "segment_id": {
+              "format": "uuid",
+              "title": "Segment Id",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "session_id": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            },
+            "starts_at_utc": {
+              "format": "date-time",
+              "title": "Starts At Utc",
+              "type": "string"
+            },
+            "ttl_ms": {
+              "default": 5000,
+              "maximum": 300000,
+              "minimum": 100,
+              "title": "Ttl Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "sequence",
+            "session_id",
+            "starts_at_utc",
+            "points",
+            "max_speed_m_s",
+            "max_accel_m_s2"
+          ],
+          "title": "TrajectorySegment",
+          "type": "object"
+        },
+        "Vector3": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Vector3",
+          "type": "object"
+        },
+        "VehicleCommand": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/VehicleCommandType"
+            },
+            "created_at_utc": {
+              "format": "date-time",
+              "title": "Created At Utc",
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame",
+              "default": "none"
+            },
+            "frame_calibration_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Frame Calibration Id"
+            },
+            "message_id": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            },
+            "message_type": {
+              "const": "vehicle_command",
+              "default": "vehicle_command",
+              "title": "Message Type",
+              "type": "string"
+            },
+            "mission_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Id"
+            },
+            "reason": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Reason",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "session_id": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            },
+            "target_altitude_m": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "maximum": 120.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Target Altitude M"
+            },
+            "ttl_ms": {
+              "default": 5000,
+              "maximum": 300000,
+              "minimum": 100,
+              "title": "Ttl Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "sequence",
+            "session_id",
+            "command"
+          ],
+          "title": "VehicleCommand",
+          "type": "object"
+        },
+        "VehicleCommandType": {
+          "enum": [
+            "arm",
+            "disarm",
+            "takeoff",
+            "land",
+            "rtl",
+            "hold",
+            "cancel"
+          ],
+          "title": "VehicleCommandType",
+          "type": "string"
+        },
+        "VehicleHealth": {
+          "additionalProperties": false,
+          "properties": {
+            "depth_ok": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Depth Ok"
+            },
+            "ekf_ok": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ekf Ok"
+            },
+            "fcu_link_ok": {
+              "title": "Fcu Link Ok",
+              "type": "boolean"
+            },
+            "gps_fix_type": {
+              "default": 0,
+              "maximum": 6,
+              "minimum": 0,
+              "title": "Gps Fix Type",
+              "type": "integer"
+            },
+            "prearm_ok": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prearm Ok"
+            }
+          },
+          "required": [
+            "fcu_link_ok"
+          ],
+          "title": "VehicleHealth",
+          "type": "object"
+        },
+        "VehicleTelemetry": {
+          "additionalProperties": false,
+          "properties": {
+            "armed": {
+              "title": "Armed",
+              "type": "boolean"
+            },
+            "attitude": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quaternion"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "battery_remaining": {
+              "anyOf": [
+                {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Battery Remaining"
+            },
+            "created_at_utc": {
+              "format": "date-time",
+              "title": "Created At Utc",
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame",
+              "default": "none"
+            },
+            "frame_calibration_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Frame Calibration Id"
+            },
+            "health": {
+              "$ref": "#/$defs/VehicleHealth"
+            },
+            "message_id": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            },
+            "message_type": {
+              "const": "vehicle_telemetry",
+              "default": "vehicle_telemetry",
+              "title": "Message Type",
+              "type": "string"
+            },
+            "mission_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Id"
+            },
+            "mode": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Mode",
+              "type": "string"
+            },
+            "observed_at_utc": {
+              "format": "date-time",
+              "title": "Observed At Utc",
+              "type": "string"
+            },
+            "position_m": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "session_id": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            },
+            "ttl_ms": {
+              "default": 5000,
+              "maximum": 300000,
+              "minimum": 100,
+              "title": "Ttl Ms",
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "velocity_m_s": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "sequence",
+            "session_id",
+            "observed_at_utc",
+            "armed",
+            "mode",
+            "health"
+          ],
+          "title": "VehicleTelemetry",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "formation_command": "#/$defs/FormationCommand",
+          "heartbeat": "#/$defs/Heartbeat",
+          "mission_ack": "#/$defs/MissionAck",
+          "semantic_observation": "#/$defs/SemanticObservation",
+          "trajectory_segment": "#/$defs/TrajectorySegment",
+          "vehicle_command": "#/$defs/VehicleCommand",
+          "vehicle_telemetry": "#/$defs/VehicleTelemetry"
+        },
+        "propertyName": "message_type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/VehicleCommand"
+        },
+        {
+          "$ref": "#/$defs/TrajectorySegment"
+        },
+        {
+          "$ref": "#/$defs/FormationCommand"
+        },
+        {
+          "$ref": "#/$defs/VehicleTelemetry"
+        },
+        {
+          "$ref": "#/$defs/SemanticObservation"
+        },
+        {
+          "$ref": "#/$defs/MissionAck"
+        },
+        {
+          "$ref": "#/$defs/Heartbeat"
+        }
+      ]
+    }
+  }
+}

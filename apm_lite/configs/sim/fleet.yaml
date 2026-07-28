@@ -1,0 +1,60 @@
+schema_version: "1.0"
+mode: sim
+fleet_name: aeromind-sitl-four
+vehicles:
+  - vehicle_id: 1
+    name: sitl-uav1
+    runtime_host: ground-sim
+    frame_calibration_id: venue-demo-v1
+    credential_env: AEROMIND_UAV1_TOKEN
+    sensor_source: airsim
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: udp
+      endpoint: udpin:0.0.0.0:14550
+      source_system: 201
+      target_system: 1
+      target_component: 1
+  - vehicle_id: 2
+    name: sitl-uav2
+    runtime_host: ground-sim
+    frame_calibration_id: venue-demo-v1
+    credential_env: AEROMIND_UAV2_TOKEN
+    sensor_source: airsim
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: udp
+      endpoint: udpin:0.0.0.0:14560
+      source_system: 202
+      target_system: 2
+      target_component: 1
+  - vehicle_id: 3
+    name: sitl-uav3
+    runtime_host: ground-sim
+    frame_calibration_id: venue-demo-v1
+    credential_env: AEROMIND_UAV3_TOKEN
+    sensor_source: airsim
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: udp
+      endpoint: udpin:0.0.0.0:14570
+      source_system: 203
+      target_system: 3
+      target_component: 1
+  - vehicle_id: 4
+    name: sitl-uav4
+    runtime_host: ground-sim
+    frame_calibration_id: venue-demo-v1
+    credential_env: AEROMIND_UAV4_TOKEN
+    sensor_source: airsim
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: udp
+      endpoint: udpin:0.0.0.0:14580
+      source_system: 204
+      target_system: 4
+      target_component: 1

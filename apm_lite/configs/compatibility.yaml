@@ -1,0 +1,105 @@
+schema_version: "1.0"
+status: hardware_identified_runtime_freeze_pending
+
+evidence:
+  hardware_document:
+    title: "郑州550无人机.docx"
+    reviewed_on: "2026-07-28"
+  legacy_real_agent:
+    file: gps_real-main/swarmxian260413.py
+    purpose: serial_configuration_evidence_only
+
+runtime:
+  python: ">=3.10,<3.13"
+  pydantic: ">=2.6,<3"
+  pymavlink: ">=2.4,<3"
+
+ardupilot:
+  vehicle_firmware: ArduCopter
+  version: null
+  source_commit: null
+  firmware_board_target: null
+  frame_class: QUAD
+  frame_type: null
+  arming_check_required: true
+
+hardware:
+  airframe:
+    name: "郑州550四旋翼无人机"
+    rotor_count: 4
+  flight_controller:
+    vendor_label: "雷迅/CUAV"
+    model: "V5+"
+    family: modern_pixhawk_compatible
+    main_processor: "STM32F765, Cortex-M7, 216 MHz, 2 MB flash, 512 KB RAM"
+    io_processor: "STM32F100, Cortex-M3, 24 MHz, 8 KB SRAM"
+    uart_count: 5
+    can_bus_count: 2
+    telem_connector: GH1.25-6P
+  onboard_computer:
+    model: Raspberry Pi 4B
+    memory_gb: 4
+    required_input: "5 V / 3 A"
+    operating_system: null
+  positioning:
+    model: "C-RTK 9Ps"
+    receiver: "u-blox ZED-F9P"
+    rtk_supported: true
+    correction_link: null
+  compass:
+    model: C-COMPASS
+    sensor: RM3100
+    bus: DroneCAN
+  telemetry_radio:
+    model: P9Radio
+    default_serial_baud: 57600
+    note: "This is the P9 radio baud, not the Raspberry Pi-to-FCU baud."
+  rc_receiver:
+    model: RF209S
+  power_module:
+    model: HV-PM
+    battery_input: "10-60 V (3-14S LiPo)"
+    maximum_current_a: 60
+    flight_controller_output: "5.3 V / 4 A"
+  depth_camera:
+    model: null
+    documented_in_hardware_source: false
+
+real_fcu_link:
+  fcu_port: TELEM2
+  connector: GH1.25-6P
+  pin_order: [5V+, TX, RX, CTS, RTS, GND]
+  wiring:
+    - "V5+ TX -> Raspberry Pi RX"
+    - "V5+ RX -> Raspberry Pi TX"
+    - "V5+ GND -> Raspberry Pi GND"
+  flow_control: none
+  legacy_serial_device: /dev/ttyAMA0
+  legacy_baudrate: 921600
+  electrical_logic_level_v: null
+  power_policy: independent_regulated_pi_supply
+  telem_5v_may_power_pi: false
+  power_note: >-
+    The source document does not give the TELEM2 5V current rating. Do not
+    power a 5 V / 3 A Raspberry Pi from TELEM2 until the manufacturer confirms
+    the rating; use an independent regulated supply and a common ground.
+
+airsim:
+  version: null
+  settings_hash: null
+  direct_flight_api_allowed: false
+
+required_before_m1_sitl_acceptance:
+  - arducopter_version_and_commit
+  - airsim_ardupilot_connector_version
+  - four_vehicle_parameter_hashes
+  - sitl_sysid_and_udp_port_matrix
+
+required_before_m2_real_bench:
+  - installed_arducopter_version_and_board_target
+  - representative_full_parameter_export
+  - frame_type_and_motor_order
+  - telem2_serial_parameter_protocol_and_baud
+  - telem2_logic_level_and_current_rating
+  - raspberry_pi_os_uart_and_power_validation
+  - d435_or_actual_camera_inventory_and_usb_validation

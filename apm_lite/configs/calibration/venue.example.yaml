@@ -1,0 +1,20 @@
+schema_version: "1.0"
+calibration_id: replace-with-immutable-survey-id
+map_definition:
+  origin_marker: O
+  positive_x_marker: X1
+  z_axis: up
+map_origin_wgs84:
+  latitude_deg: null
+  longitude_deg: null
+  altitude_msl_m: null
+map_x_yaw_from_east_rad: null
+vehicle_homes:
+  - vehicle_id: 1
+    map_position_m: [0.0, 0.0, 0.0]
+  - vehicle_id: 2
+    map_position_m: [0.0, 3.0, 0.0]
+  - vehicle_id: 3
+    map_position_m: [0.0, 6.0, 0.0]
+  - vehicle_id: 4
+    map_position_m: [0.0, 9.0, 0.0]

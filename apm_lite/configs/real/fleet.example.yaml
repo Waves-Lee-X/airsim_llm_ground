@@ -1,0 +1,66 @@
+schema_version: "1.0"
+mode: real
+fleet_name: aeromind-real-four
+# The FCU endpoint and baud are the legacy Raspberry Pi baseline. Verify them
+# against the selected V5+ TELEM2 SERIALx parameters before any bench command.
+vehicles:
+  - vehicle_id: 1
+    name: real-uav1
+    runtime_host: pi-uav1
+    frame_calibration_id: replace-with-survey-id
+    credential_env: AEROMIND_UAV1_TOKEN
+    sensor_source: realsense
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: serial
+      endpoint: /dev/ttyAMA0
+      baudrate: 921600
+      source_system: 201
+      target_system: 1
+      target_component: 1
+  - vehicle_id: 2
+    name: real-uav2
+    runtime_host: pi-uav2
+    frame_calibration_id: replace-with-survey-id
+    credential_env: AEROMIND_UAV2_TOKEN
+    sensor_source: realsense
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: serial
+      endpoint: /dev/ttyAMA0
+      baudrate: 921600
+      source_system: 202
+      target_system: 2
+      target_component: 1
+  - vehicle_id: 3
+    name: real-uav3
+    runtime_host: pi-uav3
+    frame_calibration_id: replace-with-survey-id
+    credential_env: AEROMIND_UAV3_TOKEN
+    sensor_source: realsense
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: serial
+      endpoint: /dev/ttyAMA0
+      baudrate: 921600
+      source_system: 203
+      target_system: 3
+      target_component: 1
+  - vehicle_id: 4
+    name: real-uav4
+    runtime_host: pi-uav4
+    frame_calibration_id: replace-with-survey-id
+    credential_env: AEROMIND_UAV4_TOKEN
+    sensor_source: realsense
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    fcu:
+      transport: serial
+      endpoint: /dev/ttyAMA0
+      baudrate: 921600
+      source_system: 204
+      target_system: 4
+      target_component: 1
