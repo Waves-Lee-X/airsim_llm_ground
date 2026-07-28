@@ -35,6 +35,13 @@
               "title": "Endpoint",
               "type": "string"
             },
+            "source_component": {
+              "default": 191,
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Source Component",
+              "type": "integer"
+            },
             "source_system": {
               "maximum": 254,
               "minimum": 200,
@@ -87,6 +94,27 @@
         "VehicleRuntimeConfig": {
           "additionalProperties": false,
           "properties": {
+            "ack_timeout_s": {
+              "default": 2.0,
+              "maximum": 30.0,
+              "minimum": 0.2,
+              "title": "Ack Timeout S",
+              "type": "number"
+            },
+            "companion_heartbeat_hz": {
+              "default": 1.0,
+              "maximum": 5.0,
+              "minimum": 0.5,
+              "title": "Companion Heartbeat Hz",
+              "type": "number"
+            },
+            "completion_hold_s": {
+              "default": 0.5,
+              "maximum": 5.0,
+              "minimum": 0.1,
+              "title": "Completion Hold S",
+              "type": "number"
+            },
             "credential_env": {
               "pattern": "^[A-Z][A-Z0-9_]*$",
               "title": "Credential Env",
@@ -101,11 +129,37 @@
               "title": "Frame Calibration Id",
               "type": "string"
             },
+            "guided_mode": {
+              "default": "GUIDED",
+              "pattern": "^[A-Z][A-Z0-9_]{1,31}$",
+              "title": "Guided Mode",
+              "type": "string"
+            },
+            "heartbeat_timeout_s": {
+              "default": 3.0,
+              "maximum": 30.0,
+              "minimum": 0.5,
+              "title": "Heartbeat Timeout S",
+              "type": "number"
+            },
+            "hold_mode": {
+              "default": "LOITER",
+              "pattern": "^[A-Z][A-Z0-9_]{1,31}$",
+              "title": "Hold Mode",
+              "type": "string"
+            },
             "name": {
               "maxLength": 64,
               "minLength": 1,
               "title": "Name",
               "type": "string"
+            },
+            "physical_timeout_s": {
+              "default": 30.0,
+              "maximum": 300.0,
+              "minimum": 1.0,
+              "title": "Physical Timeout S",
+              "type": "number"
             },
             "runtime_host": {
               "maxLength": 128,
@@ -122,6 +176,20 @@
               "maximum": 50.0,
               "minimum": 10.0,
               "title": "Setpoint Rate Hz",
+              "type": "number"
+            },
+            "startup_timeout_s": {
+              "default": 5.0,
+              "maximum": 60.0,
+              "minimum": 1.0,
+              "title": "Startup Timeout S",
+              "type": "number"
+            },
+            "telemetry_freshness_s": {
+              "default": 1.0,
+              "maximum": 10.0,
+              "minimum": 0.1,
+              "title": "Telemetry Freshness S",
               "type": "number"
             },
             "trajectory_timeout_ms": {
@@ -1122,6 +1190,18 @@
               "minimum": 0,
               "title": "Gps Fix Type",
               "type": "integer"
+            },
+            "gps_healthy": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Gps Healthy"
             },
             "prearm_ok": {
               "anyOf": [

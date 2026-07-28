@@ -12,11 +12,14 @@ vehicles:
     sensor_source: realsense
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
+    companion_heartbeat_hz: 1.0
+    completion_hold_s: 0.5
     fcu:
       transport: serial
       endpoint: /dev/ttyAMA0
       baudrate: 921600
       source_system: 201
+      source_component: 191
       target_system: 1
       target_component: 1
   - vehicle_id: 2
@@ -27,11 +30,14 @@ vehicles:
     sensor_source: realsense
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
+    companion_heartbeat_hz: 1.0
+    completion_hold_s: 0.5
     fcu:
       transport: serial
       endpoint: /dev/ttyAMA0
       baudrate: 921600
       source_system: 202
+      source_component: 191
       target_system: 2
       target_component: 1
   - vehicle_id: 3
@@ -42,11 +48,14 @@ vehicles:
     sensor_source: realsense
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
+    companion_heartbeat_hz: 1.0
+    completion_hold_s: 0.5
     fcu:
       transport: serial
       endpoint: /dev/ttyAMA0
       baudrate: 921600
       source_system: 203
+      source_component: 191
       target_system: 3
       target_component: 1
   - vehicle_id: 4
@@ -57,10 +66,13 @@ vehicles:
     sensor_source: realsense
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
+    companion_heartbeat_hz: 1.0
+    completion_hold_s: 0.5
     fcu:
       transport: serial
       endpoint: /dev/ttyAMA0
       baudrate: 921600
       source_system: 204
+      source_component: 191
       target_system: 4
       target_component: 1

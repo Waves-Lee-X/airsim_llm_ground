@@ -1,0 +1,18 @@
+# AeroMind APM Lite M1 single-vehicle safety baseline.
+# ArduPilot: Copter-4.7.0 / 1511f27194f1dcc3728270883047bdf022b3fd53
+# Copter 4.7 renamed the legacy SYSID_THISMAV parameter to MAV_SYSID.
+MAV_SYSID 1
+MAV_GCS_SYSID 201
+MAV_GCS_SYSID_HI 0
+FS_GCS_ENABLE 5
+FS_GCS_TIMEOUT 3
+GUID_TIMEOUT 1
+ARMING_CHECK 1
+# AirSim gyro is ~333 Hz; 150 Hz keeps the required 1.8x gyro-rate margin.
+SCHED_LOOP_RATE 150
+# The AirSim connector delivers the native 5 Hz GPS samples with about 200 ms
+# of processing lag. Declare that measured SITL lag so ArduPilot's health
+# check can distinguish expected latency from a genuinely stalled receiver.
+SIM_GPS1_HZ 5
+GPS1_RATE_MS 200
+GPS1_DELAY_MS 200

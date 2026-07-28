@@ -1,13 +1,28 @@
 schema_version: "1.0"
-status: hardware_identified_runtime_freeze_pending
+status: m1_sitl_accepted_m2_real_bench_pending
 
 evidence:
   hardware_document:
     title: "郑州550无人机.docx"
     reviewed_on: "2026-07-28"
+    size_bytes: 1385935
+    source_modified_at: "2025-11-25T19:00:31"
+    sha256: e4a249b57d4b112a4aaf6f418559680fa285fdc57f9494f444283c82d14b11ad
   legacy_real_agent:
     file: gps_real-main/swarmxian260413.py
     purpose: serial_configuration_evidence_only
+  m1_sitl_acceptance:
+    accepted_on: "2026-07-28"
+    gate: M1_SINGLE_VEHICLE_AIRSIM_SITL
+    passed: true
+    fixed_missions_completed: 10
+    fixed_missions_requested: 10
+    independent_rtl_completed: true
+    evidence_directory: >-
+      D:\AirSim\aeromind-apm-lite-m1\acceptance4\run-20260728T114147Z-548787-d58b2f77
+    ardupilot_binary_sha256: 55f5f19fe4078ecdcf183b07a855831a1156002abfc054c7f0ccec82646dec4b
+    parameter_file_sha256: 609657d295acdef35471de27800db222c4c5c307e1c559f02de8cbde5125f0c9
+    airsim_settings_sha256: c97a961d19a42bcdb0fe26cf156fa903cc5ed3a219cd9d876153b8a98b4ce5d3
 
 runtime:
   python: ">=3.10,<3.13"
@@ -16,9 +31,17 @@ runtime:
 
 ardupilot:
   vehicle_firmware: ArduCopter
-  version: null
-  source_commit: null
-  firmware_board_target: null
+  real_aircraft:
+    version: null
+    source_commit: null
+    firmware_board_target: null
+  sitl_candidate:
+    version: "4.7.0"
+    upstream_tag: Copter-4.7.0
+    source_commit: 1511f27194f1dcc3728270883047bdf022b3fd53
+    binary_sha256: 55f5f19fe4078ecdcf183b07a855831a1156002abfc054c7f0ccec82646dec4b
+    model: airsim-copter
+    status: m1_accepted
   frame_class: QUAD
   frame_type: null
   arming_check_required: true
@@ -85,15 +108,23 @@ real_fcu_link:
     the rating; use an independent regulated supply and a common ground.
 
 airsim:
-  version: null
-  settings_hash: null
+  version: "1.8.1"
+  environment: Blocks
+  settings_hash: c97a961d19a42bcdb0fe26cf156fa903cc5ed3a219cd9d876153b8a98b4ce5d3
   direct_flight_api_allowed: false
 
-required_before_m1_sitl_acceptance:
-  - arducopter_version_and_commit
-  - airsim_ardupilot_connector_version
-  - four_vehicle_parameter_hashes
-  - sitl_sysid_and_udp_port_matrix
+m1_sitl_acceptance:
+  status: passed
+  scope: single_vehicle
+  vehicle_system_id: 1
+  gcs_system_id: 201
+  mavlink_listener: "udpin:0.0.0.0:14550"
+  parameter_file: configs/sim/arducopter-m1.parm
+  parameter_file_sha256: 609657d295acdef35471de27800db222c4c5c307e1c559f02de8cbde5125f0c9
+  airsim_gps_delay_ms: 200
+  note: >-
+    The GPS delay is measured for this AirSim connector only and must not be
+    copied to the real ZED-F9P configuration.
 
 required_before_m2_real_bench:
   - installed_arducopter_version_and_board_target

@@ -35,6 +35,7 @@ class FcuConnection(ConfigModel):
     endpoint: str = Field(min_length=1, max_length=256)
     baudrate: int | None = Field(default=None, ge=9_600, le=2_000_000)
     source_system: int = Field(ge=200, le=254)
+    source_component: int = Field(default=191, ge=1, le=255)
     target_system: int = Field(ge=1, le=255)
     target_component: int = Field(default=1, ge=1, le=255)
 
@@ -67,6 +68,15 @@ class VehicleRuntimeConfig(ConfigModel):
     fcu: FcuConnection
     setpoint_rate_hz: float = Field(default=20.0, ge=10.0, le=50.0)
     trajectory_timeout_ms: int = Field(default=1_000, ge=250, le=10_000)
+    companion_heartbeat_hz: float = Field(default=1.0, ge=0.5, le=5.0)
+    startup_timeout_s: float = Field(default=5.0, ge=1.0, le=60.0)
+    heartbeat_timeout_s: float = Field(default=3.0, ge=0.5, le=30.0)
+    ack_timeout_s: float = Field(default=2.0, ge=0.2, le=30.0)
+    physical_timeout_s: float = Field(default=30.0, ge=1.0, le=300.0)
+    telemetry_freshness_s: float = Field(default=1.0, ge=0.1, le=10.0)
+    completion_hold_s: float = Field(default=0.5, ge=0.1, le=5.0)
+    guided_mode: str = Field(default="GUIDED", pattern=r"^[A-Z][A-Z0-9_]{1,31}$")
+    hold_mode: str = Field(default="LOITER", pattern=r"^[A-Z][A-Z0-9_]{1,31}$")
 
     @model_validator(mode="after")
     def target_system_matches_vehicle(self) -> "VehicleRuntimeConfig":

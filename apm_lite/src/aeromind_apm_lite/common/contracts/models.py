@@ -174,6 +174,7 @@ class VehicleHealth(StrictModel):
     fcu_link_ok: bool
     ekf_ok: bool | None = None
     gps_fix_type: int = Field(default=0, ge=0, le=6)
+    gps_healthy: bool | None = None
     prearm_ok: bool | None = None
     depth_ok: bool | None = None
 

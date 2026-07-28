@@ -1,0 +1,30 @@
+{
+  "SeeDocsAt": "https://microsoft.github.io/AirSim/settings/",
+  "SettingsVersion": 1.2,
+  "SimMode": "Multirotor",
+  "ClockType": "SteppableClock",
+  "RpcEnabled": true,
+  "RpcPort": 41451,
+  "LocalHostIp": "0.0.0.0",
+  "OriginGeopoint": {
+    "Latitude": 47.641468,
+    "Longitude": -122.140165,
+    "Altitude": 0.0
+  },
+  "Vehicles": {
+    "Drone1": {
+      "VehicleType": "ArduCopter",
+      "AutoCreate": true,
+      "UseSerial": false,
+      "LockStep": true,
+      "LocalHostIp": "0.0.0.0",
+      "UdpIp": "${AEROMIND_WSL_IPV4}",
+      "UdpPort": 9003,
+      "ControlPort": 9002,
+      "X": 0.0,
+      "Y": 0.0,
+      "Z": 0.0,
+      "Yaw": 0.0
+    }
+  }
+}
