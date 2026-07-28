@@ -51,6 +51,53 @@ aeromind-apm-probe \
 The probe waits for the configured FCU heartbeat and requests
 `AUTOPILOT_VERSION`. It never arms, changes mode or sends a position target.
 
+## Manually owned AirSim/SITL
+
+The automated M1 acceptance chain remains available. For interactive work in
+another AirSim-enabled UE scene, generate a fresh Windows `settings.json` while
+keeping UE and SITL under manual control:
+
+```bash
+cd ~/aeromind_ws/apm_lite
+PYTHONPATH=src python3 -m \
+  aeromind_apm_lite.ground.simulation.manual_settings \
+  --output /mnt/c/Users/<WindowsUser>/Documents/AirSim/settings.json
+```
+
+The command discovers the current WSL and Windows host addresses, configures
+the ArduCopter lock-step ports and prints (but never executes) the matching SITL
+command. The default camera is a configurable forward monocular RGB camera; no
+D435 or depth stream is declared. See
+[`docs/MANUAL_SIMULATION.md`](docs/MANUAL_SIMULATION.md) for startup order,
+network overrides and camera options.
+
+## Lite Web ground station
+
+Run the gateway directly from the checkout (FastAPI, Uvicorn and pymavlink are
+the only runtime extras):
+
+```bash
+cd ~/aeromind_ws/apm_lite
+PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
+  --mode sitl --host 127.0.0.1 --port 8000
+```
+
+Start this only after starting UE/AirSim and the printed SITL command yourself.
+It connects to the existing MAVLink stream on UDP 14550; it does not own the
+SITL or UE processes. An installed package also exposes the equivalent short
+command:
+
+```bash
+aeromind-apm-ground --mode sitl --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000/`. For UI-only checks without MAVLink output, use
+`--mode demo`. The browser receives public telemetry and command evidence from
+the gateway; per-vehicle credentials remain inside the trusted Python process.
+The camera panel reports the configured `front_center` device but remains
+offline until a real AirSim or onboard RGB frame adapter is added. VLM semantic
+results are also explicitly unavailable in this milestone.
+
 ## Local verification
 
 ```bash

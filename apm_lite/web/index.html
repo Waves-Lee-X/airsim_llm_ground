@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>AeroMind APM Lite 地面站</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="AeroMind APM Lite">
+          <span class="brand-mark" aria-hidden="true">AM</span>
+          <span class="brand-copy">
+            <strong>AeroMind APM Lite</strong>
+            <small>ArduPilot Ground Control</small>
+          </span>
+        </a>
+
+        <div class="topbar-center">
+          <div class="mode-switch" aria-label="运行环境">
+            <button id="simMode" class="active" type="button" disabled>SIM</button>
+            <button id="realMode" type="button" disabled>REAL</button>
+          </div>
+          <label class="vehicle-select" for="vehicleSelect">
+            <span>飞行器</span>
+            <select id="vehicleSelect" aria-label="选择飞行器">
+              <option value="1">UAV 01</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="system-badges" aria-label="系统状态">
+          <span id="apiBadge" class="status-badge pending"><i></i>地面站连接中</span>
+          <span id="fcuBadge" class="status-badge offline"><i></i>FCU 离线</span>
+          <span id="armedBadge" class="status-badge neutral"><i></i>未解锁</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="left-column">
+          <section class="panel aircraft-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="eyebrow">AIRCRAFT</span>
+                <h1 id="vehicleName">UAV 01</h1>
+              </div>
+              <span id="modeValue" class="mode-value">UNKNOWN</span>
+            </div>
+
+            <div class="flight-summary">
+              <div class="altitude-readout">
+                <span>相对高度</span>
+                <strong id="altitudeValue">--</strong>
+                <small>m</small>
+              </div>
+              <div class="vertical-divider"></div>
+              <dl class="compact-metrics">
+                <div><dt>电池</dt><dd id="batteryValue">--</dd></div>
+                <div><dt>GPS</dt><dd id="gpsValue">--</dd></div>
+                <div><dt>卫星</dt><dd id="satellitesValue">--</dd></div>
+                <div><dt>Pre-arm</dt><dd id="prearmValue">--</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel telemetry-panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="eyebrow">LOCAL POSITION</span>
+                <h2>位置与速度</h2>
+              </div>
+              <span class="frame-chip">LOCAL_NED</span>
+            </div>
+            <div class="axis-table" role="table" aria-label="LOCAL NED 位置与速度">
+              <div class="axis-header" role="row">
+                <span role="columnheader">轴</span>
+                <span role="columnheader">位置 m</span>
+                <span role="columnheader">速度 m/s</span>
+              </div>
+              <div role="row"><b class="north">N</b><strong id="posN">--</strong><span id="velN">--</span></div>
+              <div role="row"><b class="east">E</b><strong id="posE">--</strong><span id="velE">--</span></div>
+              <div role="row"><b class="down">D</b><strong id="posD">--</strong><span id="velD">--</span></div>
+            </div>
+          </section>
+
+          <section class="panel health-panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="eyebrow">SYSTEM HEALTH</span>
+                <h2>链路与估计器</h2>
+              </div>
+            </div>
+            <ul class="health-list">
+              <li><span><i id="linkDot"></i>MAVLink</span><strong id="linkHealth">离线</strong></li>
+              <li><span><i id="gpsDot"></i>GPS 健康</span><strong id="gpsHealth">未知</strong></li>
+              <li><span><i id="ekfDot"></i>EKF</span><strong id="ekfHealth">未知</strong></li>
+              <li><span><i id="homeDot"></i>Home</span><strong id="homeHealth">未知</strong></li>
+            </ul>
+            <div id="statusText" class="status-text">等待飞控状态消息</div>
+          </section>
+        </aside>
+
+        <section class="center-column">
+          <section class="panel nav-panel">
+            <div class="panel-heading compact nav-heading">
+              <div>
+                <span class="eyebrow">LOCAL NAVIGATION</span>
+                <h2>水平轨迹</h2>
+              </div>
+              <div class="heading-actions">
+                <span id="trackScale">± 20 m</span>
+                <button id="clearTrack" class="icon-button" type="button" title="清除轨迹" aria-label="清除轨迹">×</button>
+              </div>
+            </div>
+            <div class="nav-canvas-wrap">
+              <canvas id="nedCanvas" aria-label="LOCAL NED 水平轨迹"></canvas>
+              <div class="north-label">N</div>
+              <div class="east-label">E</div>
+              <div id="navEmpty" class="canvas-empty">等待 LOCAL_NED</div>
+            </div>
+          </section>
+
+          <section class="panel evidence-panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="eyebrow">COMMAND EVIDENCE</span>
+                <h2>命令执行证据</h2>
+              </div>
+              <span id="commandCount" class="count-chip">0</span>
+            </div>
+            <div class="evidence-header" aria-hidden="true">
+              <span>时间 / 命令</span>
+              <span>应用接收</span>
+              <span>MAVLink ACK</span>
+              <span>物理完成</span>
+              <span>结果</span>
+            </div>
+            <div id="evidenceList" class="evidence-list" aria-live="polite">
+              <div class="evidence-empty">暂无命令记录</div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="right-column">
+          <section class="panel command-panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="eyebrow">FLIGHT CONTROL</span>
+                <h2>飞行控制</h2>
+              </div>
+              <span id="controlState" class="control-state locked">锁定</span>
+            </div>
+
+            <div class="takeoff-control">
+              <label for="takeoffAltitude">起飞高度</label>
+              <div class="number-field">
+                <button id="altitudeMinus" type="button" aria-label="降低起飞高度" disabled>−</button>
+                <input id="takeoffAltitude" type="number" value="3" min="1" max="20" step="1" inputmode="decimal" disabled />
+                <span>m</span>
+                <button id="altitudePlus" type="button" aria-label="增加起飞高度" disabled>+</button>
+              </div>
+            </div>
+
+            <div class="command-grid">
+              <button class="command-button primary-command" type="button" data-command="arm" disabled><span aria-hidden="true">●</span><strong>解锁</strong></button>
+              <button class="command-button" type="button" data-command="disarm" disabled><span aria-hidden="true">○</span><strong>加锁</strong></button>
+              <button class="command-button primary-command" type="button" data-command="takeoff" disabled><span aria-hidden="true">↑</span><strong>起飞</strong></button>
+              <button class="command-button safety" type="button" data-command="hold" disabled><span aria-hidden="true">Ⅱ</span><strong>悬停</strong></button>
+              <button class="command-button safety" type="button" data-command="land" disabled><span aria-hidden="true">↓</span><strong>降落</strong></button>
+              <button class="command-button safety" type="button" data-command="rtl" disabled><span aria-hidden="true">↩</span><strong>返航</strong></button>
+            </div>
+            <p id="controlHint" class="control-hint">等待飞控连接</p>
+          </section>
+
+          <section class="panel camera-panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="eyebrow">FRONT RGB</span>
+                <h2>前视单目相机</h2>
+              </div>
+              <span id="cameraBadge" class="camera-badge offline">未连接</span>
+            </div>
+            <div class="camera-view">
+              <img id="cameraFrame" alt="前视 RGB 相机实时画面" hidden />
+              <div id="cameraEmpty" class="camera-empty">
+                <span class="camera-reticle" aria-hidden="true"></span>
+                <strong>NO VIDEO</strong>
+                <small id="cameraDetail">AirSim front_center</small>
+              </div>
+              <span id="cameraResolution" class="camera-resolution">RGB · 1280×720</span>
+            </div>
+          </section>
+
+          <section class="panel semantic-panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="eyebrow">VISION SEMANTICS</span>
+                <h2>VLM 视觉语义</h2>
+              </div>
+              <span id="vlmBadge" class="camera-badge unavailable">未接入</span>
+            </div>
+            <div class="semantic-state">
+              <div><span>目标</span><strong id="semanticTarget">--</strong></div>
+              <div><span>颜色</span><strong id="semanticColor">--</strong></div>
+              <div><span>置信度</span><strong id="semanticConfidence">--</strong></div>
+            </div>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="footerbar">
+        <span id="runtimeLabel">APM Lite · 正在读取运行配置</span>
+        <span id="lastUpdate">最后遥测：--</span>
+      </footer>
+    </div>
+
+    <dialog id="confirmDialog" class="confirm-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <span id="confirmIcon" aria-hidden="true">!</span>
+          <div><small>飞行命令确认</small><h2 id="confirmTitle">确认执行</h2></div>
+        </div>
+        <p id="confirmText"></p>
+        <dl class="confirm-meta">
+          <div><dt>飞行器</dt><dd id="confirmVehicle">UAV 01</dd></div>
+          <div><dt>环境</dt><dd id="confirmMode">SIM</dd></div>
+        </dl>
+        <div class="dialog-actions">
+          <button value="cancel" type="submit">取消</button>
+          <button id="confirmSubmit" class="confirm-submit" value="default" type="button">确认发送</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
