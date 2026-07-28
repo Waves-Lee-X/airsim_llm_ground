@@ -21,6 +21,7 @@ class FcuTransport(str, Enum):
 
 
 class SensorSourceKind(str, Enum):
+    NONE = "none"
     AIRSIM = "airsim"
     REALSENSE = "realsense"
     REPLAY = "replay"
@@ -112,17 +113,18 @@ class FleetConfig(ConfigModel):
         expected_transport = (
             FcuTransport.UDP if self.mode == DeploymentMode.SIM else FcuTransport.SERIAL
         )
-        expected_sensor = (
-            SensorSourceKind.AIRSIM
+        allowed_sensors = (
+            {SensorSourceKind.AIRSIM}
             if self.mode == DeploymentMode.SIM
-            else SensorSourceKind.REALSENSE
+            else {SensorSourceKind.NONE, SensorSourceKind.REALSENSE}
         )
         for vehicle in self.vehicles:
             if vehicle.fcu.transport != expected_transport:
                 raise ValueError(f"{self.mode.value} mode requires {expected_transport.value} FCU")
-            if vehicle.sensor_source != expected_sensor:
+            if vehicle.sensor_source not in allowed_sensors:
+                choices = " or ".join(sorted(sensor.value for sensor in allowed_sensors))
                 raise ValueError(
-                    f"{self.mode.value} mode requires {expected_sensor.value} sensor source"
+                    f"{self.mode.value} mode requires {choices} sensor source"
                 )
         return self
 

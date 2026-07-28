@@ -84,6 +84,7 @@
         },
         "SensorSourceKind": {
           "enum": [
+            "none",
             "airsim",
             "realsense",
             "replay"

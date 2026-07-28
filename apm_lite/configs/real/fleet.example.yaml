@@ -9,7 +9,8 @@ vehicles:
     runtime_host: pi-uav1
     frame_calibration_id: replace-with-survey-id
     credential_env: AEROMIND_UAV1_TOKEN
-    sensor_source: realsense
+    # FCU-only bench baseline. Change only after the actual camera is inventoried.
+    sensor_source: none
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
     companion_heartbeat_hz: 1.0
@@ -27,7 +28,7 @@ vehicles:
     runtime_host: pi-uav2
     frame_calibration_id: replace-with-survey-id
     credential_env: AEROMIND_UAV2_TOKEN
-    sensor_source: realsense
+    sensor_source: none
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
     companion_heartbeat_hz: 1.0
@@ -45,7 +46,7 @@ vehicles:
     runtime_host: pi-uav3
     frame_calibration_id: replace-with-survey-id
     credential_env: AEROMIND_UAV3_TOKEN
-    sensor_source: realsense
+    sensor_source: none
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
     companion_heartbeat_hz: 1.0
@@ -63,7 +64,7 @@ vehicles:
     runtime_host: pi-uav4
     frame_calibration_id: replace-with-survey-id
     credential_env: AEROMIND_UAV4_TOKEN
-    sensor_source: realsense
+    sensor_source: none
     setpoint_rate_hz: 20.0
     trajectory_timeout_ms: 1000
     companion_heartbeat_hz: 1.0

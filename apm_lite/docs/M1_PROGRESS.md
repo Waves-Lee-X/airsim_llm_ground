@@ -95,7 +95,7 @@ no owned simulator process remained.
 ## Software verification
 
 ```text
-123 tests passed
+125 tests passed
 JSON Schema export --check passed
 Python compileall passed
 flake8 passed

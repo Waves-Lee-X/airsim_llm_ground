@@ -33,6 +33,25 @@ def test_trajectory_timeout_is_wired_into_apm_link():
     assert link.trajectory_timeout_s == pytest.approx(1.0)
 
 
+def test_real_example_does_not_claim_an_unverified_camera():
+    config = load_fleet_config(ROOT / "configs/real/fleet.example.yaml")
+
+    assert all(vehicle.sensor_source.value == "none" for vehicle in config.vehicles)
+
+
+def test_real_mode_allows_realsense_after_hardware_is_confirmed(tmp_path):
+    source = (ROOT / "configs/real/fleet.example.yaml").read_text(encoding="utf-8")
+    path = tmp_path / "real-with-realsense.yaml"
+    path.write_text(
+        source.replace("sensor_source: none", "sensor_source: realsense"),
+        encoding="utf-8",
+    )
+
+    config = load_fleet_config(path)
+
+    assert all(vehicle.sensor_source.value == "realsense" for vehicle in config.vehicles)
+
+
 def test_duplicate_vehicle_id_is_rejected(tmp_path):
     source = (ROOT / "configs/sim/fleet.yaml").read_text(encoding="utf-8")
     invalid = source.replace("vehicle_id: 2", "vehicle_id: 1", 1)
