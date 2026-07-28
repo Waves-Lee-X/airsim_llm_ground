@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any, AsyncIterator
-from fastapi import Body, FastAPI, HTTPException, WebSocket
+from fastapi import Body, FastAPI, HTTPException, Response, WebSocket
 from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from starlette.websockets import WebSocketDisconnect
@@ -24,6 +24,12 @@ from aeromind_apm_lite.common.contracts import (
 )
 from aeromind_apm_lite.ground.server import VehicleNotConnected
 
+from .camera import (
+    AirSimCameraBridge,
+    AirSimCameraConfig,
+    CameraFrame,
+    CameraUnavailable,
+)
 from .runtime import ManualRuntime, ManualRuntimeConfig, ManualRuntimeMode
 
 
@@ -112,18 +118,27 @@ class BrowserGateway:
         self,
         runtime: ManualRuntime,
         *,
+        camera: AirSimCameraBridge | None = None,
         telemetry_interval_s: float = 0.2,
     ) -> None:
         if telemetry_interval_s <= 0.0:
             raise ValueError("telemetry_interval_s must be positive")
         self.runtime = runtime
+        self.camera = camera
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
         self._command_tasks: set[asyncio.Task[dict[str, Any]]] = set()
 
     async def start(self) -> None:
-        await self.runtime.start()
+        if self.camera is not None:
+            await self.camera.start()
+        try:
+            await self.runtime.start()
+        except BaseException:
+            if self.camera is not None:
+                await self.camera.stop()
+            raise
         self._telemetry_task = asyncio.create_task(
             self._telemetry_loop(),
             name="browser-telemetry-publisher",
@@ -140,7 +155,29 @@ class BrowserGateway:
         for task in command_tasks:
             task.cancel()
         await asyncio.gather(*command_tasks, return_exceptions=True)
-        await self.runtime.stop()
+        try:
+            await self.runtime.stop()
+        finally:
+            if self.camera is not None:
+                await self.camera.stop()
+
+    def public_config(self) -> dict[str, Any]:
+        payload = self.runtime.public_config()
+        payload["camera"] = self.camera_status_payload()
+        return payload
+
+    def camera_status_payload(self) -> dict[str, Any]:
+        if self.camera is not None:
+            return self.camera.status_payload()
+        payload = dict(self.runtime.public_config()["camera"])
+        payload.setdefault("state", "disabled")
+        payload.setdefault("stream_url", "/api/camera/frame")
+        return payload
+
+    async def camera_frame(self) -> CameraFrame:
+        if self.camera is None:
+            raise CameraUnavailable("AirSim camera bridge is disabled")
+        return await self.camera.get_frame()
 
     def health_payload(self) -> dict[str, Any]:
         status = self.status_payload()
@@ -183,6 +220,7 @@ class BrowserGateway:
                 self.runtime.config.mode == ManualRuntimeMode.DEMO
             ),
             "external_processes_managed": False,
+            "camera": self.camera_status_payload(),
         }
 
     def telemetry_payload(self) -> dict[str, Any]:
@@ -499,10 +537,11 @@ def _default_static_dir() -> Path | None:
 def create_app(
     runtime: ManualRuntime | None = None,
     *,
+    camera: AirSimCameraBridge | None = None,
     static_dir: str | Path | None = None,
 ) -> FastAPI:
     runtime = runtime or ManualRuntime()
-    gateway = BrowserGateway(runtime)
+    gateway = BrowserGateway(runtime, camera=camera)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -525,7 +564,7 @@ def create_app(
 
     @app.get("/api/config")
     async def config() -> dict[str, Any]:
-        return gateway.runtime.public_config()
+        return gateway.public_config()
 
     @app.get("/api/status")
     async def status() -> dict[str, Any]:
@@ -546,7 +585,23 @@ def create_app(
 
     @app.get("/api/camera/status")
     async def camera_status() -> dict[str, Any]:
-        return gateway.runtime.public_config()["camera"]
+        return gateway.camera_status_payload()
+
+    @app.get("/api/camera/frame")
+    async def camera_frame() -> Response:
+        try:
+            frame = await gateway.camera_frame()
+        except CameraUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return Response(
+            content=frame.data,
+            media_type=frame.media_type,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "X-Camera-Sequence": str(frame.sequence),
+                "X-Camera-Captured-At": frame.captured_at_utc.isoformat(),
+            },
+        )
 
     @app.post("/api/vehicles/{vehicle_id}/commands/{action}")
     async def vehicle_command(
@@ -652,7 +707,32 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fcu-endpoint", default="udpin:0.0.0.0:14550")
     parser.add_argument("--vehicle-id", type=int, default=1)
     parser.add_argument("--static-dir", type=Path)
+    parser.add_argument(
+        "--airsim-host",
+        help="AirSim RPC host; defaults to the Windows gateway detected from WSL.",
+    )
+    parser.add_argument("--airsim-port", type=int, default=41451)
+    parser.add_argument("--airsim-vehicle", default="Drone1")
+    parser.add_argument("--airsim-camera", default="front_center")
+    parser.add_argument("--camera-fps", type=float, default=5.0)
+    parser.add_argument("--camera-timeout", type=float, default=2.0)
+    parser.add_argument(
+        "--disable-camera",
+        action="store_true",
+        help="Run the ground station without the AirSim camera bridge.",
+    )
     return parser
+
+
+def _default_airsim_host() -> str:
+    try:
+        from aeromind_apm_lite.ground.simulation.config import (
+            discover_windows_host_ipv4,
+        )
+
+        return discover_windows_host_ipv4()
+    except (OSError, RuntimeError, ValueError):
+        return "127.0.0.1"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -664,7 +744,19 @@ def main(argv: list[str] | None = None) -> int:
             fcu_endpoint=args.fcu_endpoint,
         )
     )
-    app = create_app(runtime, static_dir=args.static_dir)
+    camera = None
+    if not args.disable_camera:
+        camera = AirSimCameraBridge(
+            AirSimCameraConfig(
+                rpc_host=args.airsim_host or _default_airsim_host(),
+                rpc_port=args.airsim_port,
+                vehicle_name=args.airsim_vehicle,
+                camera_name=args.airsim_camera,
+                capture_fps=args.camera_fps,
+                request_timeout_s=args.camera_timeout,
+            )
+        )
+    app = create_app(runtime, camera=camera, static_dir=args.static_dir)
     import uvicorn
 
     uvicorn.run(app, host=args.host, port=args.port)

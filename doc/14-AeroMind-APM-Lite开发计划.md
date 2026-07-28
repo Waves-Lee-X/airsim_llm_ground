@@ -2,7 +2,7 @@
 
 > 文档日期：2026-07-28
 > 开发分支：`codex/aeromind-apm-lite`
-> 文档状态：M0、M1 已通过；M1.5 手动仿真与 Lite Web 地面站软件交付完成，等待人工启动 UE/SITL 现场联调；下一阶段为 M2 V5+ 无桨台架
+> 文档状态：M0、M1、M1.5 已通过；下一阶段为 M2 V5+ 无桨台架
 > 旧系统定位：现有 ROS 2 + PX4 + AirSim 工程保留为原型和能力参考，不在本阶段原地改造成 APM 真机系统。
 
 ## 1. 决策摘要
@@ -488,17 +488,17 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 
 ### M1.5：手动仿真与 Lite Web 地面站
 
-状态：**软件交付完成（2026-07-28）**。自动 M1 生命周期和固定任务链保留不变；人工启动 UE/SITL 的现场联调由操作者按手册执行，尚未将其冒充为已完成的现场飞行验收。
+状态：**已通过（2026-07-28）**。自动 M1 生命周期和固定任务链保留不变；操作者已在非 Blocks 的 AirSim 场景中完成 UE/SITL/Web 正式现场联调，机器证据见 `apm_lite/docs/M1_5_ACCEPTANCE.md`。
 
 交付：
 
 - 与 Blocks 无关的 AirSim `settings.json` 模板和按当前 WSL 地址生成工具。
-- 普通前视单目 RGB 相机基线；不声明 D435、深度图或激光雷达。
+- 普通前视单目 RGB 相机基线，以及隔离超时、缓存和自动重连的 AirSim Scene 图像桥；不声明 D435、深度图或激光雷达。
 - 只连接现有 `udpin:0.0.0.0:14550` 的 FastAPI/WebSocket 网关，不启动或关闭 UE/SITL。
 - 非 ROS Web 地面站、LOCAL_NED 遥测、轨迹显示、安全控制按钮和三层命令证据。
-- 明确离线的相机画面与 VLM 面板，不生成伪造传感器或语义结果。
+- Web 页面显示真实 AirSim `front_center` PNG 画面；VLM 面板保持明确未接入，不生成伪造语义结果。
 
-软件验收：Lite 全量 `145 passed`，Schema、compileall、flake8、JavaScript 语法和静态资源契约通过；无 MAVLink 输出的 DEMO 模式已完成 ARM、TAKEOFF、HOLD、LAND 端到端验证。现场验收必须由操作者启动 AirSim 场景和 SITL 后，再确认真实 MAVLink 心跳、三层结果和 LOCAL_NED 轨迹。
+验收：Lite 全量 `155 passed`，Schema、compileall、flake8、JavaScript 语法和静态资源契约通过。正式 `8000` SITL 链路完成 GUIDED、3 米起飞、LAND、再次起飞和 RTL；DataFlash 命令结果均为 0，最终遥测为已落地且加锁。相机接口返回真实 PNG 帧且持续递增，飞行命令仍只经过 OnboardAgent、MAVLink、SITL 和 AirSim 物理闭环。
 
 ### M2：真实 APM 台架与单机低空
 
@@ -648,7 +648,7 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 3. [x] 完成假飞控、单机 ArduPilot/AirSim SITL 与 `10/10 + RTL` M1 验收。
 4. [x] 根据硬件资料确认 CUAV V5+、Raspberry Pi 4B 4GB、F9P 和 TELEM2 接线风险。
 5. [x] 增加独立手动 AirSim/SITL 配置、Lite 浏览器网关和非 ROS Web 地面站，保留自动 M1 验收链。
-6. [ ] 由操作者启动其他 AirSim 场景和 SITL，完成 M1.5 现场手动链路检查。
+6. [x] 由操作者启动其他 AirSim 场景和 SITL，完成 M1.5 现场手动链路检查、真实 MAVLink 飞行闭环和 AirSim RGB 画面验证。
 7. [ ] 在拆桨台架读取真机固件/板型/完整参数，确认 TELEM2 串口映射、电平、波特率和独立供电。
 8. [ ] 盘点四架飞机的 RGB/深度相机实物；没有 D435 时冻结“仅已知地图规划、不做未知障碍实时避障”的演示边界。
 9. [ ] 解决“四个/五个箱体”数量冲突，并定义颜色标识面附近的安全降落点、朝向和允许误差。

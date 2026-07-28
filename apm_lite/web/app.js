@@ -28,6 +28,7 @@ const state = {
   pendingCommand: null,
   lastTelemetryAt: null,
   cameraTimer: null,
+  cameraStreamUrl: null,
 };
 
 const elements = {};
@@ -213,8 +214,11 @@ function renderConfig(configPayload) {
 
 function renderCameraConfig(camera) {
   const available = camera.stream_available === true;
+  const cameraState = String(camera.state || (available ? "online" : "offline"));
   elements.cameraBadge.className = `camera-badge ${available ? "online" : "offline"}`;
-  elements.cameraBadge.textContent = available ? "已连接" : "未连接";
+  elements.cameraBadge.textContent = available
+    ? cameraState === "degraded" ? "缓存画面" : "已连接"
+    : cameraState === "connecting" ? "连接中" : "未连接";
   elements.cameraDetail.textContent = camera.detail || camera.name || "AirSim front_center";
   const width = camera.width || 1280;
   const height = camera.height || 720;
@@ -227,7 +231,9 @@ function renderCameraConfig(camera) {
 }
 
 function startCameraStream(url) {
+  if (state.cameraStreamUrl === url && state.cameraTimer !== null) return;
   stopCameraStream();
+  state.cameraStreamUrl = url;
   const refresh = () => {
     const separator = url.includes("?") ? "&" : "?";
     elements.cameraFrame.src = `${url}${separator}vehicle_id=${state.selectedVehicleId}&t=${Date.now()}`;
@@ -241,12 +247,13 @@ function startCameraStream(url) {
     elements.cameraEmpty.hidden = false;
   };
   refresh();
-  state.cameraTimer = window.setInterval(refresh, 500);
+  state.cameraTimer = window.setInterval(refresh, 200);
 }
 
 function stopCameraStream() {
   if (state.cameraTimer !== null) window.clearInterval(state.cameraTimer);
   state.cameraTimer = null;
+  state.cameraStreamUrl = null;
   elements.cameraFrame.removeAttribute("src");
   elements.cameraFrame.hidden = true;
   elements.cameraEmpty.hidden = false;
@@ -695,6 +702,18 @@ async function refreshStatus() {
   }
 }
 
+async function refreshCameraStatus() {
+  try {
+    renderCameraConfig(await requestJson("/api/camera/status"));
+  } catch (error) {
+    renderCameraConfig({
+      state: "offline",
+      stream_available: false,
+      detail: `相机状态不可用：${error.message}`,
+    });
+  }
+}
+
 function bindEvents() {
   elements.commandButtons.forEach((button) => {
     button.addEventListener("click", () => showCommandConfirmation(button.dataset.command));
@@ -746,6 +765,7 @@ async function bootstrap() {
     ]);
     renderConfig(config);
     renderStatus(status);
+    await refreshCameraStatus();
   } catch (error) {
     state.apiOnline = false;
     setBadge(elements.apiBadge, "offline", "地面站离线");
@@ -754,6 +774,7 @@ async function bootstrap() {
   }
   connectWebsocket();
   window.setInterval(refreshStatus, 2000);
+  window.setInterval(refreshCameraStatus, 2000);
 }
 
 document.addEventListener("DOMContentLoaded", bootstrap);

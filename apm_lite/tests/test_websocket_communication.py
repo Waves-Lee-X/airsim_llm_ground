@@ -33,7 +33,9 @@ from aeromind_apm_lite.onboard.mavlink.models import (
     CommandStatus,
     FcuAction,
     FcuCommand,
+    MavCommandId,
     MavlinkAckEvidence,
+    MavResult,
     PhysicalCompletionEvidence,
     TelemetrySnapshot,
 )
@@ -58,20 +60,29 @@ async def wait_until(predicate, timeout_s=2.0):
 class StubApmLink:
     physical_confirmed: bool = True
     block_first_result: bool = False
+    initial_mode: str = "GUIDED"
+    initial_armed: bool = True
+    initial_altitude_m: float = 2.0
+    fail_action: FcuAction | None = None
+
+    guided_mode = "GUIDED"
 
     def __post_init__(self):
         self.submitted = []
         self._blocked_result = None
+        self._mode = self.initial_mode
+        self._armed = self.initial_armed
+        self._altitude_m = self.initial_altitude_m
 
     def telemetry_snapshot(self):
         now = time.monotonic()
         return TelemetrySnapshot(
             observed_monotonic_s=now,
             fcu_link_ok=True,
-            armed=True,
-            mode="GUIDED",
-            relative_altitude_m=2.0,
-            local_position_ned_m=(1.0, 2.0, -2.0),
+            armed=self._armed,
+            mode=self._mode,
+            relative_altitude_m=self._altitude_m,
+            local_position_ned_m=(1.0, 2.0, -self._altitude_m),
             velocity_ned_m_s=(0.0, 0.0, 0.0),
             global_position_deg_m=None,
             attitude_rpy_rad=None,
@@ -95,29 +106,53 @@ class StubApmLink:
         loop = asyncio.get_running_loop()
         request_id = uuid4()
         application = ApplicationAcceptance(True, time.monotonic(), "FCU queue accepted")
+        failed = command.action == self.fail_action
+        command_id = {
+            FcuAction.ARM: MavCommandId.COMPONENT_ARM_DISARM,
+            FcuAction.DISARM: MavCommandId.COMPONENT_ARM_DISARM,
+            FcuAction.SET_MODE: MavCommandId.DO_SET_MODE,
+            FcuAction.TAKEOFF: MavCommandId.NAV_TAKEOFF,
+            FcuAction.HOLD: MavCommandId.DO_SET_MODE,
+            FcuAction.LAND: MavCommandId.NAV_LAND,
+            FcuAction.RTL: MavCommandId.NAV_RETURN_TO_LAUNCH,
+        }[command.action]
         mavlink_ack = MavlinkAckEvidence(
             applicable=True,
             received=True,
-            command_id=400,
-            result=0,
+            command_id=int(command_id),
+            result=int(MavResult.DENIED if failed else MavResult.ACCEPTED),
             observed_monotonic_s=time.monotonic(),
-            detail="MAVLink accepted",
+            detail=f"{command.action.value} MAVLink {'denied' if failed else 'accepted'}",
         )
+        physical_confirmed = self.physical_confirmed and not failed
         physical = PhysicalCompletionEvidence(
-            confirmed=self.physical_confirmed,
-            observed_monotonic_s=(time.monotonic() if self.physical_confirmed else None),
-            detail="physical state observed",
+            confirmed=physical_confirmed,
+            observed_monotonic_s=(time.monotonic() if physical_confirmed else None),
+            detail=f"{command.action.value} physical state observed",
         )
         result = CommandResult(
             request_id=request_id,
             action=command.action,
-            status=CommandStatus.COMPLETED,
+            status=(
+                CommandStatus.MAVLINK_REJECTED
+                if failed
+                else CommandStatus.COMPLETED
+            ),
             application=application,
             sent_monotonic_s=time.monotonic(),
             mavlink_ack=mavlink_ack,
             physical_completion=physical,
-            detail="physical command result",
+            detail=f"{command.action.value} command result",
         )
+        if not failed and physical_confirmed:
+            if command.action == FcuAction.SET_MODE:
+                self._mode = command.mode or self._mode
+            elif command.action == FcuAction.ARM:
+                self._armed = True
+            elif command.action == FcuAction.DISARM:
+                self._armed = False
+            elif command.action == FcuAction.TAKEOFF:
+                self._altitude_m = command.target_altitude_m or self._altitude_m
         ack_future = loop.create_future()
         ack_future.set_result(mavlink_ack)
         physical_future = loop.create_future()
@@ -324,6 +359,204 @@ def test_real_loopback_websocket_maps_commands_and_reports_three_stage_evidence(
             assert telemetry.position_m is not None
             assert telemetry.position_m.z == -2.0
             assert telemetry.health.fcu_link_ok
+        finally:
+            await agent.stop()
+            await server.stop()
+
+    run(scenario())
+
+
+def test_takeoff_sequence_enters_guided_arms_and_takes_off_over_websocket():
+    async def scenario():
+        link = StubApmLink(
+            initial_mode="STABILIZE",
+            initial_armed=False,
+            initial_altitude_m=0.0,
+        )
+        server = GroundServer(
+            vehicle_secrets={1: SECRET_1}, calibration_ids={1: "venue-v1"}
+        )
+        await server.start()
+        agent = OnboardAgent(
+            ground_uri=server.uri,
+            vehicle_id=1,
+            shared_secret=SECRET_1,
+            frame_calibration_id="venue-v1",
+            apm_link=link,
+            configuration_hash="config-hash-v1",
+            heartbeat_interval_s=0.05,
+            telemetry_interval_s=0.05,
+        )
+        try:
+            await agent.start()
+            await server.wait_for_vehicle(1)
+            command = await server.send_command(
+                1,
+                VehicleCommandType.TAKEOFF,
+                target_altitude_m=3.0,
+                ttl_ms=5_000,
+            )
+            running = await server.wait_for_ack(
+                1, command.message_id, AckStatus.RUNNING
+            )
+            completed = await server.wait_for_ack(
+                1, command.message_id, AckStatus.COMPLETED
+            )
+
+            assert [item[0] for item in link.submitted] == [
+                FcuCommand(FcuAction.SET_MODE, mode="GUIDED"),
+                FcuCommand(FcuAction.ARM),
+                FcuCommand(FcuAction.TAKEOFF, target_altitude_m=3.0),
+            ]
+            assert "takeoff MAVLink accepted" in running.detail
+            assert completed.apm_command_result == int(MavResult.ACCEPTED)
+            assert completed.physical_completion_confirmed
+            assert "takeoff command result" in completed.detail
+        finally:
+            await agent.stop()
+            await server.stop()
+
+    run(scenario())
+
+
+def test_takeoff_sequence_skips_guided_and_arm_when_already_satisfied():
+    async def scenario():
+        link = StubApmLink(initial_mode="GUIDED", initial_armed=True)
+        server = GroundServer(
+            vehicle_secrets={1: SECRET_1}, calibration_ids={1: "venue-v1"}
+        )
+        await server.start()
+        agent = OnboardAgent(
+            ground_uri=server.uri,
+            vehicle_id=1,
+            shared_secret=SECRET_1,
+            frame_calibration_id="venue-v1",
+            apm_link=link,
+            configuration_hash="config-hash-v1",
+            heartbeat_interval_s=0.05,
+            telemetry_interval_s=0.05,
+        )
+        try:
+            await agent.start()
+            await server.wait_for_vehicle(1)
+            command = await server.send_command(
+                1,
+                VehicleCommandType.TAKEOFF,
+                target_altitude_m=4.0,
+                ttl_ms=5_000,
+            )
+            completed = await server.wait_for_ack(
+                1, command.message_id, AckStatus.COMPLETED
+            )
+
+            assert [item[0] for item in link.submitted] == [
+                FcuCommand(FcuAction.TAKEOFF, target_altitude_m=4.0)
+            ]
+            assert completed.apm_command_result == int(MavResult.ACCEPTED)
+            assert completed.physical_completion_confirmed
+        finally:
+            await agent.stop()
+            await server.stop()
+
+    run(scenario())
+
+
+def test_takeoff_sequence_stops_when_guided_mode_switch_fails():
+    async def scenario():
+        link = StubApmLink(
+            initial_mode="STABILIZE",
+            initial_armed=False,
+            initial_altitude_m=0.0,
+            fail_action=FcuAction.SET_MODE,
+        )
+        server = GroundServer(
+            vehicle_secrets={1: SECRET_1}, calibration_ids={1: "venue-v1"}
+        )
+        await server.start()
+        agent = OnboardAgent(
+            ground_uri=server.uri,
+            vehicle_id=1,
+            shared_secret=SECRET_1,
+            frame_calibration_id="venue-v1",
+            apm_link=link,
+            configuration_hash="config-hash-v1",
+            heartbeat_interval_s=0.05,
+            telemetry_interval_s=0.05,
+        )
+        try:
+            await agent.start()
+            await server.wait_for_vehicle(1)
+            command = await server.send_command(
+                1,
+                VehicleCommandType.TAKEOFF,
+                target_altitude_m=3.0,
+                ttl_ms=5_000,
+            )
+            failed = await server.wait_for_ack(
+                1, command.message_id, AckStatus.FAILED
+            )
+
+            assert [item[0] for item in link.submitted] == [
+                FcuCommand(FcuAction.SET_MODE, mode="GUIDED")
+            ]
+            assert failed.apm_command_result == int(MavResult.DENIED)
+            assert not failed.physical_completion_confirmed
+            assert "set_mode_guided" in failed.detail
+            with pytest.raises(asyncio.TimeoutError):
+                await server.wait_for_ack(
+                    1,
+                    command.message_id,
+                    AckStatus.RUNNING,
+                    timeout_s=0.05,
+                )
+        finally:
+            await agent.stop()
+            await server.stop()
+
+    run(scenario())
+
+
+def test_agent_stop_cancels_an_in_progress_takeoff_sequence_task():
+    async def scenario():
+        link = StubApmLink(
+            block_first_result=True,
+            initial_mode="STABILIZE",
+            initial_armed=False,
+            initial_altitude_m=0.0,
+        )
+        server = GroundServer(
+            vehicle_secrets={1: SECRET_1}, calibration_ids={1: "venue-v1"}
+        )
+        await server.start()
+        agent = OnboardAgent(
+            ground_uri=server.uri,
+            vehicle_id=1,
+            shared_secret=SECRET_1,
+            frame_calibration_id="venue-v1",
+            apm_link=link,
+            configuration_hash="config-hash-v1",
+            heartbeat_interval_s=0.05,
+            telemetry_interval_s=0.05,
+        )
+        try:
+            await agent.start()
+            await server.wait_for_vehicle(1)
+            command = await server.send_command(
+                1,
+                VehicleCommandType.TAKEOFF,
+                target_altitude_m=3.0,
+                ttl_ms=5_000,
+            )
+            await server.wait_for_ack(1, command.message_id, AckStatus.ACCEPTED)
+            await wait_until(lambda: bool(agent._takeoff_sequence_tasks))
+
+            await agent.stop()
+
+            assert not agent._takeoff_sequence_tasks
+            assert not any(
+                not task.done() and task.get_name().startswith("takeoff-sequence-")
+                for task in asyncio.all_tasks()
+            )
         finally:
             await agent.stop()
             await server.stop()

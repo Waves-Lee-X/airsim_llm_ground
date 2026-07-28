@@ -83,6 +83,22 @@ PYTHONPATH=src python3 -m \
 Match these values to the measured real camera only after its model, resolution,
 field of view and mounting pose are known.
 
-The current ground station reports this camera profile and its actual offline
-state. It does not yet pull pixels from AirSim, and the VLM panel remains
-unavailable rather than synthesizing a camera or semantic result.
+The ground station connects to the Windows AirSim RPC endpoint, captures
+compressed Scene frames in an isolated worker and exposes the latest fresh
+frame at `/api/camera/frame`. The browser polls that cached frame at about
+5 FPS. Camera timeouts do not block MAVLink control or telemetry, and the
+browser automatically resumes after AirSim starts returning frames again.
+
+The AirSim host defaults to the Windows gateway discovered from the WSL route
+table. Override the endpoint or camera identity when needed:
+
+```bash
+PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
+  --mode sitl --host 127.0.0.1 --port 8000 \
+  --airsim-host 172.24.80.1 --airsim-port 41451 \
+  --airsim-vehicle Drone1 --airsim-camera front_center
+```
+
+Use `--disable-camera` for FCU-only testing. The VLM panel remains unavailable
+until semantic inference is connected; camera availability does not imply a
+VLM result.

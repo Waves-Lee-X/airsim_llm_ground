@@ -249,6 +249,8 @@ class DemoApmLink:
             self._mode = self.guided_mode
         elif command.action == FcuAction.DISARM:
             self._armed = False
+        elif command.action == FcuAction.SET_MODE:
+            self._mode = command.mode or self._mode
         elif command.action == FcuAction.TAKEOFF:
             self._armed = True
             self._mode = self.guided_mode

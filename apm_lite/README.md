@@ -23,6 +23,12 @@ SITL lifecycle management. The accepted AirSim 1.8.1 / ArduCopter 4.7.0 batch
 completed 10 of 10 fixed missions plus the independent RTL path; see
 [`docs/M1_PROGRESS.md`](docs/M1_PROGRESS.md).
 
+M1.5 manual simulation is also accepted. An operator-owned non-Blocks UE scene,
+ArduCopter SITL and the Lite Web ground station completed GUIDED takeoff, LAND
+and RTL through the real MAVLink path. The AirSim `front_center` Scene camera is
+available in the Web UI through a timeout-isolated, auto-reconnecting frame
+bridge. See [`docs/M1_5_ACCEPTANCE.md`](docs/M1_5_ACCEPTANCE.md).
+
 M2 is the next gate. It begins with a propeller-removed CUAV V5+ bench and
 read-only discovery. No real flight is authorized by the M1 result.
 
@@ -73,8 +79,8 @@ network overrides and camera options.
 
 ## Lite Web ground station
 
-Run the gateway directly from the checkout (FastAPI, Uvicorn and pymavlink are
-the only runtime extras):
+Run the gateway directly from the checkout. The ground extra includes FastAPI,
+Uvicorn and the AirSim Python client; the onboard extra includes pymavlink:
 
 ```bash
 cd ~/aeromind_ws/apm_lite
@@ -94,9 +100,9 @@ aeromind-apm-ground --mode sitl --host 127.0.0.1 --port 8000
 Open `http://127.0.0.1:8000/`. For UI-only checks without MAVLink output, use
 `--mode demo`. The browser receives public telemetry and command evidence from
 the gateway; per-vehicle credentials remain inside the trusted Python process.
-The camera panel reports the configured `front_center` device but remains
-offline until a real AirSim or onboard RGB frame adapter is added. VLM semantic
-results are also explicitly unavailable in this milestone.
+The camera panel reads the configured AirSim `front_center` Scene camera,
+serves fresh cached PNG frames and automatically recovers from RPC timeouts.
+VLM semantic results remain explicitly unavailable in this milestone.
 
 ## Local verification
 

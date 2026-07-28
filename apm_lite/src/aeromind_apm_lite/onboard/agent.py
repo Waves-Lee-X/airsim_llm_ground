@@ -48,7 +48,9 @@ from .mavlink.models import (
     CommandStatus,
     FcuAction,
     FcuCommand,
+    MavlinkAckEvidence,
     MavResult,
+    PhysicalCompletionEvidence,
 )
 
 
@@ -135,6 +137,7 @@ class OnboardAgent:
         self._outbound_lock = asyncio.Lock()
         self._last_command_message_id: UUID | None = None
         self._last_error: Exception | None = None
+        self._takeoff_sequence_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def connected(self) -> bool:
@@ -393,9 +396,11 @@ class OnboardAgent:
                 tracker.add_done_callback(trackers.discard)
                 tracker.add_done_callback(self._consume_tracker_result)
         finally:
-            for tracker in trackers:
-                tracker.cancel()
-            await asyncio.gather(*trackers, return_exceptions=True)
+            background_tasks = (*trackers, *self._takeoff_sequence_tasks)
+            for task in background_tasks:
+                task.cancel()
+            await asyncio.gather(*background_tasks, return_exceptions=True)
+            self._takeoff_sequence_tasks.clear()
 
     async def _track_command(
         self,
@@ -446,27 +451,270 @@ class OnboardAgent:
     def _submit_to_apm(
         self, command: VehicleCommand, expires_monotonic_s: float
     ) -> CommandHandle:
+        if command.command == VehicleCommandType.TAKEOFF:
+            altitude_m = command.target_altitude_m
+            if altitude_m is None:  # pragma: no cover - contract validation
+                raise ValueError("takeoff requires target_altitude_m")
+            return self._submit_takeoff_sequence(altitude_m, expires_monotonic_s)
+
         action = {
             VehicleCommandType.ARM: FcuAction.ARM,
             VehicleCommandType.DISARM: FcuAction.DISARM,
-            VehicleCommandType.TAKEOFF: FcuAction.TAKEOFF,
             VehicleCommandType.LAND: FcuAction.LAND,
             VehicleCommandType.RTL: FcuAction.RTL,
             VehicleCommandType.HOLD: FcuAction.HOLD,
             VehicleCommandType.CANCEL: FcuAction.HOLD,
         }[command.command]
-        fcu_command = FcuCommand(
-            action=action,
-            target_altitude_m=(
-                command.target_altitude_m
-                if command.command == VehicleCommandType.TAKEOFF
-                else None
-            ),
-        )
+        fcu_command = FcuCommand(action=action)
         return self._link.submit(
             fcu_command,
             expires_monotonic_s=expires_monotonic_s,
         )
+
+    def _submit_takeoff_sequence(
+        self,
+        altitude_m: float,
+        expires_monotonic_s: float,
+    ) -> CommandHandle:
+        step_name, step_handle = self._next_takeoff_step(
+            altitude_m,
+            expires_monotonic_s,
+        )
+        loop = asyncio.get_running_loop()
+        outer = CommandHandle(
+            request_id=uuid4(),
+            action=FcuAction.TAKEOFF,
+            application=step_handle.application,
+            _mavlink_ack=loop.create_future(),
+            _physical_completion=loop.create_future(),
+            _result=loop.create_future(),
+        )
+        task = asyncio.create_task(
+            self._run_takeoff_sequence(
+                outer,
+                altitude_m,
+                expires_monotonic_s,
+                step_name,
+                step_handle,
+            ),
+            name=f"takeoff-sequence-{outer.request_id}",
+        )
+        self._takeoff_sequence_tasks.add(task)
+        task.add_done_callback(self._takeoff_sequence_tasks.discard)
+        task.add_done_callback(self._consume_tracker_result)
+        return outer
+
+    def _next_takeoff_step(
+        self,
+        altitude_m: float,
+        expires_monotonic_s: float,
+    ) -> tuple[str, CommandHandle]:
+        telemetry = self._link.telemetry_snapshot()
+        guided_mode = self._link.guided_mode.upper()
+        if (telemetry.mode or "").upper() != guided_mode:
+            return (
+                "set_mode_guided",
+                self._link.submit(
+                    FcuCommand(FcuAction.SET_MODE, mode=guided_mode),
+                    expires_monotonic_s=expires_monotonic_s,
+                ),
+            )
+        if telemetry.armed is not True:
+            return (
+                "arm",
+                self._link.submit(
+                    FcuCommand(FcuAction.ARM),
+                    expires_monotonic_s=expires_monotonic_s,
+                ),
+            )
+        return (
+            "takeoff",
+            self._link.submit(
+                FcuCommand(FcuAction.TAKEOFF, target_altitude_m=altitude_m),
+                expires_monotonic_s=expires_monotonic_s,
+            ),
+        )
+
+    async def _run_takeoff_sequence(
+        self,
+        outer: CommandHandle,
+        altitude_m: float,
+        expires_monotonic_s: float,
+        step_name: str,
+        step_handle: CommandHandle,
+    ) -> None:
+        try:
+            while True:
+                if step_name == "takeoff":
+                    ack = await step_handle.mavlink_ack
+                    self._resolve_outer_ack(
+                        outer,
+                        self._step_ack("takeoff", ack),
+                    )
+
+                result = await step_handle.result
+                step_completed = (
+                    result.status == CommandStatus.COMPLETED
+                    and result.physical_completion.confirmed
+                )
+                if not step_completed:
+                    self._finish_takeoff_outer(outer, step_name, result)
+                    return
+                if step_name == "takeoff":
+                    self._finish_takeoff_outer(outer, step_name, result)
+                    return
+
+                step_name, step_handle = self._next_takeoff_step(
+                    altitude_m,
+                    expires_monotonic_s,
+                )
+        except asyncio.CancelledError:
+            self._cancel_takeoff_outer(outer, step_name)
+            raise
+        except Exception as exc:
+            self._fail_takeoff_outer_locally(outer, step_name, exc)
+
+    def _finish_takeoff_outer(
+        self,
+        outer: CommandHandle,
+        step_name: str,
+        result: CommandResult,
+    ) -> None:
+        is_success = (
+            step_name == "takeoff"
+            and result.status == CommandStatus.COMPLETED
+            and result.physical_completion.confirmed
+        )
+        ack = (
+            outer._mavlink_ack.result()
+            if outer._mavlink_ack.done()
+            else self._step_ack(step_name, result.mavlink_ack)
+        )
+        physical = (
+            result.physical_completion
+            if is_success
+            else self._step_physical(step_name, result.physical_completion)
+        )
+        detail = (
+            result.detail
+            if is_success
+            else f"takeoff sequence failed at {step_name}: {result.detail}"
+        )
+        status = (
+            CommandStatus.PHYSICAL_TIMEOUT
+            if result.status == CommandStatus.COMPLETED and not physical.confirmed
+            else result.status
+        )
+        self._resolve_outer_ack(outer, ack)
+        if not outer._physical_completion.done():
+            outer._physical_completion.set_result(physical)
+        if not outer._result.done():
+            outer._result.set_result(
+                CommandResult(
+                    request_id=outer.request_id,
+                    action=FcuAction.TAKEOFF,
+                    status=status,
+                    application=outer.application,
+                    sent_monotonic_s=result.sent_monotonic_s,
+                    mavlink_ack=ack,
+                    physical_completion=physical,
+                    detail=detail,
+                )
+            )
+
+    def _fail_takeoff_outer_locally(
+        self,
+        outer: CommandHandle,
+        step_name: str,
+        exc: Exception,
+    ) -> None:
+        detail = (
+            f"takeoff sequence failed at {step_name}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        ack = MavlinkAckEvidence(
+            applicable=False,
+            received=False,
+            command_id=None,
+            result=None,
+            observed_monotonic_s=time.monotonic(),
+            detail=detail,
+        )
+        physical = PhysicalCompletionEvidence(False, None, detail)
+        self._resolve_outer_ack(outer, ack)
+        if not outer._physical_completion.done():
+            outer._physical_completion.set_result(physical)
+        if not outer._result.done():
+            outer._result.set_result(
+                CommandResult(
+                    request_id=outer.request_id,
+                    action=FcuAction.TAKEOFF,
+                    status=CommandStatus.DISPATCH_FAILED,
+                    application=outer.application,
+                    sent_monotonic_s=None,
+                    mavlink_ack=outer._mavlink_ack.result(),
+                    physical_completion=physical,
+                    detail=detail,
+                )
+            )
+
+    def _cancel_takeoff_outer(self, outer: CommandHandle, step_name: str) -> None:
+        detail = f"takeoff sequence cancelled during {step_name}"
+        ack = MavlinkAckEvidence(
+            applicable=False,
+            received=False,
+            command_id=None,
+            result=None,
+            observed_monotonic_s=time.monotonic(),
+            detail=detail,
+        )
+        physical = PhysicalCompletionEvidence(False, None, detail)
+        self._resolve_outer_ack(outer, ack)
+        if not outer._physical_completion.done():
+            outer._physical_completion.set_result(physical)
+        if not outer._result.done():
+            outer._result.set_result(
+                CommandResult(
+                    request_id=outer.request_id,
+                    action=FcuAction.TAKEOFF,
+                    status=CommandStatus.PREEMPTED,
+                    application=outer.application,
+                    sent_monotonic_s=None,
+                    mavlink_ack=outer._mavlink_ack.result(),
+                    physical_completion=physical,
+                    detail=detail,
+                )
+            )
+
+    @staticmethod
+    def _step_ack(step_name: str, ack: MavlinkAckEvidence) -> MavlinkAckEvidence:
+        return MavlinkAckEvidence(
+            applicable=ack.applicable,
+            received=ack.received,
+            command_id=ack.command_id,
+            result=ack.result,
+            observed_monotonic_s=ack.observed_monotonic_s,
+            detail=f"{step_name}: {ack.detail}",
+        )
+
+    @staticmethod
+    def _step_physical(
+        step_name: str,
+        physical: PhysicalCompletionEvidence,
+    ) -> PhysicalCompletionEvidence:
+        return PhysicalCompletionEvidence(
+            confirmed=physical.confirmed,
+            observed_monotonic_s=physical.observed_monotonic_s,
+            detail=f"{step_name}: {physical.detail}",
+        )
+
+    @staticmethod
+    def _resolve_outer_ack(
+        outer: CommandHandle,
+        ack: MavlinkAckEvidence,
+    ) -> None:
+        if not outer._mavlink_ack.done():
+            outer._mavlink_ack.set_result(ack)
 
     async def _emit_terminal_ack(
         self,
