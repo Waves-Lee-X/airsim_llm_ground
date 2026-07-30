@@ -8,6 +8,7 @@ from aeromind_apm_lite.ground.simulation.fault_injection import (
 )
 from aeromind_apm_lite.ground.simulation.navigation_acceptance import (
     NavigationAcceptanceError,
+    _attach_trajectory_evidence,
     acceptance_passed,
     build_argument_parser,
     select_navigation_vehicle,
@@ -77,3 +78,30 @@ def test_navigation_acceptance_cli_exposes_optional_trajectory_evidence():
     assert args.georeference_config == Path("venue.yaml")
     assert args.trajectory_evidence_dir == Path("/tmp/evidence")
     assert args.software_commit == "8605422"
+
+
+def test_navigation_result_contract_keeps_evidence_error_separate():
+    class FailedRecorder:
+        def finalize(self):
+            raise ValueError(
+                "trajectory recording requires at least two position observations"
+            )
+
+    payload = {
+        "passed": True,
+        "result": {
+            "terminal_state": "failed",
+            "failure_code": "preflight_timeout",
+        },
+    }
+    result = _attach_trajectory_evidence(
+        payload,
+        FailedRecorder(),
+        Path("/tmp/evidence"),
+        type("Plan", (), {"mission_id": "mission-id"})(),
+        None,
+    )
+
+    assert not result["passed"]
+    assert result["result"]["failure_code"] == "preflight_timeout"
+    assert "two position observations" in result["trajectory_evidence_error"]

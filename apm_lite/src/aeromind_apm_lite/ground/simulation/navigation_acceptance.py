@@ -97,6 +97,36 @@ def _write_report(path: Path, payload: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _attach_trajectory_evidence(
+    payload: dict[str, Any],
+    recorder: NavigationTrajectoryRecorder,
+    evidence_dir: Path,
+    plan: NavigationMissionPlan,
+    fault: NavigationFaultType | None,
+) -> dict[str, Any]:
+    try:
+        planned, predicted = recorder.finalize()
+        scenario = fault.value if fault is not None else "baseline"
+        evidence_summary: dict[str, Any] = {}
+        for evidence in (planned, predicted):
+            output = evidence_dir / (
+                f"{plan.mission_id}-{scenario}-{evidence.role.value}.json"
+            )
+            write_evidence_file(output, evidence)
+            evidence_summary[evidence.role.value] = {
+                "path": str(output),
+                "evidence_id": str(evidence.evidence_id),
+                "evidence_hash": evidence.evidence_hash,
+                "sample_count": len(evidence.samples),
+                "preview_only": evidence.preview_only,
+            }
+        payload["trajectory_evidence"] = evidence_summary
+    except Exception as exc:
+        payload["passed"] = False
+        payload["trajectory_evidence_error"] = f"{type(exc).__name__}: {exc}"
+    return payload
+
+
 async def run_navigation_acceptance(
     vehicle: VehicleRuntimeConfig,
     plan: NavigationMissionPlan,
@@ -179,22 +209,13 @@ async def run_navigation_acceptance(
     }
     if trajectory_recorder is not None:
         assert trajectory_evidence_dir is not None
-        planned, predicted = trajectory_recorder.finalize()
-        scenario = fault.value if fault is not None else "baseline"
-        evidence_summary: dict[str, Any] = {}
-        for evidence in (planned, predicted):
-            output = trajectory_evidence_dir / (
-                f"{plan.mission_id}-{scenario}-{evidence.role.value}.json"
-            )
-            write_evidence_file(output, evidence)
-            evidence_summary[evidence.role.value] = {
-                "path": str(output),
-                "evidence_id": str(evidence.evidence_id),
-                "evidence_hash": evidence.evidence_hash,
-                "sample_count": len(evidence.samples),
-                "preview_only": evidence.preview_only,
-            }
-        payload["trajectory_evidence"] = evidence_summary
+        return _attach_trajectory_evidence(
+            payload,
+            trajectory_recorder,
+            trajectory_evidence_dir,
+            plan,
+            fault,
+        )
     return payload
 
 

@@ -171,7 +171,7 @@ class NavigationTrajectoryRecorder:
         )
 
     def _planned_map_position(self, phase: str) -> Vec3:
-        if phase in {"preflight", "guided", "arm", "landed"}:
+        if phase in {"preflight", "guided", "arm"}:
             target_ned = (0.0, 0.0, 0.0)
         elif phase == "takeoff":
             target_ned = (0.0, 0.0, -self.plan.takeoff_altitude_m)
