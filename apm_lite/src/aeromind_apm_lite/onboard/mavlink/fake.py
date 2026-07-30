@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Sequence, Union
 
 from .models import MavlinkEnvelope
 from .transport import (
@@ -13,18 +13,18 @@ from .transport import (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SentCommandLong:
     command_id: int
     params: tuple[float, ...]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SentHeartbeat:
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SentLocalPositionTarget:
     north_m: float
     east_m: float
@@ -32,7 +32,7 @@ class SentLocalPositionTarget:
     yaw_rad: float | None
 
 
-SentRecord = SentCommandLong | SentHeartbeat | SentLocalPositionTarget
+SentRecord = Union[SentCommandLong, SentHeartbeat, SentLocalPositionTarget]
 
 
 class FakeMavlinkTransport:

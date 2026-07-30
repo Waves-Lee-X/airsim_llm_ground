@@ -9,7 +9,7 @@ from .apm_link import ApmLink, CommandHandle
 from .mavlink.models import CommandResult, CommandStatus, FcuAction, FcuCommand
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CommandSequenceResult:
     name: str
     completed: bool

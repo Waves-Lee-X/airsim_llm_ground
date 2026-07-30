@@ -1,67 +1,60 @@
-# M1 Progress Record
+# M1 验收记录：单机 AirSim/ArduCopter SITL
 
-Date: 2026-07-28
+验收日期：2026-07-28
 
-## Result
+## 结果
 
-**M1 single-vehicle AirSim/ArduPilot SITL gate: passed.**
+**M1 单机 AirSim/ArduPilot SITL 门禁通过。** 固定任务完成 10/10，独立 RTL
+路径完成。每个飞行动作都保留应用接收、适用时的 MAVLink `COMMAND_ACK` 和
+新鲜物理遥测证据。M1 没有向真机发送命令。
 
-The accepted batch completed all 10 requested fixed missions and the separate
-RTL safety path. Every flight action retained application acceptance,
-MAVLink `COMMAND_ACK` evidence where applicable, and fresh physical telemetry
-evidence. No real-aircraft flight command was sent during M1.
+冻结环境：
 
-The accepted runtime is frozen as:
+- AirSim `1.8.1`，Blocks 场景；
+- ArduPilot Copter `4.7.0`，提交
+  `1511f27194f1dcc3728270883047bdf022b3fd53`；
+- `pymavlink 2.4.49`；
+- 单 AirSim 飞机、单 SITL、单 Lite Agent；
+- GCS `SYSID=201`、飞行器 `SYSID=1`、接收端 `udpin:0.0.0.0:14550`。
 
-- AirSim `1.8.1`, Blocks environment;
-- ArduPilot Copter `4.7.0` at commit
-  `1511f27194f1dcc3728270883047bdf022b3fd53`;
-- `pymavlink 2.4.49`;
-- one AirSim vehicle, one ArduCopter SITL process and one Lite agent;
-- GCS system ID `201`, vehicle system ID `1` and Lite receive endpoint
-  `udpin:0.0.0.0:14550`.
+该冻结只适用于 M1 仿真，不能证明实机 V5+ 的固件、参数、串口或 GPS 延迟。
 
-This freeze applies only to the M1 AirSim/SITL baseline. It is not evidence of
-the firmware, parameters, serial mapping or GPS delay on the real CUAV V5+.
+## 固定任务
 
-## Accepted mission
-
-Each repeat is an outbound-and-return loop so all runs stay in the same tested
-part of the AirSim scene:
+每轮都返回本轮起点，避免十轮任务不断向场景外累积位移：
 
 ```text
 GUIDED
   -> ARM
   -> TAKEOFF 2 m
-  -> LOCAL_NED north 3 m
+  -> LOCAL_NED 向北 3 m
   -> HOLD
   -> GUIDED
-  -> return to this run's start position
+  -> 返回本轮起点
   -> LAND
 ```
 
-All eight actions must reach a terminal result. An accepted ACK never marks an
-action complete by itself.
-
-| Action | MAVLink evidence | Physical completion evidence |
+| 动作 | MAVLink 证据 | 物理完成证据 |
 |---|---|---|
-| ARM/DISARM | ACK for command 400 | Fresh HEARTBEAT armed bit |
-| TAKEOFF | ACK for command 22 | Armed, target relative altitude, fresh settled velocity |
-| SET_MODE | ACK for command 176 | Fresh HEARTBEAT mode |
-| GUIDED target | ACK not applicable | Fresh LOCAL_POSITION_NED error and settled velocity |
-| HOLD | ACK for command 176 | Configured hold mode plus settled velocity |
-| LAND | ACK for command 21 | Fresh ON_GROUND state and disarmed heartbeat |
-| RTL | ACK for command 20 | At Home tolerance, ON_GROUND and disarmed |
+| ARM/DISARM | command 400 ACK | 新鲜 HEARTBEAT armed 位 |
+| TAKEOFF | command 22 ACK | 已解锁、达到相对高度、速度稳定 |
+| SET_MODE | command 176 ACK | 新鲜 HEARTBEAT 模式 |
+| GUIDED 目标 | 不适用 ACK | LOCAL_POSITION_NED 误差与速度稳定 |
+| HOLD | command 176 ACK | 进入配置的保持模式且速度稳定 |
+| LAND | command 21 ACK | ON_GROUND 且已上锁 |
+| RTL | command 20 ACK | 回到 Home 容差、ON_GROUND 且已上锁 |
 
-## Acceptance evidence
+单独收到 `ACCEPTED` 不能判定动作完成。
 
-Accepted evidence directory:
+## 正式证据
+
+证据目录：
 
 ```text
 D:\AirSim\aeromind-apm-lite-m1\acceptance4\run-20260728T114147Z-548787-d58b2f77
 ```
 
-Result:
+结果：
 
 ```text
 gate: M1_SINGLE_VEHICLE_AIRSIM_SITL
@@ -71,7 +64,7 @@ independent RTL path: completed
 overall passed: true
 ```
 
-Frozen hashes:
+冻结哈希：
 
 ```text
 ArduPilot binary SHA-256:
@@ -84,65 +77,40 @@ generated AirSim settings SHA-256:
 c97a961d19a42bcdb0fe26cf156fa903cc5ed3a219cd9d876153b8a98b4ce5d3
 ```
 
-The evidence directory is intentionally outside Git because it includes a
-31 MB DataFlash log and runtime state. `summary.json`, `fixed-missions.jsonl`,
-`rtl.json`, FCU/AirSim logs and the DataFlash BIN remain available for audit.
+证据目录未提交到 Git，因为包含约 31 MB DataFlash 和运行状态；`summary.json`、
+`fixed-missions.jsonl`、`rtl.json`、FCU/AirSim 日志和 BIN 文件保留在本机审计目录。
 
-This final batch was run after the same-MAV_CMD ACK isolation regression was
-fixed. UE4 and ArduCopter were both automatically stopped after the gate, and
-no owned simulator process remained.
+## 失败批次
 
-## Software verification
+失败批次作为负面证据保留：
 
-```text
-125 tests passed
-JSON Schema export --check passed
-Python compileall passed
-flake8 passed
-git diff --check passed
-```
-
-## Failed batches retained
-
-The two failed batches are retained as negative evidence:
-
-| Evidence directory | Result | Root cause | Correction |
+| 证据目录 | 结果 | 根因 | 修正 |
 |---|---:|---|---|
-| `D:\AirSim\aeromind-apm-lite-m1\acceptance\run-20260728T104727Z-532493-3da396e7` | 7/10 | AirSim GPS samples arrived about 128-230 ms late while `GPS1_DELAY_MS` declared 20 ms, producing `Arm: GPS 1: not healthy` | Freeze the measured AirSim-only delay at 200 ms and re-check GPS/pre-arm health after entering GUIDED |
-| `D:\AirSim\aeromind-apm-lite-m1\acceptance2\run-20260728T110021Z-533669-9b8fc5e9` | 8/10 | The old mission accumulated 3 m north on every repeat and entered the Blocks obstacle area, causing an EKF failure | Make every repeat return to its own starting position before LAND |
+| `D:\AirSim\aeromind-apm-lite-m1\acceptance\run-20260728T104727Z-532493-3da396e7` | 7/10 | AirSim GPS 实测延迟约 128-230 ms，但 `GPS1_DELAY_MS=20`，触发 GPS 不健康 | 只在 AirSim 参数中冻结 200 ms，并在 GUIDED 后重查 GPS/pre-arm |
+| `D:\AirSim\aeromind-apm-lite-m1\acceptance2\run-20260728T110021Z-533669-9b8fc5e9` | 8/10 | 旧任务每轮累计向北 3 m，进入 Blocks 障碍区域并触发 EKF 故障 | 每轮 LAND 前返回本轮起点 |
 
-`GPS1_DELAY_MS=200` is an AirSim connector calibration, not a real F9P value.
-It must never be copied to the V5+ parameter set without real log evidence.
+`GPS1_DELAY_MS=200` 只属于 AirSim Connector 标定，未经实机日志证明不得复制到
+F9P/V5+ 参数。
 
-One preflight CLI invocation is also retained at
-`D:\AirSim\aeromind-apm-lite-m1\acceptance4\run-20260728T114133Z-548761-cfea746b`.
-It was rejected before AirSim/SITL startup because the parameter-file argument
-was relative; it is not counted as a flight attempt.
+预检调用
+`D:\AirSim\aeromind-apm-lite-m1\acceptance4\run-20260728T114133Z-548761-cfea746b`
+因参数文件使用相对路径而在启动前被拒绝，不计为飞行尝试。
 
-## Delivered
+## M1 交付
 
-- A transport-neutral MAVLink boundary and deterministic fake FCU transport.
-- A real serial/UDP `PymavlinkTransport` with verified LOCAL_NED masks.
-- One `ApmLink` asyncio owner for every transport receive and send operation.
-- Target-system/component filtering, ArduPilot/quadrotor validation and
-  explicit `AUTOPILOT_VERSION` discovery.
-- Normalized position, velocity, attitude, battery, GPS, GPS-health, EKF,
-  landed-state, Home and status-text telemetry with independent freshness.
-- Bounded command queues with HOLD/LAND/RTL/DISARM safety priority.
-- Continuous GUIDED target transmission with expiry-triggered HOLD.
-- ARM, DISARM, TAKEOFF, SET_MODE, LOCAL_NED, HOLD, LAND and RTL services.
-- Three-layer command evidence and a short `STATUSTEXT` diagnostic window
-  after a negative ACK.
-- HMAC-authenticated WebSocket sessions with TTL, sequence and replay checks.
-- AirSim/ArduPilot lifecycle management with exact owned-process cleanup.
-- Read-only `aeromind-apm-probe` and repeatable
-  `aeromind-apm-m1-acceptance` command-line tools.
+- 可替换的 MAVLink 边界和确定性假飞控；
+- 串口/UDP `PymavlinkTransport` 与 LOCAL_NED 掩码校验；
+- 单一异步所有者 `ApmLink`；
+- 目标 system/component 过滤、ArduPilot/四旋翼识别和版本探测；
+- 位置、速度、姿态、电池、GPS、EKF、着陆、Home 和 STATUSTEXT 遥测；
+- 带安全优先级的有界命令队列；
+- ARM、DISARM、TAKEOFF、模式、LOCAL_NED、HOLD、LAND、RTL 服务；
+- 应用、FCU ACK、物理完成三层证据；
+- HMAC WebSocket 会话、TTL、序列和重放保护；
+- AirSim/ArduPilot 自动生命周期与精确进程清理；
+- 只读探测和可重复 M1 验收命令行。
 
-## M2 boundary
+## 真机边界
 
-M2 starts with a propeller-removed V5+ bench, not a low-altitude flight. Before
-control is enabled, the bench must identify the installed firmware and board
-target, export and hash all parameters, confirm which `SERIALx` maps to
-TELEM2, verify MAVLink 2/baud/flow control and validate the TELEM2 logic level.
-The Raspberry Pi must use an independent regulated supply; TELEM2 carries only
-crossed TX/RX and common GND unless CUAV supplies contrary rated evidence.
+仿真命令全部通过不代表真机开放相同权限。UAV3 当前机载白名单仅为 ARM/DISARM；
+TAKEOFF、HOLD、LAND、RTL 仍在地面与机载两层被拒绝。

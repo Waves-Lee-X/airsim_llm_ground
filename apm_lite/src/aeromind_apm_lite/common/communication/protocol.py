@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
-from typing import Any, Literal
+from typing import Any, Literal, Union
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -62,7 +62,7 @@ class SignedMessageFrame(_Frame):
     signature: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-HandshakeFrame = ClientHello | ServerChallenge | ClientProof | SessionAccepted
+HandshakeFrame = Union[ClientHello, ServerChallenge, ClientProof, SessionAccepted]
 
 _HANDSHAKE_TYPES: dict[str, type[_Frame]] = {
     "client_hello": ClientHello,

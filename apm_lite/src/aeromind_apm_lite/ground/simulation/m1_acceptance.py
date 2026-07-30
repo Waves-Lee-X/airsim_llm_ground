@@ -58,7 +58,7 @@ class AcceptanceError(RuntimeError):
     """The M1 environment or acceptance sequence could not be completed."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AcceptancePaths:
     run_directory: Path
     probe_path: Path

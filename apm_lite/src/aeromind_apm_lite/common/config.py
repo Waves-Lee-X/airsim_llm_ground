@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -17,6 +17,10 @@ class DeploymentMode(str, Enum):
 
 class FcuTransport(str, Enum):
     UDP = "udp"
+    SERIAL = "serial"
+
+
+class GroundTransport(str, Enum):
     SERIAL = "serial"
 
 
@@ -34,7 +38,7 @@ class ConfigModel(BaseModel):
 class FcuConnection(ConfigModel):
     transport: FcuTransport
     endpoint: str = Field(min_length=1, max_length=256)
-    baudrate: int | None = Field(default=None, ge=9_600, le=2_000_000)
+    baudrate: Optional[int] = Field(default=None, ge=9_600, le=2_000_000)
     source_system: int = Field(ge=200, le=254)
     source_component: int = Field(default=191, ge=1, le=255)
     target_system: int = Field(ge=1, le=255)
@@ -55,6 +59,18 @@ class FcuConnection(ConfigModel):
         return self
 
 
+class GroundConnection(ConfigModel):
+    transport: GroundTransport = GroundTransport.SERIAL
+    endpoint: str = Field(min_length=1, max_length=256)
+    baudrate: int = Field(default=57_600, ge=9_600, le=921_600)
+
+    @model_validator(mode="after")
+    def serial_endpoint_is_a_linux_device(self) -> "GroundConnection":
+        if not self.endpoint.startswith("/dev/"):
+            raise ValueError("onboard ground serial endpoint must be an absolute /dev path")
+        return self
+
+
 class VehicleRuntimeConfig(ConfigModel):
     vehicle_id: int = Field(ge=1, le=255)
     name: str = Field(min_length=1, max_length=64)
@@ -67,6 +83,7 @@ class VehicleRuntimeConfig(ConfigModel):
     credential_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
     sensor_source: SensorSourceKind
     fcu: FcuConnection
+    ground_link: Optional[GroundConnection] = None
     setpoint_rate_hz: float = Field(default=20.0, ge=10.0, le=50.0)
     trajectory_timeout_ms: int = Field(default=1_000, ge=250, le=10_000)
     companion_heartbeat_hz: float = Field(default=1.0, ge=0.5, le=5.0)
@@ -126,6 +143,10 @@ class FleetConfig(ConfigModel):
                 raise ValueError(
                     f"{self.mode.value} mode requires {choices} sensor source"
                 )
+            if self.mode == DeploymentMode.REAL and vehicle.ground_link is None:
+                raise ValueError("real mode requires an onboard ground_link")
+            if self.mode == DeploymentMode.SIM and vehicle.ground_link is not None:
+                raise ValueError("sim mode must not define an onboard ground_link")
         return self
 
 

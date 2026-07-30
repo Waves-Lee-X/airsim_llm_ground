@@ -76,7 +76,7 @@ class MavLandedState(IntEnum):
     LANDING = 4
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FcuCommand:
     action: FcuAction
     target_altitude_m: float | None = None
@@ -114,7 +114,7 @@ class FcuCommand:
                 raise ValueError("yaw_rad must be in [-pi, pi]")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MavlinkEnvelope:
     name: str
     fields: Mapping[str, Any]
@@ -126,7 +126,7 @@ class MavlinkEnvelope:
         object.__setattr__(self, "fields", MappingProxyType(dict(self.fields)))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FcuIdentity:
     system_id: int
     component_id: int
@@ -142,7 +142,7 @@ class FcuIdentity:
     custom_version_hex: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TelemetrySnapshot:
     observed_monotonic_s: float
     fcu_link_ok: bool
@@ -171,14 +171,14 @@ class TelemetrySnapshot:
         object.__setattr__(self, "field_ages_s", MappingProxyType(dict(self.field_ages_s)))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ApplicationAcceptance:
     accepted: bool
     observed_monotonic_s: float
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MavlinkAckEvidence:
     applicable: bool
     received: bool
@@ -188,14 +188,14 @@ class MavlinkAckEvidence:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PhysicalCompletionEvidence:
     confirmed: bool
     observed_monotonic_s: float | None
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CommandResult:
     request_id: UUID
     action: FcuAction

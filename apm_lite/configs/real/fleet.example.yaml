@@ -23,6 +23,10 @@ vehicles:
       source_component: 191
       target_system: 1
       target_component: 1
+    ground_link:
+      transport: serial
+      endpoint: /dev/ttyAMA1
+      baudrate: 57600
   - vehicle_id: 2
     name: real-uav2
     runtime_host: pi-uav2
@@ -41,6 +45,10 @@ vehicles:
       source_component: 191
       target_system: 2
       target_component: 1
+    ground_link:
+      transport: serial
+      endpoint: /dev/ttyAMA1
+      baudrate: 57600
   - vehicle_id: 3
     name: real-uav3
     runtime_host: pi-uav3
@@ -59,6 +67,10 @@ vehicles:
       source_component: 191
       target_system: 3
       target_component: 1
+    ground_link:
+      transport: serial
+      endpoint: /dev/ttyAMA1
+      baudrate: 57600
   - vehicle_id: 4
     name: real-uav4
     runtime_host: pi-uav4
@@ -77,3 +89,7 @@ vehicles:
       source_component: 191
       target_system: 4
       target_component: 1
+    ground_link:
+      transport: serial
+      endpoint: /dev/ttyAMA1
+      baudrate: 57600

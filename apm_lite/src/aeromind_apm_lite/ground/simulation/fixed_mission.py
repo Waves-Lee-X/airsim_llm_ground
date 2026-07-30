@@ -34,13 +34,13 @@ class MissionEvidenceJournalError(RuntimeError):
     """Raised after a terminal result exists but cannot be persisted."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MissionStepEvidence:
     name: str
     result: CommandResult
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FixedMissionResult:
     run_id: UUID
     attempt: int
@@ -56,7 +56,7 @@ class FixedMissionResult:
         return self.terminal_state == MissionTerminalState.COMPLETED
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FixedMissionBatchResult:
     batch_id: UUID
     terminal_state: MissionBatchState

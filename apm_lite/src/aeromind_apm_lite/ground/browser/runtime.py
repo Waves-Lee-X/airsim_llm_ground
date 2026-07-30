@@ -17,6 +17,7 @@ from enum import Enum
 from typing import Any, Callable
 from uuid import uuid4
 
+from aeromind_apm_lite.common.communication import ByteStreamFactory
 from aeromind_apm_lite.common.config import FcuConnection, FcuTransport
 from aeromind_apm_lite.ground.server import GroundServer
 from aeromind_apm_lite.onboard.agent import OnboardAgent
@@ -36,9 +37,10 @@ from aeromind_apm_lite.onboard.mavlink.models import (
 class ManualRuntimeMode(str, Enum):
     SITL = "sitl"
     DEMO = "demo"
+    REAL_SERIAL = "real_serial"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ManualRuntimeConfig:
     """Configuration kept intentionally separate from M1 acceptance config."""
 
@@ -57,6 +59,8 @@ class ManualRuntimeConfig:
     telemetry_freshness_s: float = 1.0
     completion_hold_s: float = 0.5
     command_ttl_ms: int = 5_000
+    ground_serial_port: str | None = None
+    ground_serial_baudrate: int = 57_600
 
     def __post_init__(self) -> None:
         if not 1 <= self.vehicle_id <= 255:
@@ -65,6 +69,10 @@ class ManualRuntimeConfig:
             raise ValueError("vehicle_name must not be empty")
         if not self.frame_calibration_id:
             raise ValueError("frame_calibration_id must not be empty")
+        if self.mode == ManualRuntimeMode.REAL_SERIAL and not self.ground_serial_port:
+            raise ValueError("real_serial mode requires ground_serial_port")
+        if self.ground_serial_baudrate <= 0:
+            raise ValueError("ground_serial_baudrate must be positive")
         if not 100 <= self.command_ttl_ms <= 300_000:
             raise ValueError("command_ttl_ms must be in [100, 300000]")
         for label, value in (
@@ -77,9 +85,12 @@ class ManualRuntimeConfig:
         ):
             if value <= 0.0:
                 raise ValueError(f"{label} must be positive")
-        self.fcu_connection()
+        if self.mode != ManualRuntimeMode.REAL_SERIAL:
+            self.fcu_connection()
 
     def fcu_connection(self) -> FcuConnection:
+        if self.mode == ManualRuntimeMode.REAL_SERIAL:
+            raise ValueError("real_serial FCU connection is owned by the onboard Pi")
         return FcuConnection(
             transport=FcuTransport.UDP,
             endpoint=self.fcu_endpoint,
@@ -90,25 +101,35 @@ class ManualRuntimeConfig:
         )
 
     def public_payload(self) -> dict[str, Any]:
+        real_serial = self.mode == ManualRuntimeMode.REAL_SERIAL
         return {
             "runtime_mode": self.mode.value,
-            "deployment_mode": "sim",
+            "deployment_mode": "real" if real_serial else "sim",
             "vehicle_id": self.vehicle_id,
             "vehicle_name": self.vehicle_name,
-            "fcu_endpoint": self.fcu_endpoint,
+            "fcu_endpoint": "onboard-pi" if real_serial else self.fcu_endpoint,
+            "ground_transport": "serial" if real_serial else "loopback_websocket",
+            "ground_serial_port": self.ground_serial_port if real_serial else None,
+            "ground_serial_baudrate": (
+                self.ground_serial_baudrate if real_serial else None
+            ),
             "coordinate_frame": "local_ned",
             "frame_calibration_id": self.frame_calibration_id,
-            "flight_output_enabled": self.mode == ManualRuntimeMode.SITL,
+            "flight_output_enabled": self.mode != ManualRuntimeMode.DEMO,
             "commands_are_simulated": self.mode == ManualRuntimeMode.DEMO,
             "external_processes_managed": False,
             "camera": {
                 "name": "front_center",
-                "kind": "scene_rgb",
+                "kind": "onboard_rgb" if real_serial else "scene_rgb",
                 "width": 1280,
                 "height": 720,
                 "fov_degrees": 90.0,
                 "stream_available": False,
-                "detail": "camera streaming is not connected to this gateway",
+                "detail": (
+                    "real camera transport is not connected to this gateway"
+                    if real_serial
+                    else "camera streaming is not connected to this gateway"
+                ),
             },
         }
 
@@ -278,10 +299,18 @@ class ManualRuntime:
         config: ManualRuntimeConfig | None = None,
         *,
         link_factory: LinkFactory | None = None,
+        shared_secret: bytes | None = None,
+        serial_stream_factory: ByteStreamFactory | None = None,
     ) -> None:
         self.config = config or ManualRuntimeConfig()
         self._link_factory = link_factory
-        self._secret = secrets.token_bytes(32)
+        if self.config.mode == ManualRuntimeMode.REAL_SERIAL:
+            if shared_secret is None or len(shared_secret) < 32:
+                raise ValueError("real_serial mode requires a 32-byte shared secret")
+            self._secret = shared_secret
+        else:
+            self._secret = shared_secret or secrets.token_bytes(32)
+        self._serial_stream_factory = serial_stream_factory
         self._server: GroundServer | None = None
         self._agent: OnboardAgent | None = None
         self._link: Any | None = None
@@ -303,21 +332,38 @@ class ManualRuntime:
 
     @property
     def agent_connected(self) -> bool:
+        if self.config.mode == ManualRuntimeMode.REAL_SERIAL:
+            return bool(
+                self._server is not None
+                and self._server.session_info(self.config.vehicle_id) is not None
+            )
         return bool(self._agent is not None and self._agent.connected)
 
     async def start(self) -> None:
         if self._started or self._server is not None:
             raise RuntimeError("manual runtime can only be started once")
-        self._server = GroundServer(
-            vehicle_secrets={self.config.vehicle_id: self._secret},
-            calibration_ids={
+        server_options = {
+            "vehicle_secrets": {self.config.vehicle_id: self._secret},
+            "calibration_ids": {
                 self.config.vehicle_id: self.config.frame_calibration_id
             },
-            host="127.0.0.1",
-            port=0,
-        )
+        }
+        if self.config.mode == ManualRuntimeMode.REAL_SERIAL:
+            from aeromind_apm_lite.ground.serial_server import SerialGroundServer
+
+            self._server = SerialGroundServer(
+                serial_port=self.config.ground_serial_port or "",
+                serial_baudrate=self.config.ground_serial_baudrate,
+                stream_factory=self._serial_stream_factory,
+                **server_options,
+            )
+        else:
+            self._server = GroundServer(host="127.0.0.1", port=0, **server_options)
         try:
             await self._server.start()
+            if self.config.mode == ManualRuntimeMode.REAL_SERIAL:
+                self._started = True
+                return
             self._link = self._create_link()
             await self._link.start()
             self._agent = OnboardAgent(
@@ -351,6 +397,8 @@ class ManualRuntime:
             return self._link_factory(self.config)
         if self.config.mode == ManualRuntimeMode.DEMO:
             return DemoApmLink()
+        if self.config.mode == ManualRuntimeMode.REAL_SERIAL:
+            raise RuntimeError("real serial mode does not own an FCU link")
 
         # Keep pymavlink optional for demo-only ground-station installations.
         from aeromind_apm_lite.onboard.mavlink.pymavlink_transport import (

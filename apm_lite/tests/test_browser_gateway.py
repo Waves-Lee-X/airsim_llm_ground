@@ -10,6 +10,32 @@ from aeromind_apm_lite.ground.browser.runtime import (
     ManualRuntimeConfig,
     ManualRuntimeMode,
 )
+from aeromind_apm_lite.common.communication import SerialChannelClosed
+from aeromind_apm_lite.common.contracts import VehicleCommandType
+
+
+REAL_SECRET = b"browser-real-serial-test-secret-32-bytes"
+
+
+class IdleSerialStream:
+    def __init__(self):
+        self.incoming = asyncio.Queue()
+        self.closed = False
+
+    async def read(self, _max_bytes):
+        item = await self.incoming.get()
+        if item is None:
+            raise SerialChannelClosed("test serial stream closed")
+        return item
+
+    async def write(self, _data):
+        if self.closed:
+            raise SerialChannelClosed("test serial stream closed")
+
+    async def close(self):
+        if not self.closed:
+            self.closed = True
+            await self.incoming.put(None)
 
 
 def demo_app(*, static_dir=None):
@@ -163,6 +189,40 @@ def test_command_validation_and_unknown_vehicle_fail_closed():
         assert unknown_vehicle.status_code == 404
 
 
+def test_real_serial_api_rejects_commands_outside_onboard_allowlist():
+    async def open_serial():
+        return IdleSerialStream()
+
+    runtime = ManualRuntime(
+        ManualRuntimeConfig(
+            mode=ManualRuntimeMode.REAL_SERIAL,
+            vehicle_id=3,
+            ground_serial_port="COM_TEST",
+            startup_timeout_s=1.0,
+        ),
+        shared_secret=REAL_SECRET,
+        serial_stream_factory=open_serial,
+    )
+    app = create_app(runtime)
+    with TestClient(app) as client:
+        heartbeat_type = type("HeartbeatStub", (), {})
+        heartbeat = heartbeat_type()
+        heartbeat.command_output_enabled = True
+        heartbeat.allowed_commands = (
+            VehicleCommandType.ARM,
+            VehicleCommandType.DISARM,
+        )
+        runtime.server.last_heartbeat = lambda _vehicle_id: heartbeat
+        runtime.server.session_info = lambda _vehicle_id: object()
+
+        response = client.post(
+            "/api/vehicles/3/commands/takeoff",
+            json={"altitude_m": 2.0},
+        )
+        assert response.status_code == 403
+        assert "onboard command allowlist" in response.json()["detail"]
+
+
 def test_static_web_directory_is_mounted_without_shadowing_api(tmp_path):
     index = tmp_path / "index.html"
     index.write_text("<html><body>lite-ground-station</body></html>")
@@ -206,3 +266,77 @@ def test_manual_runtime_wires_server_agent_and_injected_link():
         assert not link.ready
 
     asyncio.run(scenario())
+
+
+def test_real_serial_settings_can_be_changed_from_the_browser_api():
+    opened_streams = []
+
+    async def open_serial():
+        stream = IdleSerialStream()
+        opened_streams.append(stream)
+        return stream
+
+    runtime = ManualRuntime(
+        ManualRuntimeConfig(
+            mode=ManualRuntimeMode.REAL_SERIAL,
+            vehicle_id=3,
+            frame_calibration_id="venue-v1",
+            ground_serial_port="COM3",
+            ground_serial_baudrate=57_600,
+        ),
+        shared_secret=REAL_SECRET,
+        serial_stream_factory=open_serial,
+    )
+    app = create_app(runtime)
+    with TestClient(app) as client:
+        config = client.get("/api/config").json()
+        assert config["serial_runtime_configurable"] is True
+        assert config["ground_serial_port"] == "COM3"
+
+        response = client.put(
+            "/api/serial/config",
+            json={"port": "COM7", "baudrate": 115_200},
+        )
+        assert response.status_code == 200
+        assert response.json()["port"] == "COM7"
+        assert response.json()["baudrate"] == 115_200
+        assert len(opened_streams) == 2
+        assert opened_streams[0].closed
+
+        status = client.get("/api/status").json()
+        assert status["ground_link"]["port"] == "COM7"
+        assert status["ground_link"]["baudrate"] == 115_200
+        assert status["runtime_error"] is None
+
+
+def test_real_serial_open_failure_keeps_web_settings_available():
+    async def fail_to_open():
+        raise OSError("test port is unavailable")
+
+    runtime = ManualRuntime(
+        ManualRuntimeConfig(
+            mode=ManualRuntimeMode.REAL_SERIAL,
+            vehicle_id=3,
+            frame_calibration_id="venue-v1",
+            ground_serial_port="COM3",
+        ),
+        shared_secret=REAL_SECRET,
+        serial_stream_factory=fail_to_open,
+    )
+    app = create_app(runtime)
+    with TestClient(app) as client:
+        assert client.get("/").status_code == 200
+        status = client.get("/api/status").json()
+        assert status["runtime_started"] is False
+        assert "test port is unavailable" in status["runtime_error"]
+        assert client.get("/api/serial/ports").status_code == 200
+
+
+def test_serial_reconfiguration_is_rejected_outside_real_mode():
+    app = demo_app()
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/serial/config",
+            json={"port": "COM7", "baudrate": 57_600},
+        )
+        assert response.status_code == 409

@@ -34,10 +34,11 @@ def _document():
 def test_ground_station_assets_and_ids_are_self_consistent():
     document = _document()
 
-    assert document.stylesheets == ["/styles.css"]
-    assert document.scripts == ["/app.js"]
+    assert document.stylesheets == ["/styles.css?v=20260730.4"]
+    assert document.scripts == ["/app.js?v=20260730.4"]
     assert len(document.ids) == len(set(document.ids))
-    assert {"vehicleSelect", "nedCanvas", "evidenceList", "cameraFrame"} <= set(
+    assert {"vehicleSelect", "nedCanvas", "evidenceList", "cameraFrame",
+            "p9Badge", "agentBadge", "linkDiagnostics"} <= set(
         document.ids
     )
     assert (WEB_ROOT / "styles.css").stat().st_size > 10_000
@@ -58,7 +59,18 @@ def test_ground_station_exposes_only_supported_m1_flight_commands():
     assert "cmd_vel" not in (WEB_ROOT / "app.js").read_text(encoding="utf-8")
 
 
-def test_ground_station_does_not_claim_ros_depth_or_vlm_availability():
+def test_real_controls_require_onboard_command_output_gate():
+    javascript = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+
+    assert "state.status?.command_output_enabled === true" in javascript
+    assert 'deploymentMode !== "real" || onboardOutputEnabled' in javascript
+    assert "state.status?.allowed_commands" in javascript
+    assert "allowedCommands.has" in javascript
+    assert "button.dataset.command" in javascript
+    assert "只读验收模式：机载飞控命令输出已禁用" in javascript
+
+
+def test_ground_station_does_not_claim_ros_depth_or_unconfigured_vlm():
     html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
 
     assert "ROS" not in html
@@ -67,9 +79,54 @@ def test_ground_station_does_not_claim_ros_depth_or_vlm_availability():
     assert 'id="cameraBadge" class="camera-badge offline"' in html
 
 
+def test_ground_station_exposes_visible_semantic_controls_and_raw_result():
+    document = _document()
+    required = {
+        "visionAnalysisForm",
+        "visionPrompt",
+        "analyzeVision",
+        "missionParseForm",
+        "missionInstruction",
+        "parseMission",
+        "semanticResult",
+        "visionWorkspace",
+        "missionWorkspace",
+        "semanticResultTitle",
+    }
+    assert required <= set(document.ids)
+    javascript = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    assert "/api/semantic/vision/analyze" in javascript
+    assert "/api/semantic/mission/parse" in javascript
+    assert "raw_response" in javascript
+    assert "flight_command_generated" not in javascript
+
+
+def test_camera_and_semantic_workspace_occupy_the_center_column():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    right_start = html.index('<section class="right-column">')
+    center_start = html.index('<section class="center-column">')
+    main_end = html.index("</main>")
+    right = html[right_start:center_start]
+    center = html[center_start:main_end]
+
+    assert all(item in center for item in (
+        'id="cameraFrame"',
+        'id="visionWorkspace"',
+        'id="missionWorkspace"',
+    ))
+    assert all(item in right for item in (
+        'id="controlState"',
+        'id="nedCanvas"',
+        'id="evidenceList"',
+    ))
+
+
 def test_ground_station_has_desktop_and_mobile_layout_breakpoints():
     css = (WEB_ROOT / "styles.css").read_text(encoding="utf-8")
 
+    assert 'grid-template-areas: "left center right"' in css
+    assert ".center-column #visionWorkspace" in css
+    assert "aspect-ratio: 16 / 9" in css
     assert "@media (max-width: 1180px)" in css
     assert "@media (max-width: 780px)" in css
     assert "@media (max-width: 420px)" in css

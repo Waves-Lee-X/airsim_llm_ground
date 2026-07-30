@@ -12,7 +12,7 @@ MAV_SYS_STATUS_SENSOR_GPS = 1 << 5
 MAV_SYS_STATUS_PREARM_CHECK = 1 << 28
 
 
-@dataclass(slots=True)
+@dataclass
 class TelemetryAccumulator:
     armed: bool | None = None
     mode: str | None = None

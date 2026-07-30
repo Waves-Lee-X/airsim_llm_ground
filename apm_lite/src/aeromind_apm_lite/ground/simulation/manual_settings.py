@@ -60,7 +60,7 @@ def _finite(value: float, *, label: str) -> float:
     return number
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ManualCameraConfig:
     """Configurable forward monocular RGB baseline; no depth sensor is implied."""
 
@@ -133,7 +133,7 @@ class ManualCameraConfig:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ManualSimulationConfig:
     """Addresses and camera profile for user-owned AirSim and SITL processes."""
 

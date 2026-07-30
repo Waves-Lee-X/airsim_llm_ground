@@ -37,6 +37,9 @@ def test_real_example_does_not_claim_an_unverified_camera():
     config = load_fleet_config(ROOT / "configs/real/fleet.example.yaml")
 
     assert all(vehicle.sensor_source.value == "none" for vehicle in config.vehicles)
+    assert all(vehicle.ground_link is not None for vehicle in config.vehicles)
+    assert all(vehicle.ground_link.endpoint == "/dev/ttyAMA1" for vehicle in config.vehicles)
+    assert all(vehicle.ground_link.baudrate == 57600 for vehicle in config.vehicles)
 
 
 def test_real_mode_allows_realsense_after_hardware_is_confirmed(tmp_path):

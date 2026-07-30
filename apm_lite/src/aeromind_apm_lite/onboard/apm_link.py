@@ -54,7 +54,7 @@ class FcuStartupError(RuntimeError):
     pass
 
 
-@dataclass(slots=True)
+@dataclass
 class CommandHandle:
     request_id: UUID
     action: FcuAction
@@ -76,14 +76,14 @@ class CommandHandle:
         return asyncio.shield(self._result)
 
 
-@dataclass(slots=True)
+@dataclass
 class _QueuedCommand:
     handle: CommandHandle
     command: FcuCommand
     expires_monotonic_s: float | None
 
 
-@dataclass(slots=True)
+@dataclass
 class _PendingCommand:
     queued: _QueuedCommand
     mavlink_command_id: int | None
@@ -100,7 +100,7 @@ class _PendingCommand:
     diagnostic_status_texts: list[str] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SafetyLatch:
     action: FcuAction
     observed_monotonic_s: float

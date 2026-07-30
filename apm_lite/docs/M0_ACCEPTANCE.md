@@ -1,33 +1,31 @@
-# M0 Acceptance Record
+# M0 验收记录：协议与软件边界
 
-Date: 2026-07-28
+验收日期：2026-07-28
 
-## Result
+## 结果
 
-**Software gate: passed. Hardware identity: established. Runtime/deployment
-freeze: waiting for firmware, parameters and bench evidence.**
+**软件门禁通过，硬件类型基线已建立。** 本文记录的是 M0 当时的证据；后续 M1、
+M1.5 和 UAV3 联调结果分别记录在其他专题文档中。
 
-M0 created an isolated Python package under `apm_lite/`. It does not import
-ROS 2, MAVROS, `px4_msgs` or PX4 Offboard code, and the existing prototype
-under `src/` remains unchanged.
+M0 在 `apm_lite/` 下建立了独立 Python 包，不导入 ROS 2、MAVROS、
+`px4_msgs` 或 PX4 Offboard。旧 `src/` 工程保持为独立原型。
 
-## Delivered
+## 交付内容
 
-- Strict protocol v1 models for commands, trajectories, formations,
-  telemetry, semantic observations, mission ACKs and heartbeats.
-- Stable decoding errors for invalid JSON, unsupported versions, unknown
-  message types and invalid payloads.
-- Receiver-local TTL checks, vehicle/session/calibration gates, sequence
-  replay protection and per-vehicle HMAC authentication.
-- A monotonic mission state machine with immutable terminal states.
-- Explicit venue-map, ENU and NED transforms with a calibration identity.
-- Shared RGB/depth source contracts for AirSim, RealSense and replay.
-- Strict four-vehicle simulation and real deployment examples.
-- A generated JSON Schema bundle for non-Python clients.
-- CI checks that forbid ROS/PX4/MAVROS dependencies and direct AirSim flight
-  control calls.
+- 命令、轨迹、编队、遥测、语义观测、任务 ACK 和心跳的协议 v1 模型；
+- 非法 JSON、版本不支持、未知消息和字段错误的稳定错误码；
+- 接收端本地 TTL、机号、会话、标定 ID、序列号和重放检查；
+- 每机独立 HMAC 身份认证；
+- 终态不可逆的单调任务状态机；
+- 场地图、ENU、NED 转换和标定身份；
+- AirSim、RealSense、回放共用的 RGB/Depth 数据契约；
+- 四机仿真和实机配置校验；
+- 面向非 Python 客户端的 JSON Schema；
+- 禁止 Lite 依赖 ROS/PX4/MAVROS 或直接调用 AirSim 飞控接口的测试。
 
-## Verification evidence
+## 验证证据
+
+M0 当时的结果：
 
 ```text
 23 tests passed
@@ -36,53 +34,35 @@ Python compileall passed
 aeromind_apm_lite-0.1.0-py3-none-any.whl built successfully
 ```
 
-The tests cover version rejection, strict payload validation, local TTL,
-duplicate and replay rejection, wrong vehicle/session/calibration, HMAC
-tampering, physical-completion ACK rules, mission transitions, coordinate
-round trips, sensor buffers and four-vehicle configuration uniqueness.
+测试覆盖版本拒绝、严格字段校验、TTL、重复/重放、错误机号/会话/标定、HMAC
+篡改、物理完成 ACK、任务状态转换、坐标往返、传感器缓存和四机唯一性。
 
-## Reviewed hardware baseline
+## 硬件基线
 
-The supplied `郑州550无人机.docx` establishes the following facts:
+《郑州550无人机.docx》确认：
 
-- The aircraft is a 550-class quadrotor.
-- The flight controller is a modern Pixhawk-compatible 雷迅/CUAV V5+ with an
-  STM32F765 main processor, five UARTs and two CAN buses.
-- The onboard computer is a Raspberry Pi 4B with 4 GB RAM and a stated
-  5 V / 3 A input requirement.
-- The intended FCU link is V5+ TELEM2 with TX/RX crossed and a common ground.
-- The positioning module is a C-RTK 9Ps based on u-blox ZED-F9P.
+- 郑州 550 四旋翼机架；
+- 雷迅/CUAV V5+，STM32F765，属于现代 Pixhawk 兼容飞控；
+- Raspberry Pi 4B 4 GB，标称供电 5 V/3 A；
+- 计划使用 V5+ TELEM2，TX/RX 交叉并共地；
+- C-RTK 9Ps，核心为 u-blox ZED-F9P。
 
-The legacy real-agent code independently records `/dev/ttyAMA0` at 921600 baud
-for the Raspberry Pi-to-FCU link. This is a migration baseline, not current
-bench proof. See `docs/HARDWARE_BASELINE.md` for confirmed facts, safety rules
-and the remaining checks.
+旧实机代理记录了 `/dev/ttyAMA0 @ 921600`，M0 只将其作为迁移候选值。当前实测
+结果和供电规则见 [`HARDWARE_BASELINE.md`](HARDWARE_BASELINE.md)。
 
-## Open deployment inputs
+## M0 当时未冻结的输入
 
-M1 implementation can start with the fake FCU and runtime discovery, but its
-SITL acceptance target must not be frozen until these are known:
+1. 实机 ArduCopter 版本、板型目标和完整参数；
+2. 机架类型、电机顺序和参数文件哈希；
+3. AirSim 版本与 ArduPilot Connector；
+4. 树莓派 OS、UART 配置和 TELEM2 心跳；
+5. TELEM2 逻辑电平、供电能力和树莓派独立电源；
+6. 相机型号、安装位置和 USB 拓扑。
 
-1. Installed ArduCopter version, firmware board target and build/commit.
-2. Frame type, motor order and a full parameter export from one aircraft.
-3. AirSim version and the intended ArduPilot connector.
-4. Raspberry Pi OS/UART configuration and a current TELEM2 heartbeat test.
-5. TELEM2 logic level/current rating and independent Pi power validation.
-6. Actual D435/camera inventory, mounting and USB connection.
+这些未知量不能通过代码默认值替代。实机兼容矩阵必须来自现场读取和证据哈希。
 
-Unknown values remain `null` in `configs/compatibility.yaml`. They must be
-replaced by reviewed values and hashes before real-flight work.
+## 后续结果
 
-## Next milestone: M1
-
-M1 will implement one vehicle end to end:
-
-1. A fake FCU transport for deterministic command and timeout tests.
-2. A single-owner asynchronous `pymavlink` connection.
-3. Heartbeat and `AUTOPILOT_VERSION` discovery.
-4. Normalized telemetry snapshots.
-5. Arm, takeoff, GUIDED target, HOLD, LAND and RTL command services.
-6. Separate application acceptance, MAVLink `COMMAND_ACK` and physical
-   completion tracking.
-7. A single ArduPilot SITL mission repeated 10 times with one terminal result
-   per run.
+M0 规划的假飞控、单一 `ApmLink`、`pymavlink`、遥测归一化、三层命令证据和
+10 次 SITL 任务均已在 M1 完成。该结果不自动授权真机命令；真机权限由机载
+白名单单独控制。

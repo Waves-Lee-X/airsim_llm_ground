@@ -2,7 +2,7 @@
 
 > 文档日期：2026-07-28
 > 开发分支：`codex/aeromind-apm-lite`
-> 文档状态：M0、M1、M1.5 已通过；下一阶段为 M2 V5+ 无桨台架
+> 文档状态：M0、M1、M1.5 已通过；M2 三号机只读 FCU/P9/RGB 和地面 VLM 预览链路完成，下一门禁为真实模型验收和无桨命令台架
 > 旧系统定位：现有 ROS 2 + PX4 + AirSim 工程保留为原型和能力参考，不在本阶段原地改造成 APM 真机系统。
 
 ## 1. 决策摘要
@@ -10,7 +10,7 @@
 AeroMind-APM Lite 采用“地面重计算、机载轻执行”的非 ROS 架构：
 
 - 地面电脑运行 Web 地面站、LLM/VLM、数字孪生、编队、路径规划、AirSim 和 ArduPilot SITL。
-- 每架树莓派 4B 只运行轻量机载代理、`pymavlink`、OpenCV 和本机安全逻辑；D435 链路仅在实物确认并接入后启用。
+- 每架树莓派 4B 只运行轻量机载代理、`pymavlink`、FFmpeg 相机守护和本机安全逻辑；OpenCV/VLM 默认放在地面电脑，D435 深度/IR 仅在驱动、尺度和安装验收后启用。
 - 仿真飞控使用 ArduCopter；真机目标同样是 ArduCopter，由 M2 读取实际固件后确认，负责姿态稳定、电机控制、EKF、GUIDED、LAND 和 RTL。
 - 仿真与真机使用同一套机载代理和任务协议，仅切换飞控连接地址：SITL 使用 MAVLink UDP，真机使用串口。
 - LLM 只生成受约束的结构化任务，VLM 只生成带证据的语义观察；二者不进入高频控制环，也不能绕过安全门控。
@@ -498,20 +498,25 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 - 非 ROS Web 地面站、LOCAL_NED 遥测、轨迹显示、安全控制按钮和三层命令证据。
 - Web 页面显示真实 AirSim `front_center` PNG 画面；VLM 面板保持明确未接入，不生成伪造语义结果。
 
-验收：Lite 全量 `155 passed`，Schema、compileall、flake8、JavaScript 语法和静态资源契约通过。正式 `8000` SITL 链路完成 GUIDED、3 米起飞、LAND、再次起飞和 RTL；DataFlash 命令结果均为 0，最终遥测为已落地且加锁。相机接口返回真实 PNG 帧且持续递增，飞行命令仍只经过 OnboardAgent、MAVLink、SITL 和 AirSim 物理闭环。
+验收：M1.5 当时 Lite 全量 `155 passed`，Schema、compileall、flake8、JavaScript 语法和静态资源契约通过。正式 `8000` SITL 链路完成 GUIDED、3 米起飞、LAND、再次起飞和 RTL；DataFlash 命令结果均为 0，最终遥测为已落地且加锁。相机接口返回真实 PNG 帧且持续递增，飞行命令仍只经过 OnboardAgent、MAVLink、SITL 和 AirSim 物理闭环。加入 P9、RTSP、VLM 和实机白名单后，2026-07-30 当前完整基线为 `186 passed`。
 
 ### M2：真实 APM 台架与单机低空
 
-状态：**待开始**。第一步只做 CUAV V5+ 拆桨、独立供电、只读串口探测，不直接进入低空飞行。
+状态：**三号机 FCU/P9/RGB/VLM 基础闭环与永久服务完成，ARM/DISARM 人工动作待验收（2026-07-30）**。已完成 P9 透明串口 Lite v1 分帧、CRC32、选择性 ACK/重传、重复抑制、最新状态合并、多机 ID 隔离、树莓派独立入口、Web `real_serial` 模式、D435i RGB/RTSP 最新帧画面、地面 VLM 和任务语义预览。机载采用“总开关 + 命令白名单”，当前只允许 ARM/DISARM；地面 API 与机载 Agent 双重拒绝 TAKEOFF/HOLD/LAND/RTL。低延迟桥和永久 systemd 服务已经完成，Depth/IR、ARM/DISARM 人工动作、RC/failsafe、其他命令和实飞仍未验收，详见 `apm_lite/docs/UAV3_REAL_BENCH_AND_VIDEO.md`。
 
 交付：
 
-- 串口配置、参数清单、启动守护和日志轮转。
+- [x] 串口配置、完整 Lite 新协议、树莓派独立入口和默认只读启动守护模板。
+- [x] 三号机 `/dev/ttyAMA0` 飞控、`/dev/ttyAMA1` P9、地面 `COM3 @ 57600` 和只读遥测链路验收。
+- [x] D435i RGB `424x240 @ 15 FPS`、自动恢复 RTSP 和 Web 画面验收。
+- [ ] 最新帧低延迟读取、永久 systemd 服务和日志轮转验收。
 - 无桨台架命令验证。
 - 失联、进程退出、过期轨迹和人工接管测试。
 - 30 分钟树莓派资源与时序压力测试。
 
 验收：故障注入时均在规定时间进入预期状态；30 分钟内无 OOM、进程重启、持续热降频或控制看门狗遗漏；通过安全评审后才进行低空测试。
+
+软件门禁：本轮队列、串口和相机相关回归 `28 passed`；Windows 全量收集结果为 `158 passed`，另有 13 项仅因测试进程不在 WSL/Linux 环境而失败，不能替代 Linux CI 全量结果。内存 P9 链路覆盖噪声/分片恢复、CRC 错误、ACK 丢失重传、重复抑制、跨机号拒绝、双向认证、默认只读拒绝、Web 命令和三层证据闭环。本次 60 秒实机采样为 FCU 离线 `0/60`、视频离线 `0/60`、无效协议帧 `0`；仍记录 81 个 P9 重复帧和 1 个 CRC 错误，因此不视为射频链路或实飞验收。
 
 ### M3：虚实双向闭环
 
@@ -525,6 +530,10 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 验收：同一单机任务先仿真后真机执行；真机轨迹可在虚拟场景实时显示；状态源不混淆。
 
 ### M4：LLM/VLM 服务化
+
+进度：已完成不依赖 ROS 的最新 RGB 帧 VLM 调用、任务语义草案、JSON 降级解析、
+Web 结构化结果/模型原文展示和 `preview_only` 安全隔离。真实模型准确率、多帧证据、
+OpenCV 交叉验证和证据持久化尚未验收。
 
 交付：
 
@@ -653,7 +662,12 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 8. [ ] 盘点四架飞机的 RGB/深度相机实物；没有 D435 时冻结“仅已知地图规划、不做未知障碍实时避障”的演示边界。
 9. [ ] 解决“四个/五个箱体”数量冲突，并定义颜色标识面附近的安全降落点、朝向和允许误差。
 10. [ ] 为旧 `swarmxian260413.py` 建立“可复用逻辑/必须重写逻辑”迁移清单。
-11. [ ] 盘点现有 AeroMind 的 LLM、VLM、Workflow 和 Web 代码，为 M4 服务化复用做准备。
+11. [x] 盘点并提取现有 AeroMind 的 VLM 调用、JSON 规范化和 Web 展示模式，完成 Lite 非 ROS 服务化首版。
+12. [x] 实现 RTSP 持续解码与最新帧缓存，Web 串行拉取最新帧，并显示 FPS/帧龄。
+13. [x] 完成 Lite 永久 systemd 单元、UART/旧进程预检和可回滚的 UAV3 安装脚本。
+14. [x] 完成 Web 分层链路状态与 60 秒只读闭环验收器；现场永久服务激活待 P9 重新接入。
+15. [x] 完成当前 RGB 帧视觉分析、自然语言任务解析、原始模型返回展示和只读 WebSocket 回传。
+16. [x] 增加地面站重启后的 P9 旧会话重置请求，机载 Agent 可自动重新握手。
 
 ## 18. 后续里程碑必须确认的外部条件
 

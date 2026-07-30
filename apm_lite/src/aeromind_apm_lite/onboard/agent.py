@@ -6,11 +6,9 @@ import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from collections.abc import Iterable
 from typing import Any
 from uuid import UUID, uuid4
-
-import websockets
-from websockets.exceptions import ConnectionClosed
 
 from aeromind_apm_lite.common.communication import (
     AuthenticationError,
@@ -19,6 +17,7 @@ from aeromind_apm_lite.common.communication import (
     ClientProof,
     ProtocolError,
     ServerChallenge,
+    SerialChannelClosed,
     SessionAccepted,
     authentication_proof,
     decode_handshake_frame,
@@ -58,7 +57,11 @@ class OnboardAgentError(RuntimeError):
     pass
 
 
-@dataclass(slots=True)
+class _WebSocketConnectionClosed(Exception):
+    """Fallback used when serial-only deployments omit websockets."""
+
+
+@dataclass
 class _InboundCommand:
     received: ReceivedMessage[VehicleCommand]
     accepted_enqueued: asyncio.Event
@@ -69,13 +72,14 @@ class OnboardAgent:
 
     The agent creates a new session UUID on every connection. All outgoing
     ACK, heartbeat and telemetry messages share one strictly increasing
-    sequence, preserving replay semantics across the WebSocket stream.
+    sequence, preserving replay semantics across either transport.
     """
 
     def __init__(
         self,
         *,
-        ground_uri: str,
+        ground_uri: str | None = None,
+        channel_factory: Any | None = None,
         vehicle_id: int,
         shared_secret: bytes,
         frame_calibration_id: str,
@@ -88,9 +92,15 @@ class OnboardAgent:
         handshake_timeout_s: float = 3.0,
         queue_size: int = 32,
         max_frame_bytes: int = 256 * 1024,
+        command_output_enabled: bool = True,
+        allowed_commands: Iterable[VehicleCommandType | str] | None = None,
     ) -> None:
-        if not ground_uri.startswith(("ws://", "wss://")):
+        if (ground_uri is None) == (channel_factory is None):
+            raise ValueError("provide exactly one of ground_uri or channel_factory")
+        if ground_uri is not None and not ground_uri.startswith(("ws://", "wss://")):
             raise ValueError("ground_uri must use ws:// or wss://")
+        if channel_factory is not None and not callable(channel_factory):
+            raise ValueError("channel_factory must be callable")
         if not 1 <= vehicle_id <= 255:
             raise ValueError("vehicle_id must be in [1, 255]")
         if not isinstance(shared_secret, bytes) or len(shared_secret) < 32:
@@ -115,6 +125,7 @@ class OnboardAgent:
             raise ValueError("max_frame_bytes must be at least 1024")
 
         self._ground_uri = ground_uri
+        self._channel_factory = channel_factory
         self._vehicle_id = vehicle_id
         self._secret = shared_secret
         self._calibration_id = frame_calibration_id
@@ -127,11 +138,20 @@ class OnboardAgent:
         self._handshake_timeout_s = handshake_timeout_s
         self._queue_size = queue_size
         self._max_frame_bytes = max_frame_bytes
+        self._command_output_enabled = command_output_enabled
+        requested_commands = (
+            frozenset(VehicleCommandType)
+            if allowed_commands is None
+            else frozenset(VehicleCommandType(command) for command in allowed_commands)
+        )
+        self._allowed_commands = (
+            requested_commands if command_output_enabled else frozenset()
+        )
 
         self._runner: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._connected_event = asyncio.Event()
-        self._active_websocket: Any | None = None
+        self._active_channel: Any | None = None
         self._active_session_id: UUID | None = None
         self._next_sequence = 0
         self._outbound_lock = asyncio.Lock()
@@ -152,11 +172,7 @@ class OnboardAgent:
         return self._last_error
 
     async def start(self, timeout_s: float = 5.0) -> UUID:
-        if self._runner is not None:
-            raise OnboardAgentError("agent can only be started once")
-        self._runner = asyncio.create_task(
-            self._run_forever(), name=f"onboard-agent-{self._vehicle_id}"
-        )
+        await self.start_background()
         try:
             await asyncio.wait_for(self._connected_event.wait(), timeout_s)
         except asyncio.TimeoutError as exc:
@@ -167,11 +183,18 @@ class OnboardAgent:
             raise OnboardAgentError("agent connected without an active session")
         return self._active_session_id
 
+    async def start_background(self) -> None:
+        if self._runner is not None:
+            raise OnboardAgentError("agent can only be started once")
+        self._runner = asyncio.create_task(
+            self._run_forever(), name=f"onboard-agent-{self._vehicle_id}"
+        )
+
     async def stop(self) -> None:
         self._stop_event.set()
-        websocket = self._active_websocket
-        if websocket is not None:
-            await websocket.close(code=1001, reason="onboard agent stopping")
+        channel = self._active_channel
+        if channel is not None:
+            await channel.close(code=1001, reason="onboard agent stopping")
         if self._runner is not None:
             await asyncio.gather(self._runner, return_exceptions=True)
         self._connected_event.clear()
@@ -189,7 +212,7 @@ class OnboardAgent:
                 self._connected_event.clear()
                 if self._active_session_id == session_id:
                     self._active_session_id = None
-                self._active_websocket = None
+                self._active_channel = None
             if self._stop_event.is_set():
                 break
             try:
@@ -200,13 +223,8 @@ class OnboardAgent:
                 pass
 
     async def _run_session(self, session_id: UUID) -> None:
-        async with websockets.connect(
-            self._ground_uri,
-            max_size=self._max_frame_bytes,
-            ping_interval=10.0,
-            ping_timeout=10.0,
-        ) as websocket:
-            await self._authenticate(websocket, session_id)
+        async with self._open_channel() as channel:
+            await self._authenticate(channel, session_id)
             outbox: BoundedLatestQueue[str] = BoundedLatestQueue(self._queue_size)
             commands: BoundedLatestQueue[_InboundCommand] = BoundedLatestQueue(
                 self._queue_size
@@ -219,12 +237,12 @@ class OnboardAgent:
             )
             self._next_sequence = 0
             self._active_session_id = session_id
-            self._active_websocket = websocket
+            self._active_channel = channel
             self._connected_event.set()
 
             tasks = {
-                asyncio.create_task(self._sender(websocket, outbox)),
-                asyncio.create_task(self._receiver(websocket, guard, commands, outbox)),
+                asyncio.create_task(self._sender(channel, outbox)),
+                asyncio.create_task(self._receiver(channel, guard, commands, outbox)),
                 asyncio.create_task(self._command_worker(commands, outbox)),
                 asyncio.create_task(self._heartbeat_loop(outbox, session_id)),
                 asyncio.create_task(self._telemetry_loop(outbox, session_id)),
@@ -242,9 +260,29 @@ class OnboardAgent:
                 if exception is not None:
                     raise exception
 
-    async def _authenticate(self, websocket: Any, session_id: UUID) -> None:
+    def _open_channel(self) -> Any:
+        if self._channel_factory is not None:
+            return self._channel_factory()
+        import websockets
+
+        return websockets.connect(
+            self._ground_uri,
+            max_size=self._max_frame_bytes,
+            ping_interval=10.0,
+            ping_timeout=10.0,
+        )
+
+    @staticmethod
+    def _websocket_closed_error() -> type[Exception]:
+        try:
+            from websockets.exceptions import ConnectionClosed
+        except ImportError:
+            return _WebSocketConnectionClosed
+        return ConnectionClosed
+
+    async def _authenticate(self, channel: Any, session_id: UUID) -> None:
         client_challenge = new_session_challenge()
-        await websocket.send(
+        await channel.send(
             encode_frame(
                 ClientHello(
                     vehicle_id=self._vehicle_id,
@@ -254,7 +292,7 @@ class OnboardAgent:
             )
         )
         challenge_raw = await asyncio.wait_for(
-            websocket.recv(), timeout=self._handshake_timeout_s
+            channel.recv(), timeout=self._handshake_timeout_s
         )
         challenge = decode_handshake_frame(challenge_raw)
         if not isinstance(challenge, ServerChallenge):
@@ -273,7 +311,7 @@ class OnboardAgent:
             secret=self._secret,
         ):
             raise AuthenticationError("ground server authentication failed")
-        await websocket.send(
+        await channel.send(
             encode_frame(
                 ClientProof(
                     vehicle_id=self._vehicle_id,
@@ -289,7 +327,7 @@ class OnboardAgent:
             )
         )
         accepted_raw = await asyncio.wait_for(
-            websocket.recv(), timeout=self._handshake_timeout_s
+            channel.recv(), timeout=self._handshake_timeout_s
         )
         accepted = decode_handshake_frame(accepted_raw)
         if not isinstance(accepted, SessionAccepted):
@@ -298,21 +336,21 @@ class OnboardAgent:
             raise AuthenticationError("accepted session identity does not match")
 
     async def _sender(
-        self, websocket: Any, outbox: BoundedLatestQueue[str]
+        self, channel: Any, outbox: BoundedLatestQueue[str]
     ) -> None:
         while True:
             payload = await outbox.get()
-            await websocket.send(payload)
+            await channel.send(payload)
 
     async def _receiver(
         self,
-        websocket: Any,
+        channel: Any,
         guard: IngressGuard,
         commands: BoundedLatestQueue[_InboundCommand],
         outbox: BoundedLatestQueue[str],
     ) -> None:
         try:
-            async for payload in websocket:
+            async for payload in channel:
                 received_at = time.monotonic()
                 message, signature = decode_signed_message(payload)
                 if not isinstance(message, VehicleCommand):
@@ -330,7 +368,6 @@ class OnboardAgent:
                     received=received,
                     accepted_enqueued=asyncio.Event(),
                 )
-                await commands.put(inbound, replaceable=False)
                 await self._emit_ack(
                     outbox,
                     message,
@@ -338,10 +375,30 @@ class OnboardAgent:
                     "authenticated command accepted by the onboard ingress gate",
                 )
                 inbound.accepted_enqueued.set()
+                if not self._command_output_enabled:
+                    await self._emit_ack(
+                        outbox,
+                        message,
+                        AckStatus.FAILED,
+                        "authenticated command rejected: onboard command output is disabled",
+                    )
+                    continue
+                if message.command not in self._allowed_commands:
+                    await self._emit_ack(
+                        outbox,
+                        message,
+                        AckStatus.FAILED,
+                        (
+                            "authenticated command rejected: "
+                            f"{message.command.value} is not in the onboard allowlist"
+                        ),
+                    )
+                    continue
+                await commands.put(inbound, replaceable=False)
         except (ProtocolError, IngressError) as exc:
-            await websocket.close(code=1008, reason=str(exc)[:120])
+            await channel.close(code=1008, reason=str(exc)[:120])
             raise
-        except ConnectionClosed:
+        except (self._websocket_closed_error(), SerialChannelClosed):
             return
 
     async def _command_worker(
@@ -800,9 +857,15 @@ class OnboardAgent:
                     software_version=self._software_version,
                     configuration_hash=self._configuration_hash,
                     last_command_message_id=self._last_command_message_id,
+                    command_output_enabled=self._command_output_enabled,
+                    allowed_commands=tuple(
+                        sorted(self._allowed_commands, key=lambda command: command.value)
+                    ),
                 )
                 await outbox.put(
-                    encode_signed_message(heartbeat, self._secret), replaceable=True
+                    encode_signed_message(heartbeat, self._secret),
+                    replaceable=True,
+                    replacement_key="heartbeat",
                 )
             await asyncio.sleep(self._heartbeat_interval_s)
 
@@ -816,6 +879,7 @@ class OnboardAgent:
                     await outbox.put(
                         encode_signed_message(telemetry, self._secret),
                         replaceable=True,
+                        replacement_key="telemetry",
                     )
             await asyncio.sleep(self._telemetry_interval_s)
 
@@ -848,7 +912,7 @@ class OnboardAgent:
             session_id=session_id,
             ttl_ms=min(
                 300_000,
-                max(500, int(self._telemetry_interval_s * 3_000)),
+                max(15_000, int(self._telemetry_interval_s * 3_000)),
             ),
             frame=(CoordinateFrame.LOCAL_NED if has_geometry else CoordinateFrame.NONE),
             frame_calibration_id=self._calibration_id if has_geometry else None,

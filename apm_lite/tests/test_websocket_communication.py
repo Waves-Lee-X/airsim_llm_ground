@@ -247,6 +247,46 @@ def test_bounded_queue_evicts_old_telemetry_but_preserves_control_messages():
     run(scenario())
 
 
+def test_bounded_queue_coalesces_named_state_before_it_is_full():
+    async def scenario():
+        queue = BoundedLatestQueue(8)
+        assert await queue.put(
+            "telemetry-seq-1",
+            replaceable=True,
+            replacement_key="telemetry",
+        )
+        assert await queue.put("ack-seq-2", replaceable=False)
+        assert await queue.put(
+            "telemetry-seq-3",
+            replaceable=True,
+            replacement_key="telemetry",
+        )
+        assert await queue.put(
+            "heartbeat-seq-4",
+            replaceable=True,
+            replacement_key="heartbeat",
+        )
+
+        assert queue.qsize == 3
+        assert queue.dropped_replaceable == 1
+        assert await queue.get() == "ack-seq-2"
+        assert await queue.get() == "telemetry-seq-3"
+        assert await queue.get() == "heartbeat-seq-4"
+        await queue.close()
+
+    run(scenario())
+
+
+def test_bounded_queue_replacement_key_requires_replaceable_state():
+    async def scenario():
+        queue = BoundedLatestQueue(2)
+        with pytest.raises(ValueError, match="replaceable=True"):
+            await queue.put("ack", replacement_key="ack")
+        await queue.close()
+
+    run(scenario())
+
+
 def test_disconnected_session_cannot_be_authenticated_again():
     async def scenario():
         server = GroundServer(vehicle_secrets={1: SECRET_1})

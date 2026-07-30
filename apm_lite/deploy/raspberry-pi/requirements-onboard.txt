@@ -1,0 +1,4 @@
+pydantic>=2.6,<3
+pyserial>=3.5,<4
+PyYAML>=5.4,<7
+pymavlink>=2.4,<3

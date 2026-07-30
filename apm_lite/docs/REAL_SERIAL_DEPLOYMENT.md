@@ -1,0 +1,289 @@
+# P9 实机串口部署手册
+
+首次记录：2026-07-29
+
+最近更新：2026-07-30
+
+状态：UAV3 的 FCU、P9、D435i RGB、RTSP、Web 和 VLM 链路已打通；
+`aeromind-apm-lite@3.service` 与 `ed_rtsp.service` 均已永久启用。机载命令输出仅
+允许 ARM/DISARM，其他飞行动作继续禁用，ARM/DISARM 的人工台架动作待完成。
+
+## 1. 拓扑
+
+P9 Radio 是透明串口，不是 IP、WiFi 或 SSH：
+
+```text
+Windows Web 地面后端
+  COM3 @ 57600
+  -> 地面 P9 Radio
+  -> 机载 P9 Radio
+  -> Raspberry Pi /dev/ttyAMA1 @ 57600
+  -> aeromind-apm-onboard
+  -> Raspberry Pi /dev/ttyAMA0 @ 921600
+  -> CUAV V5+ TELEM2
+```
+
+视频使用独立 IP 链路：
+
+```text
+D435i RGB /dev/video4
+  -> FFmpeg H.264
+  -> EasyDarwin RTSP
+  -> WiFi
+  -> Windows OpenCV 最新帧桥
+  -> FastAPI
+  -> Web/VLM
+```
+
+浏览器不直接打开 `COM3`。Windows Python 后端独占地面 P9；树莓派 Lite Agent
+独占 `/dev/ttyAMA0` 和 `/dev/ttyAMA1`。旧脚本与 Lite 不能同时运行。
+
+## 2. Lite 串口协议
+
+P9 透明链路上的 Lite 帧包含：
+
+- 协议版本、方向、vehicle ID、帧序号和长度；
+- CRC32 传输校验；
+- 每机独立 HMAC、会话、TTL 和应用重放保护；
+- 握手、命令和命令证据的有界 ACK/重传；
+- 重复抑制和机号隔离；
+- 心跳/遥测的最新状态合并。
+
+周期心跳和遥测不进行串口层重传，丢失后由下一周期刷新；命令和结果证据仍保持
+可靠 ACK。该策略解决了旧实现中周期帧重传与反向 ACK 竞争造成的重复帧和状态
+闪烁。
+
+## 3. 安全边界
+
+- 本手册涉及命令的步骤必须拆桨、固定机体、清空现场并保留 RC 接管。
+- 总输出开关与具体命令白名单必须同时满足。
+- 当前实机白名单只有 ARM/DISARM。
+- TAKEOFF、HOLD、LAND、RTL 在地面 API 和机载端都会被拒绝。
+- 不得关闭 `ARMING_CHECK` 或使用强制解锁掩盖预检问题。
+- 树莓派使用独立稳压电源；未经额定电流证明不得由 TELEM 给 Pi 供电。
+- P9 57600 只承载控制与状态，不传输图像。
+
+## 4. UAV3 运行基线
+
+| 项目 | 实测值 |
+|---|---|
+| 主机名 | `colony3` |
+| 当前 WiFi IP | `192.168.1.109` |
+| 系统 | Raspberry Pi OS 11 Bullseye |
+| Python | 3.9.2 |
+| 内核/机器 | `aarch64` |
+| dpkg 架构 | `armhf` |
+| Python 平台 | `aarch64` / `linux-aarch64` |
+| FCU | `/dev/ttyAMA0 @ 921600`，SYSID 3，固件 `4.4.1-255` |
+| 机载 P9 | `/dev/ttyAMA1 @ 57600` |
+| 地面 P9 | CP210x `COM3 @ 57600` |
+| RGB | D435i `/dev/video4`，424x240 @ 15 FPS |
+
+该系统同时出现 `dpkg=armhf` 与 Python `linux-aarch64`。Python wheel 必须按实际
+解释器的 `sysconfig.get_platform()` 和 wheel tag 选择，当前 pydantic-core 使用
+AArch64 wheel；不能仅按 dpkg 字段选择 armv7l。
+
+## 5. 树莓派文件
+
+安装根目录：
+
+```text
+/opt/aeromind-apm-lite/
+```
+
+运行配置与本机凭据：
+
+```text
+/etc/aeromind-apm-lite/fleet.yaml
+/etc/aeromind-apm-lite/uav3.env
+```
+
+树莓派需要：
+
+```text
+src/aeromind_apm_lite/
+configs/
+deploy/raspberry-pi/
+deploy/systemd/aeromind-apm-lite@.service
+pyproject.toml
+setup.py
+setup.cfg
+```
+
+树莓派不运行 `web/`、地面 FastAPI、AirSim、ROS、MAVROS 或 VLM。RGB 推流由
+独立 `ed_rtsp.service` 负责。
+
+## 6. 依赖安装
+
+在线安装：
+
+```bash
+cd /path/to/aeromind-apm-lite
+sudo deploy/raspberry-pi/install-uav3-service.sh --online
+```
+
+离线环境先在联网 Windows 电脑生成 wheelhouse：
+
+```powershell
+Set-Location "\\wsl.localhost\Ubuntu-22.04\home\waves\aeromind_ws\apm_lite\deploy\offline"
+powershell -ExecutionPolicy Bypass -File .\download-pi-py39-wheels.ps1
+```
+
+输出目录为：
+
+```text
+apm_lite/deploy/offline/pi-py39-wheelhouse
+```
+
+上传后使用 `/opt/aeromind-apm-lite/venv`。UAV3 还通过 `.pth` 只读复用旧环境中的
+`pymavlink`、`pyserial`、`PyYAML`、`lxml` 和 `future`，避免复制完整旧环境。
+
+安装前验证：
+
+```bash
+/opt/aeromind-apm-lite/venv/bin/python -c \
+  'import platform,sysconfig; print(platform.machine(), sysconfig.get_platform())'
+/opt/aeromind-apm-lite/venv/bin/python -c \
+  'import pydantic,pymavlink,serial,yaml; print(pydantic.__version__)'
+```
+
+## 7. 凭据与配置
+
+`/etc/aeromind-apm-lite/uav3.env` 包含每机独立共享密钥。真实值不得进入 Git、
+文档、截图或命令记录：
+
+```text
+AEROMIND_UAV3_TOKEN=base64:<至少32字节随机值>
+```
+
+只读启动不配置任何命令输出变量。当前拆桨 ARM/DISARM 台架增加：
+
+```text
+AEROMIND_COMMAND_OUTPUT_ENABLE=--enable-command-output
+AEROMIND_ALLOW_ARM=--allow-command=arm
+AEROMIND_ALLOW_DISARM=--allow-command=disarm
+```
+
+不要增加 TAKEOFF、HOLD、LAND 或 RTL。设置权限：
+
+```bash
+sudo chown root:aeromind /etc/aeromind-apm-lite/uav3.env
+sudo chmod 0640 /etc/aeromind-apm-lite/uav3.env
+```
+
+## 8. systemd 安装与维护
+
+首次安装但不切换 UART：
+
+```bash
+sudo deploy/raspberry-pi/install-uav3-service.sh
+```
+
+确认拆桨、P9 和凭据后激活：
+
+```bash
+sudo deploy/raspberry-pi/install-uav3-service.sh --activate --online
+```
+
+日常命令：
+
+```bash
+sudo systemctl status aeromind-apm-lite@3.service --no-pager
+sudo journalctl -u aeromind-apm-lite@3.service -n 100 --no-pager
+sudo systemctl restart aeromind-apm-lite@3.service
+sudo systemctl status ed_rtsp.service --no-pager
+```
+
+启动日志必须明确显示：
+
+```text
+FCU ready: vehicle=3 ... firmware=4.4.1-255
+P9 agent started: ... command_output=enabled allowlist=arm,disarm
+```
+
+若白名单为空，所有实机命令保持禁用；若总开关关闭，即使配置了白名单也不会
+输出到 FCU。
+
+## 9. Windows 地面站
+
+默认启动：
+
+```powershell
+Set-Location "\\wsl.localhost\Ubuntu-22.04\home\waves\aeromind_ws\apm_lite"
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\start-ground-uav3.ps1
+```
+
+覆盖物理连接：
+
+```powershell
+.\deploy\windows\start-ground-uav3.ps1 `
+  -SerialPort COM3 `
+  -SerialBaud 57600 `
+  -RtspUrl "rtsp://192.168.1.109:15544/cam"
+```
+
+打开 `http://127.0.0.1:8000/`。顶部“串口设置”可在当前进程内枚举、修改并重连；
+下次启动仍以脚本参数为准。凭据从 `%USERPROFILE%\.aeromind\uav3.env` 读取，VLM
+配置从 `%USERPROFILE%\.aeromind\vlm.env` 读取。
+
+停止地面站：
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -State Listen |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess }
+```
+
+## 10. 验收流程
+
+先完成只读链路：
+
+1. `vehicle_connected=true`；
+2. `fcu_link_ok=true`；
+3. 相机 `stream_available=true`；
+4. 心跳、遥测新鲜；
+5. P9 CRC、重复帧、重试和无效负载没有持续增长。
+
+只读 60 秒脚本：
+
+```powershell
+& "$env:USERPROFILE\.aeromind\venv\Scripts\python.exe" `
+  .\deploy\windows\accept-real-closure.py --duration 60
+```
+
+拆桨 ARM/DISARM 阶段必须额外确认：
+
+```text
+command_output_enabled=true
+allowed_commands=["arm", "disarm"]
+armed=false
+prearm_ok=true
+```
+
+操作者只执行一次 ARM，检查应用接收、MAVLink ACK 和 `armed=true` 新鲜遥测，随后
+立即执行 DISARM 并确认 `armed=false`。若拒绝，不得强制解锁，应保留 ACK 和
+STATUSTEXT 诊断。
+
+## 11. 已知 P9 证据
+
+旧策略曾在 164 帧中产生 91 个重复帧。改为“周期状态不重传、命令证据可靠
+重传”后，60 秒回归收到 152 帧，重复、CRC、重试和无效负载均为 0。
+
+2026-07-30 ARM/DISARM 白名单部署后的 5 秒只读采样收到 13 帧，重复、CRC 和
+无效负载增量均为 0，Agent、FCU、RGB 在线，机载进程 `NRestarts=0`。该样本没有
+发送 ARM 或 DISARM。
+
+## 12. 回滚
+
+先停止 Lite 并确认 UART 已释放：
+
+```bash
+sudo systemctl disable --now aeromind-apm-lite@3.service
+sudo fuser -v /dev/ttyAMA0 /dev/ttyAMA1
+```
+
+旧 UAV3 脚本原先由 `/etc/rc.local` 启动，并不是
+`swarm_control.service`。安装器会创建带时间戳的 `rc.local` 备份；回滚时必须先
+人工审查 `/etc/rc.local.aeromind-backup-*`，只恢复目标旧启动行，再重启或手动
+启动旧进程。不得让旧脚本和 Lite 同时占用 UART。
+
+回滚服务不会修改 ArduPilot 参数、P9 配置或 D435i 固件。

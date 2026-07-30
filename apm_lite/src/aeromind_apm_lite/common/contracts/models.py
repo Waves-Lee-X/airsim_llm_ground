@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -93,14 +93,16 @@ class MessageBase(StrictModel):
     schema_version: Literal["1.0"] = SCHEMA_VERSION
     message_type: str
     message_id: UUID = Field(default_factory=uuid4)
-    mission_id: UUID | None = None
+    mission_id: Optional[UUID] = None
     vehicle_id: int = Field(ge=1, le=255)
     sequence: int = Field(ge=0)
     session_id: UUID
     created_at_utc: datetime = Field(default_factory=utc_now)
     ttl_ms: int = Field(default=5_000, ge=100, le=300_000)
     frame: CoordinateFrame = CoordinateFrame.NONE
-    frame_calibration_id: str | None = Field(default=None, min_length=1, max_length=128)
+    frame_calibration_id: Optional[str] = Field(
+        default=None, min_length=1, max_length=128
+    )
 
     _created_at_is_utc = field_validator("created_at_utc")(_as_utc)
 
@@ -114,7 +116,9 @@ class MessageBase(StrictModel):
 class VehicleCommand(MessageBase):
     message_type: Literal["vehicle_command"] = "vehicle_command"
     command: VehicleCommandType
-    target_altitude_m: float | None = Field(default=None, gt=0.0, le=120.0)
+    target_altitude_m: Optional[float] = Field(
+        default=None, gt=0.0, le=120.0
+    )
     reason: str = Field(default="", max_length=256)
 
     @model_validator(mode="after")
@@ -129,8 +133,10 @@ class VehicleCommand(MessageBase):
 class TrajectoryPoint(StrictModel):
     time_from_start_ms: int = Field(ge=0, le=300_000)
     position_m: Vector3
-    velocity_m_s: Vector3 | None = None
-    yaw_rad: float | None = Field(default=None, ge=-3.141593, le=3.141593)
+    velocity_m_s: Optional[Vector3] = None
+    yaw_rad: Optional[float] = Field(
+        default=None, ge=-3.141593, le=3.141593
+    )
 
 
 class TrajectorySegment(MessageBase):
@@ -172,11 +178,11 @@ class FormationCommand(MessageBase):
 
 class VehicleHealth(StrictModel):
     fcu_link_ok: bool
-    ekf_ok: bool | None = None
+    ekf_ok: Optional[bool] = None
     gps_fix_type: int = Field(default=0, ge=0, le=6)
-    gps_healthy: bool | None = None
-    prearm_ok: bool | None = None
-    depth_ok: bool | None = None
+    gps_healthy: Optional[bool] = None
+    prearm_ok: Optional[bool] = None
+    depth_ok: Optional[bool] = None
 
 
 class VehicleTelemetry(MessageBase):
@@ -184,10 +190,12 @@ class VehicleTelemetry(MessageBase):
     observed_at_utc: datetime
     armed: bool
     mode: str = Field(min_length=1, max_length=64)
-    position_m: Vector3 | None = None
-    velocity_m_s: Vector3 | None = None
-    attitude: Quaternion | None = None
-    battery_remaining: float | None = Field(default=None, ge=0.0, le=1.0)
+    position_m: Optional[Vector3] = None
+    velocity_m_s: Optional[Vector3] = None
+    attitude: Optional[Quaternion] = None
+    battery_remaining: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0
+    )
     health: VehicleHealth
 
     _observed_at_is_utc = field_validator("observed_at_utc")(_as_utc)
@@ -210,9 +218,9 @@ class SemanticObservation(MessageBase):
     color: str = Field(min_length=1, max_length=32, pattern=r"^[a-z][a-z0-9_-]*$")
     face: BoxFace
     confidence: float = Field(ge=0.0, le=1.0)
-    position_m: Vector3 | None = None
+    position_m: Optional[Vector3] = None
     evidence_ids: list[str] = Field(min_length=1, max_length=16)
-    model_name: str | None = Field(default=None, max_length=128)
+    model_name: Optional[str] = Field(default=None, max_length=128)
 
     _observed_at_is_utc = field_validator("observed_at_utc")(_as_utc)
 
@@ -228,7 +236,7 @@ class MissionAck(MessageBase):
     acknowledged_message_id: UUID
     status: AckStatus
     detail: str = Field(default="", max_length=512)
-    apm_command_result: int | None = None
+    apm_command_result: Optional[int] = None
     physical_completion_confirmed: bool = False
 
     @model_validator(mode="after")
@@ -242,7 +250,9 @@ class Heartbeat(MessageBase):
     message_type: Literal["heartbeat"] = "heartbeat"
     software_version: str = Field(min_length=1, max_length=64)
     configuration_hash: str = Field(min_length=8, max_length=128)
-    last_command_message_id: UUID | None = None
+    last_command_message_id: Optional[UUID] = None
+    command_output_enabled: bool = True
+    allowed_commands: tuple[VehicleCommandType, ...] = ()
 
 
 WireMessage = Annotated[

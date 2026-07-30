@@ -1,4 +1,5 @@
 import asyncio
+import time
 from collections import deque
 from datetime import datetime, timezone
 
@@ -11,6 +12,8 @@ from aeromind_apm_lite.ground.browser.camera import (
     AirSimCameraConfig,
     CameraFrame,
     CameraUnavailable,
+    RtspCameraBridge,
+    RtspCameraConfig,
 )
 from aeromind_apm_lite.ground.browser.runtime import (
     ManualRuntime,
@@ -20,6 +23,7 @@ from aeromind_apm_lite.ground.browser.runtime import (
 
 
 PNG_FRAME = b"\x89PNG\r\n\x1a\nframe-data"
+JPEG_FRAME = b"\xff\xd8\xffframe-data"
 
 
 def run(coroutine):
@@ -55,6 +59,31 @@ class FakeAirSimClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class FakeVideoFrame:
+    shape = (240, 424, 3)
+
+
+class FakeRtspCapture:
+    def __init__(self, responses, *, opened=True, read_delay_s=0.001):
+        self.responses = deque(responses)
+        self.opened = opened
+        self.released = False
+        self.read_delay_s = read_delay_s
+
+    def isOpened(self):
+        return self.opened
+
+    def read(self):
+        time.sleep(self.read_delay_s)
+        response = self.responses[0] if len(self.responses) == 1 else self.responses.popleft()
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    def release(self):
+        self.released = True
 
 
 def test_camera_bridge_captures_and_reports_a_fresh_scene_frame():
@@ -165,6 +194,104 @@ def test_camera_bridge_rejects_non_image_payloads():
     run(scenario())
 
 
+def test_rtsp_camera_bridge_captures_jpeg_and_reports_onboard_rgb():
+    async def scenario():
+        capture = FakeRtspCapture([(True, FakeVideoFrame())])
+        bridge = RtspCameraBridge(
+            RtspCameraConfig(
+                stream_url="rtsp://192.0.2.20:15544/cam",
+                capture_fps=20.0,
+            ),
+            capture_factory=lambda _config: capture,
+            frame_encoder=lambda _frame, _quality: JPEG_FRAME,
+        )
+        await bridge.start()
+        try:
+            await wait_until(lambda: bridge.status_payload()["stream_available"])
+            frame = await bridge.get_frame()
+            status = bridge.status_payload()
+
+            assert frame.data == JPEG_FRAME
+            assert frame.media_type == "image/jpeg"
+            assert status["state"] == "online"
+            assert status["kind"] == "onboard_rgb"
+            assert status["width"] == 424
+            assert status["height"] == 240
+            assert status["stream_url"] == "/api/camera/frame"
+        finally:
+            await bridge.stop()
+        assert capture.released
+
+    run(scenario())
+
+
+def test_rtsp_camera_bridge_reopens_after_a_read_failure():
+    async def scenario():
+        captures = deque(
+            [
+                FakeRtspCapture([(False, None)]),
+                FakeRtspCapture([(True, FakeVideoFrame())]),
+            ]
+        )
+        created = []
+
+        def factory(_config):
+            capture = captures.popleft()
+            created.append(capture)
+            return capture
+
+        bridge = RtspCameraBridge(
+            RtspCameraConfig(
+                stream_url="rtsp://192.0.2.20:15544/cam",
+                capture_fps=20.0,
+                reconnect_delay_s=0.01,
+            ),
+            capture_factory=factory,
+            frame_encoder=lambda _frame, _quality: JPEG_FRAME,
+        )
+        await bridge.start()
+        try:
+            await wait_until(
+                lambda: len(created) == 2
+                and bridge.status_payload()["stream_available"]
+            )
+            assert created[0].released
+            assert bridge.status_payload()["state"] == "online"
+        finally:
+            await bridge.stop()
+
+    run(scenario())
+
+
+def test_rtsp_camera_bridge_drains_source_without_capture_rate_sleep():
+    async def scenario():
+        capture = FakeRtspCapture(
+            [(True, FakeVideoFrame())],
+            read_delay_s=0.01,
+        )
+        bridge = RtspCameraBridge(
+            RtspCameraConfig(
+                stream_url="rtsp://192.0.2.20:15544/cam",
+                capture_fps=0.2,
+            ),
+            capture_factory=lambda _config: capture,
+            frame_encoder=lambda _frame, _quality: JPEG_FRAME,
+        )
+        await bridge.start()
+        try:
+            await wait_until(
+                lambda: bridge.status_payload()["frames_received"] >= 5,
+                timeout_s=0.5,
+            )
+            status = bridge.status_payload()
+            assert status["source_fps"] > 10.0
+            assert status["frames_received"] >= 5
+        finally:
+            await bridge.stop()
+
+    run(scenario())
+
+
 class StubCameraBridge:
     def __init__(self):
         self.started = False
@@ -230,4 +357,4 @@ def test_browser_camera_frame_fails_closed_when_the_bridge_is_disabled():
     with TestClient(app) as client:
         response = client.get("/api/camera/frame")
         assert response.status_code == 503
-        assert response.json()["detail"] == "AirSim camera bridge is disabled"
+        assert response.json()["detail"] == "camera bridge is disabled"

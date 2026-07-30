@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>AeroMind APM Lite 地面站</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260730.4" />
   </head>
   <body>
     <div class="app-shell">
@@ -29,10 +29,15 @@
               <option value="1">UAV 01</option>
             </select>
           </label>
+          <button id="serialSettingsButton" class="serial-settings-button" type="button" hidden>
+            串口设置
+          </button>
         </div>
 
         <div class="system-badges" aria-label="系统状态">
           <span id="apiBadge" class="status-badge pending"><i></i>地面站连接中</span>
+          <span id="p9Badge" class="status-badge pending" hidden><i></i>P9 检查中</span>
+          <span id="agentBadge" class="status-badge offline" hidden><i></i>机载离线</span>
           <span id="fcuBadge" class="status-badge offline"><i></i>FCU 离线</span>
           <span id="armedBadge" class="status-badge neutral"><i></i>未解锁</span>
         </div>
@@ -102,7 +107,37 @@
           </section>
         </aside>
 
-        <section class="center-column">
+        <section class="right-column">
+          <section class="panel command-panel">
+            <div class="panel-heading compact">
+              <div>
+                <span class="eyebrow">FLIGHT CONTROL</span>
+                <h2>飞行控制</h2>
+              </div>
+              <span id="controlState" class="control-state locked">锁定</span>
+            </div>
+
+            <div class="takeoff-control">
+              <label for="takeoffAltitude">起飞高度</label>
+              <div class="number-field">
+                <button id="altitudeMinus" type="button" aria-label="降低起飞高度" disabled>−</button>
+                <input id="takeoffAltitude" type="number" value="3" min="1" max="20" step="1" inputmode="decimal" disabled />
+                <span>m</span>
+                <button id="altitudePlus" type="button" aria-label="增加起飞高度" disabled>+</button>
+              </div>
+            </div>
+
+            <div class="command-grid">
+              <button class="command-button primary-command" type="button" data-command="arm" disabled><span aria-hidden="true">●</span><strong>解锁</strong></button>
+              <button class="command-button" type="button" data-command="disarm" disabled><span aria-hidden="true">○</span><strong>加锁</strong></button>
+              <button class="command-button primary-command" type="button" data-command="takeoff" disabled><span aria-hidden="true">↑</span><strong>起飞</strong></button>
+              <button class="command-button safety" type="button" data-command="hold" disabled><span aria-hidden="true">Ⅱ</span><strong>悬停</strong></button>
+              <button class="command-button safety" type="button" data-command="land" disabled><span aria-hidden="true">↓</span><strong>降落</strong></button>
+              <button class="command-button safety" type="button" data-command="rtl" disabled><span aria-hidden="true">↩</span><strong>返航</strong></button>
+            </div>
+            <p id="controlHint" class="control-hint">等待飞控连接</p>
+          </section>
+
           <section class="panel nav-panel">
             <div class="panel-heading compact nav-heading">
               <div>
@@ -143,37 +178,7 @@
           </section>
         </section>
 
-        <aside class="right-column">
-          <section class="panel command-panel">
-            <div class="panel-heading compact">
-              <div>
-                <span class="eyebrow">FLIGHT CONTROL</span>
-                <h2>飞行控制</h2>
-              </div>
-              <span id="controlState" class="control-state locked">锁定</span>
-            </div>
-
-            <div class="takeoff-control">
-              <label for="takeoffAltitude">起飞高度</label>
-              <div class="number-field">
-                <button id="altitudeMinus" type="button" aria-label="降低起飞高度" disabled>−</button>
-                <input id="takeoffAltitude" type="number" value="3" min="1" max="20" step="1" inputmode="decimal" disabled />
-                <span>m</span>
-                <button id="altitudePlus" type="button" aria-label="增加起飞高度" disabled>+</button>
-              </div>
-            </div>
-
-            <div class="command-grid">
-              <button class="command-button primary-command" type="button" data-command="arm" disabled><span aria-hidden="true">●</span><strong>解锁</strong></button>
-              <button class="command-button" type="button" data-command="disarm" disabled><span aria-hidden="true">○</span><strong>加锁</strong></button>
-              <button class="command-button primary-command" type="button" data-command="takeoff" disabled><span aria-hidden="true">↑</span><strong>起飞</strong></button>
-              <button class="command-button safety" type="button" data-command="hold" disabled><span aria-hidden="true">Ⅱ</span><strong>悬停</strong></button>
-              <button class="command-button safety" type="button" data-command="land" disabled><span aria-hidden="true">↓</span><strong>降落</strong></button>
-              <button class="command-button safety" type="button" data-command="rtl" disabled><span aria-hidden="true">↩</span><strong>返航</strong></button>
-            </div>
-            <p id="controlHint" class="control-hint">等待飞控连接</p>
-          </section>
-
+        <section class="center-column">
           <section class="panel camera-panel">
             <div class="panel-heading compact">
               <div>
@@ -196,25 +201,112 @@
           <section class="panel semantic-panel">
             <div class="panel-heading compact">
               <div>
-                <span class="eyebrow">VISION SEMANTICS</span>
-                <h2>VLM 视觉语义</h2>
+                <span class="eyebrow">AI PERCEPTION</span>
+                <h2>智能任务感知</h2>
               </div>
-              <span id="vlmBadge" class="camera-badge unavailable">未接入</span>
+              <span id="vlmBadge" class="camera-badge unavailable">未配置</span>
             </div>
-            <div class="semantic-state">
-              <div><span>目标</span><strong id="semanticTarget">--</strong></div>
-              <div><span>颜色</span><strong id="semanticColor">--</strong></div>
-              <div><span>置信度</span><strong id="semanticConfidence">--</strong></div>
+            <div class="semantic-mode-switch" role="tablist" aria-label="AI 感知模式">
+              <button class="semantic-mode active" type="button" data-semantic-mode="vision" role="tab" aria-selected="true">
+                <span aria-hidden="true">◎</span><strong>视觉识别</strong><small>当前帧</small>
+              </button>
+              <button class="semantic-mode" type="button" data-semantic-mode="mission" role="tab" aria-selected="false">
+                <span aria-hidden="true">≡</span><strong>任务解析</strong><small>自然语言</small>
+              </button>
             </div>
+
+            <div id="visionWorkspace" class="semantic-workspace" role="tabpanel">
+              <form id="visionAnalysisForm" class="semantic-compose">
+                <div class="semantic-compose-heading">
+                  <label for="visionPrompt">识别要求</label>
+                  <span id="visionFrameState">LATEST RGB</span>
+                </div>
+                <textarea id="visionPrompt" rows="3" maxlength="2000">识别画面中的箱体编号、颜色以及颜色所在表面</textarea>
+                <div class="semantic-compose-footer">
+                  <span id="visionRequestState">等待提交</span>
+                  <button id="analyzeVision" class="semantic-action" type="submit"><span aria-hidden="true">◎</span>识别当前帧</button>
+                </div>
+              </form>
+              <div class="semantic-state" aria-label="视觉识别摘要">
+                <div><span>目标</span><strong id="semanticTarget">--</strong></div>
+                <div><span>颜色</span><strong id="semanticColor">--</strong></div>
+                <div class="confidence-metric"><span>置信度</span><strong id="semanticConfidence">--</strong><i><b id="semanticConfidenceBar"></b></i></div>
+                <div id="semanticRiskCell"><span>风险等级</span><strong id="semanticRisk">--</strong></div>
+              </div>
+              <div class="semantic-summary">
+                <span>分析摘要</span>
+                <p id="visualSummary">等待视觉分析</p>
+              </div>
+            </div>
+
+            <div id="missionWorkspace" class="semantic-workspace" role="tabpanel" hidden>
+              <form id="missionParseForm" class="semantic-compose mission-compose">
+                <div class="semantic-compose-heading">
+                  <label for="missionInstruction">任务指令</label>
+                  <span>PLAN DRAFT</span>
+                </div>
+                <textarea id="missionInstruction" rows="5" maxlength="4000" placeholder="让 3 号机寻找红色箱体，在标识面最近的安全位置降落"></textarea>
+                <div class="semantic-compose-footer">
+                  <span id="missionRequestState">等待提交</span>
+                  <button id="parseMission" class="semantic-action" type="submit"><span aria-hidden="true">≡</span>生成任务草案</button>
+                </div>
+              </form>
+              <div class="mission-summary">
+                <span>任务摘要</span>
+                <strong id="missionSummary">尚无任务草案</strong>
+              </div>
+            </div>
+
+            <div class="semantic-output">
+              <div class="semantic-result-heading">
+                <div><span>ANALYSIS OUTPUT</span><strong id="semanticResultTitle">识别结果</strong></div>
+                <span id="semanticLatency">--</span>
+              </div>
+              <div class="semantic-tabs" role="tablist" aria-label="语义结果视图">
+                <button class="semantic-tab active" type="button" data-semantic-tab="structured" role="tab" aria-selected="true">结构化结果</button>
+                <button class="semantic-tab" type="button" data-semantic-tab="raw" role="tab" aria-selected="false">模型原文</button>
+              </div>
+              <div id="semanticResult" class="semantic-result" aria-live="polite"><span class="semantic-empty">尚无分析结果</span></div>
+            </div>
+            <div class="semantic-policy"><strong>PREVIEW ONLY</strong><span>AI 输出与飞行命令隔离</span><i aria-hidden="true">LOCKED</i></div>
           </section>
-        </aside>
+        </section>
       </main>
 
       <footer class="footerbar">
         <span id="runtimeLabel">APM Lite · 正在读取运行配置</span>
+        <span id="linkDiagnostics">Lite v1 · 链路统计等待中</span>
         <span id="lastUpdate">最后遥测：--</span>
       </footer>
     </div>
+
+    <dialog id="serialDialog" class="serial-dialog">
+      <form id="serialForm">
+        <div class="dialog-heading">
+          <span aria-hidden="true">P9</span>
+          <div><small>GROUND RADIO</small><h2>地面 P9 串口</h2></div>
+        </div>
+        <p>选择电脑上连接地面 P9 电台的串口。应用设置会断开当前串口并立即重连。</p>
+        <div class="serial-field">
+          <label for="serialPort">串口</label>
+          <div class="serial-port-row">
+            <input id="serialPort" name="port" list="serialPortOptions" value="COM3" autocomplete="off" required />
+            <datalist id="serialPortOptions"></datalist>
+            <button id="refreshSerialPorts" class="icon-button" type="button" title="重新扫描串口" aria-label="重新扫描串口">↻</button>
+          </div>
+        </div>
+        <div class="serial-field">
+          <label for="serialBaudrate">波特率</label>
+          <input id="serialBaudrate" name="baudrate" type="number" value="57600" min="300" max="4000000" step="1" inputmode="numeric" required />
+        </div>
+        <div id="serialPortList" class="serial-port-list">尚未扫描串口</div>
+        <p id="serialSettingsStatus" class="serial-settings-status" role="status"></p>
+        <div class="dialog-actions">
+          <button id="serialCancel" type="button">取消</button>
+          <button id="serialApply" class="confirm-submit" type="submit">应用并重连</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="confirmDialog" class="confirm-dialog">
       <form method="dialog">
@@ -234,6 +326,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=20260730.4" defer></script>
   </body>
 </html>

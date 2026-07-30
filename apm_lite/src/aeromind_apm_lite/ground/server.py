@@ -27,6 +27,9 @@ from aeromind_apm_lite.common.communication import (
     encode_signed_message,
     verify_authentication_proof,
 )
+from aeromind_apm_lite.common.communication.serial_transport import (
+    SerialChannelClosed,
+)
 from aeromind_apm_lite.common.contracts import (
     AckStatus,
     Heartbeat,
@@ -50,14 +53,14 @@ class VehicleNotConnected(GroundServerError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VehicleSessionInfo:
     vehicle_id: int
     session_id: UUID
     connected_monotonic_s: float
 
 
-@dataclass(slots=True)
+@dataclass
 class _VehicleConnection:
     websocket: Any
     vehicle_id: int
@@ -412,7 +415,7 @@ class GroundServer:
                     raise exception
         except (AuthenticationError, ProtocolError, ValueError) as exc:
             await websocket.close(code=1008, reason=str(exc)[:120])
-        except (ConnectionClosed, asyncio.TimeoutError):
+        except (ConnectionClosed, SerialChannelClosed, asyncio.TimeoutError):
             pass
         finally:
             if reservation is not None:

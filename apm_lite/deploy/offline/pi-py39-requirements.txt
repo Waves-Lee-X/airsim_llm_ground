@@ -1,0 +1,2 @@
+# UAV3 CPython 3.9 reports linux-aarch64; select wheels by interpreter platform.
+pydantic==2.13.4

@@ -21,6 +21,10 @@ install/
 log/
 missions/
 
+# AeroMind APM Lite generated deployment artifacts
+/aeromind-apm-lite-*.tar.gz
+/apm_lite/deploy/offline/pi-py39-wheelhouse/
+
 # Logs
 logs/
 *.log

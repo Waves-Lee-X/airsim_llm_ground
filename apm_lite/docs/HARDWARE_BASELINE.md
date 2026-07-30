@@ -1,4 +1,4 @@
-# V5+ Hardware Baseline
+# V5+ 实机硬件基线
 
 记录日期：2026-07-28
 
@@ -30,10 +30,10 @@ ArduCopter 版本、板型构建目标或参数集，因此不能据此宣称真
 | 机载电脑 | Raspberry Pi 4B，4 GB，标称输入 5 V/3 A | 运行单一轻量机载服务，不运行 ROS/MAVROS/模型 |
 | 定位 | C-RTK 9Ps，u-blox ZED-F9P | 具备 RTK 能力；差分源与每机实际状态仍需核对 |
 | 磁力计 | C-COMPASS，RM3100，DroneCAN | 参数导出时检查 CAN 驱动与罗盘实例 |
-| 数传 | P9Radio，默认串口 57600 | 57600 是 P9 链路参数，不能套用到 Pi-FCU 链路 |
+| 数传 | P9Radio/MiniHomer，默认串口 57600；2026-07-29 地面 USB 端枚举为 CP210x `COM3` | 透明串口连接地面站与 Pi `/dev/ttyAMA1`；不能套用到 Pi-FCU 链路 |
 | 遥控接收机 | RF209S | 保留人工接管与失控保护链路 |
 | 电源模块 | HV-PM，3-14S、60 A，飞控输出标称 5.3 V/4 A | 该规格不能证明 TELEM2 可给树莓派提供 3 A |
-| 深度相机 | 文档未列出 D435 或其他相机型号 | D435 不能视为已采购/已接线，需实物盘点 |
+| 深度相机 | 2026-07-29 实机枚举和视频节点确认是 Intel RealSense D435i，具有 RGB、Depth、双 IR 和 IMU | 当前只接入 `/dev/video4` RGB；深度、IR、IMU、尺度和安装方向仍未验收 |
 
 ## 树莓派到 V5+ 接线基线
 
@@ -54,6 +54,13 @@ CTS/RTS        -> 不连接
 /dev/ttyAMA0 @ 921600 baud, 8N1, no flow control
 ```
 
+旧实机脚本的独立地面数传链路使用：
+
+```text
+/dev/ttyAMA1 @ 57600 baud, 8N1 -> airborne P9 Radio
+ground P9 Radio -> Windows CP210x COM3 @ 57600（本次枚举结果）
+```
+
 这组值可作为第一次只读心跳测试的候选值，但必须与飞控实际 `SERIALx_PROTOCOL`、`SERIALx_BAUD` 对照。不能仅因旧代码写了 921600 就直接解锁或发控制指令。
 
 ## 供电安全结论
@@ -70,13 +77,29 @@ CTS/RTS        -> 不连接
 
 以下项目不在所给文档中，当前不得猜测：
 
-1. 实际安装的 ArduCopter 版本、Git 版本和固件板型名称。
+1. 已读取 UAV3 固件标识 `4.4.1-255`，仍需确认完整 Git 版本和板型名称。
 2. `FRAME_CLASS`、`FRAME_TYPE`、电机顺序和 `SYSID_THISMAV`。
 3. TELEM2 对应的 `SERIALx` 参数、MAVLink 版本、波特率和电平。
 4. 四架飞机的完整参数文件及 SHA-256。
-5. Raspberry Pi OS 版本、UART overlay、串口控制台状态、散热和独立供电。
-6. D435 是否实际存在、安装方向、USB 3 连接和供电余量。
+5. UAV3 已确认 Raspberry Pi OS 11、Python 3.9.2 和两路 UART；仍需补齐
+   overlay、串口控制台、散热和独立供电的正式证据。
+6. D435i 安装方向、USB 3 连接、深度尺度、IR/IMU 驱动和供电余量。
 7. RTK 基站/改正数链路，以及四机是否都能稳定进入 RTK Fixed。
+
+## UAV3 当前软件与链路状态
+
+2026-07-30 已确认：
+
+| 项目 | 结果 |
+|---|---|
+| Lite 机载服务 | `aeromind-apm-lite@3.service`，enabled/active |
+| RGB 推流服务 | `ed_rtsp.service`，active |
+| FCU/P9 | `/dev/ttyAMA0 @ 921600`、`/dev/ttyAMA1 @ 57600` |
+| 当前网络 | `192.168.1.109`，仅用于 SSH/RTSP，不替代 P9 控制链路 |
+| 命令权限 | 仅 ARM/DISARM；TAKEOFF/HOLD/LAND/RTL 禁用 |
+| 视觉语义 | Windows 地面端 VLM，`preview_only`，不生成飞行命令 |
+
+这些结论只适用于三号机当前台架，不能直接外推到其他三架飞机。
 
 ## 第一次无桨台架检查
 

@@ -82,6 +82,40 @@
           "title": "FcuTransport",
           "type": "string"
         },
+        "GroundConnection": {
+          "additionalProperties": false,
+          "properties": {
+            "baudrate": {
+              "default": 57600,
+              "maximum": 921600,
+              "minimum": 9600,
+              "title": "Baudrate",
+              "type": "integer"
+            },
+            "endpoint": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Endpoint",
+              "type": "string"
+            },
+            "transport": {
+              "$ref": "#/$defs/GroundTransport",
+              "default": "serial"
+            }
+          },
+          "required": [
+            "endpoint"
+          ],
+          "title": "GroundConnection",
+          "type": "object"
+        },
+        "GroundTransport": {
+          "enum": [
+            "serial"
+          ],
+          "title": "GroundTransport",
+          "type": "string"
+        },
         "SensorSourceKind": {
           "enum": [
             "none",
@@ -129,6 +163,17 @@
               "minLength": 1,
               "title": "Frame Calibration Id",
               "type": "string"
+            },
+            "ground_link": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GroundConnection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             },
             "guided_mode": {
               "default": "GUIDED",
@@ -421,6 +466,19 @@
         "Heartbeat": {
           "additionalProperties": false,
           "properties": {
+            "allowed_commands": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/VehicleCommandType"
+              },
+              "title": "Allowed Commands",
+              "type": "array"
+            },
+            "command_output_enabled": {
+              "default": true,
+              "title": "Command Output Enabled",
+              "type": "boolean"
+            },
             "configuration_hash": {
               "maxLength": 128,
               "minLength": 8,

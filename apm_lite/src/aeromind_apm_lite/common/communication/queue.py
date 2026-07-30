@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Hashable, Optional, TypeVar
 
 ItemT = TypeVar("ItemT")
 
@@ -14,10 +14,11 @@ class QueueClosed(RuntimeError):
     pass
 
 
-@dataclass(slots=True)
+@dataclass
 class _Entry(Generic[ItemT]):
     value: ItemT
     replaceable: bool
+    replacement_key: Optional[Hashable] = None
 
 
 class BoundedLatestQueue(Generic[ItemT]):
@@ -49,10 +50,24 @@ class BoundedLatestQueue(Generic[ItemT]):
     def dropped_replaceable(self) -> int:
         return self._dropped_replaceable
 
-    async def put(self, value: ItemT, *, replaceable: bool = False) -> bool:
+    async def put(
+        self,
+        value: ItemT,
+        *,
+        replaceable: bool = False,
+        replacement_key: Optional[Hashable] = None,
+    ) -> bool:
+        if replacement_key is not None and not replaceable:
+            raise ValueError("replacement_key requires replaceable=True")
         async with self._condition:
             if self._closed:
                 raise QueueClosed("queue is closed")
+            if replacement_key is not None:
+                for index, entry in enumerate(self._entries):
+                    if entry.replacement_key == replacement_key:
+                        del self._entries[index]
+                        self._dropped_replaceable += 1
+                        break
             while len(self._entries) >= self._maxsize:
                 if self._evict_oldest_replaceable():
                     self._dropped_replaceable += 1
@@ -63,7 +78,13 @@ class BoundedLatestQueue(Generic[ItemT]):
                 await self._condition.wait()
                 if self._closed:
                     raise QueueClosed("queue is closed")
-            self._entries.append(_Entry(value=value, replaceable=replaceable))
+            self._entries.append(
+                _Entry(
+                    value=value,
+                    replaceable=replaceable,
+                    replacement_key=replacement_key,
+                )
+            )
             self._condition.notify_all()
             return True
 

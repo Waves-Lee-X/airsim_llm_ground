@@ -29,6 +29,13 @@ const state = {
   lastTelemetryAt: null,
   cameraTimer: null,
   cameraStreamUrl: null,
+  serialPorts: [],
+  serialApplying: false,
+  semanticBusy: false,
+  semanticMode: "vision",
+  semanticView: "structured",
+  semanticLatest: null,
+  semanticResults: { vision: null, mission: null },
 };
 
 const elements = {};
@@ -49,13 +56,25 @@ function cacheElements() {
     "controlState", "takeoffAltitude", "altitudeMinus", "altitudePlus",
     "controlHint", "cameraBadge", "cameraFrame", "cameraEmpty",
     "cameraDetail", "cameraResolution", "vlmBadge", "semanticTarget",
-    "semanticColor", "semanticConfidence", "runtimeLabel", "lastUpdate",
+    "semanticColor", "semanticConfidence", "semanticRisk", "visualSummary",
+    "visionAnalysisForm", "visionPrompt", "analyzeVision", "missionParseForm",
+    "missionInstruction", "parseMission", "semanticLatency", "semanticResult",
+    "visionWorkspace", "missionWorkspace", "visionFrameState", "visionRequestState",
+    "missionRequestState", "missionSummary", "semanticResultTitle",
+    "semanticConfidenceBar", "semanticRiskCell",
+    "runtimeLabel", "linkDiagnostics", "lastUpdate",
+    "p9Badge", "agentBadge",
     "confirmDialog", "confirmTitle", "confirmText", "confirmVehicle",
     "confirmMode", "confirmSubmit",
+    "serialSettingsButton", "serialDialog", "serialForm", "serialPort",
+    "serialPortOptions", "serialBaudrate", "refreshSerialPorts",
+    "serialPortList", "serialSettingsStatus", "serialCancel", "serialApply",
   ].forEach((id) => {
     elements[id] = byId(id);
   });
   elements.commandButtons = Array.from(document.querySelectorAll("[data-command]"));
+  elements.semanticTabs = Array.from(document.querySelectorAll("[data-semantic-tab]"));
+  elements.semanticModes = Array.from(document.querySelectorAll("[data-semantic-mode]"));
 }
 
 function valueOr(value, fallback = "--") {
@@ -190,6 +209,13 @@ function renderConfig(configPayload) {
   const deploymentMode = String(config.deployment_mode || "sim").toLowerCase();
   elements.simMode.classList.toggle("active", deploymentMode === "sim");
   elements.realMode.classList.toggle("active", deploymentMode === "real");
+  elements.serialSettingsButton.hidden = config.serial_runtime_configurable !== true;
+  elements.p9Badge.hidden = deploymentMode !== "real";
+  elements.agentBadge.hidden = deploymentMode !== "real";
+  if (config.ground_serial_port) elements.serialPort.value = config.ground_serial_port;
+  if (config.ground_serial_baudrate) {
+    elements.serialBaudrate.value = String(config.ground_serial_baudrate);
+  }
 
   const vehicles = Array.isArray(config.vehicles)
     ? config.vehicles
@@ -205,10 +231,17 @@ function renderConfig(configPayload) {
   elements.vehicleName.textContent = elements.vehicleSelect.selectedOptions[0]?.textContent || "UAV 01";
 
   const mode = String(config.runtime_mode || "manual").toUpperCase();
-  const endpoint = config.fcu_endpoint || "--";
-  const ownership = config.external_processes_managed === false ? "SITL / UE 外部启动" : "进程托管";
+  const endpoint = deploymentMode === "real"
+    ? `${config.ground_serial_port || "--"} @ ${config.ground_serial_baudrate || "--"}`
+    : config.fcu_endpoint || "--";
+  const ownership = deploymentMode === "real"
+    ? "机载代理外部运行"
+    : config.external_processes_managed === false
+      ? "SITL / UE 外部启动"
+      : "进程托管";
   elements.runtimeLabel.textContent = `${mode} · ${endpoint} · ${ownership}`;
   renderCameraConfig(config.camera || {});
+  renderSemanticStatus(config.semantic || {});
   updateControlState();
 }
 
@@ -219,10 +252,17 @@ function renderCameraConfig(camera) {
   elements.cameraBadge.textContent = available
     ? cameraState === "degraded" ? "缓存画面" : "已连接"
     : cameraState === "connecting" ? "连接中" : "未连接";
-  elements.cameraDetail.textContent = camera.detail || camera.name || "AirSim front_center";
+  const metrics = [];
+  if (Number.isFinite(Number(camera.source_fps))) metrics.push(`${Number(camera.source_fps).toFixed(1)} FPS`);
+  if (Number.isFinite(Number(camera.frame_age_s))) metrics.push(`帧龄 ${(Number(camera.frame_age_s) * 1000).toFixed(0)} ms`);
+  elements.cameraDetail.textContent = [camera.detail || camera.name || "AirSim front_center", ...metrics].join(" · ");
   const width = camera.width || 1280;
   const height = camera.height || 720;
   elements.cameraResolution.textContent = `RGB · ${width}×${height}`;
+  const frameAge = finiteNumber(camera.frame_age_s);
+  elements.visionFrameState.textContent = available
+    ? frameAge === null ? "LATEST RGB" : `LATEST · ${(frameAge * 1000).toFixed(0)} MS`
+    : "NO FRAME";
   if (available && camera.stream_url) {
     startCameraStream(camera.stream_url);
   } else {
@@ -231,48 +271,306 @@ function renderCameraConfig(camera) {
 }
 
 function startCameraStream(url) {
-  if (state.cameraStreamUrl === url && state.cameraTimer !== null) return;
+  if (state.cameraStreamUrl === url) return;
   stopCameraStream();
   state.cameraStreamUrl = url;
   const refresh = () => {
+    state.cameraTimer = null;
+    if (state.cameraStreamUrl !== url) return;
     const separator = url.includes("?") ? "&" : "?";
     elements.cameraFrame.src = `${url}${separator}vehicle_id=${state.selectedVehicleId}&t=${Date.now()}`;
+  };
+  const schedule = (delayMs) => {
+    if (state.cameraStreamUrl !== url) return;
+    if (state.cameraTimer !== null) window.clearTimeout(state.cameraTimer);
+    state.cameraTimer = window.setTimeout(refresh, delayMs);
   };
   elements.cameraFrame.onload = () => {
     elements.cameraFrame.hidden = false;
     elements.cameraEmpty.hidden = true;
+    schedule(50);
   };
   elements.cameraFrame.onerror = () => {
     elements.cameraFrame.hidden = true;
     elements.cameraEmpty.hidden = false;
+    schedule(500);
   };
-  refresh();
-  state.cameraTimer = window.setInterval(refresh, 200);
+  schedule(0);
 }
 
 function stopCameraStream() {
-  if (state.cameraTimer !== null) window.clearInterval(state.cameraTimer);
+  if (state.cameraTimer !== null) window.clearTimeout(state.cameraTimer);
   state.cameraTimer = null;
   state.cameraStreamUrl = null;
+  elements.cameraFrame.onload = null;
+  elements.cameraFrame.onerror = null;
   elements.cameraFrame.removeAttribute("src");
   elements.cameraFrame.hidden = true;
   elements.cameraEmpty.hidden = false;
 }
 
+function renderSemanticStatus(payload) {
+  const semantic = payload && typeof payload === "object" ? payload : {};
+  const visionAvailable = semantic.vision_available === true;
+  const missionAvailable = semantic.mission_parser_available === true;
+  const busy = semantic.busy === true || state.semanticBusy;
+  const available = visionAvailable || missionAvailable;
+  elements.vlmBadge.className = `camera-badge ${available ? busy ? "offline" : "online" : "unavailable"}`;
+  elements.vlmBadge.textContent = available
+    ? busy ? "分析中" : semantic.vision_model || semantic.mission_model || "已配置"
+    : "未配置";
+  const cameraAvailable = state.status?.camera?.stream_available
+    ?? state.config?.camera?.stream_available
+    ?? false;
+  elements.analyzeVision.disabled = busy || !visionAvailable || !cameraAvailable;
+  elements.parseMission.disabled = busy || !missionAvailable;
+}
+
+function semanticResultRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "semantic-result-row";
+  const key = document.createElement("span");
+  key.textContent = label;
+  const content = document.createElement("span");
+  content.textContent = semanticDisplayValue(value);
+  row.append(key, content);
+  return row;
+}
+
+function semanticDisplayValue(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    if (!value.length) return "--";
+    return value.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" · ");
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function setSemanticMode(mode) {
+  if (!['vision', 'mission'].includes(mode)) return;
+  state.semanticMode = mode;
+  elements.visionWorkspace.hidden = mode !== "vision";
+  elements.missionWorkspace.hidden = mode !== "mission";
+  elements.semanticModes.forEach((button) => {
+    const active = button.dataset.semanticMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  state.semanticLatest = state.semanticResults[mode];
+  elements.semanticResultTitle.textContent = mode === "vision" ? "识别结果" : "任务草案";
+  const current = state.semanticLatest;
+  elements.semanticLatency.textContent = current
+    ? `${current.model || (mode === "vision" ? "VLM" : "LLM")} · ${fixed(current.latency_ms, 0)} ms`
+    : "--";
+  renderSemanticResult();
+}
+
+function renderSemanticResult() {
+  const payload = state.semanticLatest;
+  if (!payload) {
+    const empty = document.createElement("span");
+    empty.className = "semantic-empty";
+    empty.textContent = state.semanticMode === "vision" ? "尚无视觉识别结果" : "尚无任务解析结果";
+    elements.semanticResult.replaceChildren(empty);
+    return;
+  }
+  if (state.semanticView === "raw") {
+    elements.semanticResult.textContent = payload.raw_response || "模型原文不可用";
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "semantic-result-list";
+  if (payload.kind === "visual_analysis") {
+    const result = payload.result || {};
+    const target = result.target || {};
+    list.append(
+      semanticResultRow("场景", result.scene),
+      semanticResultRow("目标证据", target.evidence),
+      semanticResultRow("标识面", target.face),
+      semanticResultRow("对象", result.objects),
+      semanticResultRow("建议", result.suggestion),
+      semanticResultRow("任务关联", result.mission_relevance),
+      semanticResultRow("格式", result.format_warning || "JSON 已校验"),
+    );
+  } else {
+    const plan = payload.plan || {};
+    list.append(
+      semanticResultRow("任务摘要", plan.summary),
+      semanticResultRow("任务意图", plan.intent),
+      semanticResultRow("无人机", plan.vehicle_ids),
+      semanticResultRow("目标", plan.targets),
+      semanticResultRow("约束", plan.constraints),
+      semanticResultRow("安全检查", plan.safety_checks),
+      semanticResultRow("待确认", plan.ambiguities),
+      semanticResultRow("执行策略", plan.execution_policy || "preview_only"),
+    );
+    const steps = document.createElement("div");
+    steps.className = "mission-steps";
+    (Array.isArray(plan.steps) ? plan.steps : []).forEach((step, index) => {
+      const item = document.createElement("div");
+      item.className = "mission-step";
+      const order = step.order ?? index + 1;
+      const vehicle = step.vehicle_id ? ` · UAV ${step.vehicle_id}` : "";
+      const target = step.target ? ` · ${typeof step.target === "string" ? step.target : JSON.stringify(step.target)}` : "";
+      const marker = document.createElement("b");
+      marker.textContent = String(order);
+      const detail = document.createElement("span");
+      detail.textContent = `${step.action || "待定义"}${vehicle}${target}`;
+      item.append(marker, detail);
+      steps.append(item);
+    });
+    if (steps.childElementCount) list.append(steps);
+  }
+  elements.semanticResult.replaceChildren(list);
+}
+
+function renderVisualSemantic(payload) {
+  if (!payload || payload.kind !== "visual_analysis") return;
+  state.semanticResults.vision = payload;
+  const result = payload.result || {};
+  const target = result.target || {};
+  elements.semanticTarget.textContent = target.found
+    ? target.box_id || target.label || "已发现"
+    : "未发现";
+  elements.semanticColor.textContent = target.color || "--";
+  const confidence = finiteNumber(target.confidence);
+  elements.semanticConfidence.textContent = confidence === null
+    ? "--"
+    : `${(confidence * 100).toFixed(1)}%`;
+  elements.semanticConfidenceBar.style.width = confidence === null
+    ? "0%"
+    : `${Math.max(0, Math.min(100, confidence * 100))}%`;
+  elements.semanticRisk.textContent = result.risk_level || "--";
+  elements.semanticRiskCell.dataset.level = String(result.risk_level || "unknown").toLowerCase();
+  elements.visualSummary.textContent = [result.message, result.scene, result.suggestion]
+    .filter(Boolean)
+    .join(" · ") || "视觉分析已完成";
+  elements.visionRequestState.textContent = "分析完成";
+  if (state.semanticMode === "vision") {
+    state.semanticLatest = payload;
+    elements.semanticLatency.textContent = `${payload.model || "VLM"} · ${fixed(payload.latency_ms, 0)} ms`;
+    elements.semanticResultTitle.textContent = "识别结果";
+    renderSemanticResult();
+  }
+}
+
+function renderMissionSemantic(payload) {
+  if (!payload || payload.kind !== "mission_preview") return;
+  state.semanticResults.mission = payload;
+  const plan = payload.plan || {};
+  elements.missionSummary.textContent = plan.summary || "任务草案解析完成";
+  elements.missionRequestState.textContent = "草案已生成";
+  if (state.semanticMode === "mission") {
+    state.semanticLatest = payload;
+    elements.semanticLatency.textContent = `${payload.model || "LLM"} · ${fixed(payload.latency_ms, 0)} ms`;
+    elements.semanticResultTitle.textContent = "任务草案";
+    renderSemanticResult();
+  }
+}
+
+function setSemanticBusy(busy) {
+  state.semanticBusy = busy;
+  renderSemanticStatus(state.status?.semantic || state.config?.semantic || {});
+}
+
+async function analyzeVision(event) {
+  event.preventDefault();
+  if (state.semanticBusy) return;
+  setSemanticBusy(true);
+  elements.visionRequestState.textContent = "分析中...";
+  elements.visualSummary.textContent = "正在分析当前相机帧...";
+  try {
+    const payload = await requestJson("/api/semantic/vision/analyze", {
+      method: "POST",
+      body: JSON.stringify({ prompt: elements.visionPrompt.value.trim() }),
+    });
+    renderVisualSemantic(payload);
+  } catch (error) {
+    elements.visionRequestState.textContent = "请求失败";
+    elements.visualSummary.textContent = `视觉分析失败：${error.message}`;
+  } finally {
+    setSemanticBusy(false);
+    await refreshSemanticStatus();
+  }
+}
+
+async function parseMission(event) {
+  event.preventDefault();
+  if (state.semanticBusy) return;
+  const instruction = elements.missionInstruction.value.trim();
+  if (!instruction) {
+    elements.semanticResult.textContent = "请输入任务指令";
+    return;
+  }
+  setSemanticBusy(true);
+  elements.missionRequestState.textContent = "解析中...";
+  elements.semanticResult.textContent = "正在解析任务语义...";
+  try {
+    const payload = await requestJson("/api/semantic/mission/parse", {
+      method: "POST",
+      body: JSON.stringify({ instruction }),
+    });
+    renderMissionSemantic(payload);
+  } catch (error) {
+    elements.missionRequestState.textContent = "请求失败";
+    elements.semanticResult.textContent = `任务解析失败：${error.message}`;
+  } finally {
+    setSemanticBusy(false);
+    await refreshSemanticStatus();
+  }
+}
+
 function renderStatus(payload) {
   const status = unwrapPayload(payload);
   state.status = status;
+  renderSemanticStatus(status.semantic || state.config?.semantic || {});
   const runtimeStarted = status.runtime_started ?? status.started ?? true;
-  const agentConnected = status.agent_connected ?? status.vehicle_connected ?? status.connected ?? false;
+  const agentConnected = status.onboard_agent_connected
+    ?? status.agent_connected
+    ?? status.vehicle_connected
+    ?? status.connected
+    ?? false;
   if (status.telemetry || status.snapshot || "fcu_link_ok" in status) {
     renderTelemetry(normalizeTelemetry(status));
   }
   state.apiOnline = true;
-  setBadge(elements.apiBadge, runtimeStarted ? "online" : "pending", runtimeStarted ? "地面站在线" : "地面站启动中");
+  const runtimeError = status.runtime_error || status.ground_link?.error;
+  setBadge(
+    elements.apiBadge,
+    runtimeError ? "offline" : runtimeStarted ? "online" : "pending",
+    runtimeError ? "串口连接失败" : runtimeStarted ? "地面站在线" : "地面站启动中",
+  );
+  const isReal = String(state.config?.deployment_mode || "").toLowerCase() === "real";
+  const p9Open = isReal && runtimeStarted && !runtimeError && !status.ground_link?.reconnecting;
+  setBadge(
+    elements.p9Badge,
+    runtimeError ? "offline" : p9Open ? "online" : "pending",
+    runtimeError ? "P9 串口失败" : p9Open ? "P9 串口已打开" : "P9 连接中",
+  );
+  setBadge(
+    elements.agentBadge,
+    agentConnected ? "online" : "offline",
+    agentConnected ? "机载 Agent 在线" : "机载 Agent 离线",
+  );
+  renderLinkDiagnostics(status);
+  if (runtimeError) elements.statusText.textContent = runtimeError;
   if (!agentConnected && !state.telemetry?.fcu_link_ok) {
     setBadge(elements.fcuBadge, "offline", "FCU 离线");
   }
   updateControlState();
+}
+
+function renderLinkDiagnostics(status) {
+  const stats = status?.ground_link?.stats || {};
+  const camera = status?.camera || {};
+  const received = Number(stats.received_frames || 0);
+  const duplicates = Number(stats.duplicate_frames || 0);
+  const crcErrors = Number(stats.crc_errors || 0);
+  const retries = Number(stats.retries || 0);
+  const fps = Number(camera.source_fps);
+  const video = Number.isFinite(fps) && fps > 0 ? `${fps.toFixed(1)} FPS` : "视频等待中";
+  elements.linkDiagnostics.textContent = `Lite v1 · P9 RX ${received} · 重复 ${duplicates} · CRC ${crcErrors} · 重传 ${retries} · ${video}`;
 }
 
 function renderTelemetry(telemetry) {
@@ -433,24 +731,52 @@ function drawTrack() {
 
 function updateControlState() {
   const simulated = state.config?.commands_are_simulated === true;
-  const outputEnabled = state.config?.flight_output_enabled === true;
-  const agentConnected = state.status?.agent_connected ?? state.status?.vehicle_connected ?? false;
+  const deploymentMode = String(state.config?.deployment_mode || "sim").toLowerCase();
+  const onboardOutputEnabled = state.status?.command_output_enabled === true;
+  const allowedCommands = new Set(
+    Array.isArray(state.status?.allowed_commands)
+      ? state.status.allowed_commands.map((command) => String(command).toLowerCase())
+      : [],
+  );
+  const outputEnabled = state.config?.flight_output_enabled === true
+    && (deploymentMode !== "real" || onboardOutputEnabled);
+  const agentConnected = state.status?.onboard_agent_connected
+    ?? state.status?.agent_connected
+    ?? state.status?.vehicle_connected
+    ?? false;
   const fcuReady = state.telemetry?.fcu_link_ok === true;
   const enabled = state.apiOnline && (simulated || (outputEnabled && agentConnected && fcuReady));
+  const anyCommandEnabled = enabled
+    && (simulated || deploymentMode !== "real" || allowedCommands.size > 0);
   elements.commandButtons.forEach((button) => {
-    button.disabled = !enabled;
+    const actionAllowed = simulated || deploymentMode !== "real"
+      || allowedCommands.has(String(button.dataset.command || "").toLowerCase());
+    button.disabled = !(enabled && actionAllowed);
   });
-  elements.altitudeMinus.disabled = !enabled;
-  elements.altitudePlus.disabled = !enabled;
-  elements.takeoffAltitude.disabled = !enabled;
-  elements.controlState.className = `control-state ${enabled ? "ready" : "locked"}`;
-  elements.controlState.textContent = enabled ? (simulated ? "DEMO" : "就绪") : "锁定";
+  const takeoffEnabled = enabled
+    && (simulated || deploymentMode !== "real" || allowedCommands.has("takeoff"));
+  elements.altitudeMinus.disabled = !takeoffEnabled;
+  elements.altitudePlus.disabled = !takeoffEnabled;
+  elements.takeoffAltitude.disabled = !takeoffEnabled;
+  elements.controlState.className = `control-state ${anyCommandEnabled ? "ready" : "locked"}`;
+  elements.controlState.textContent = anyCommandEnabled
+    ? (simulated ? "DEMO" : "就绪")
+    : "锁定";
   if (simulated && state.apiOnline) {
     elements.controlHint.textContent = "DEMO 模式：命令不会发送到 MAVLink";
   } else if (!state.apiOnline) {
     elements.controlHint.textContent = "等待地面站连接";
+  } else if (deploymentMode === "real" && !onboardOutputEnabled) {
+    elements.controlHint.textContent = "只读验收模式：机载飞控命令输出已禁用";
+  } else if (deploymentMode === "real" && allowedCommands.size === 0) {
+    elements.controlHint.textContent = "机载命令白名单为空，实机控制保持禁用";
+  } else if (deploymentMode === "real" && allowedCommands.size > 0) {
+    const labels = [...allowedCommands].map((command) => COMMAND_LABELS[command] || command);
+    elements.controlHint.textContent = `实机白名单：${labels.join("、")}`;
   } else if (!agentConnected || !fcuReady) {
-    elements.controlHint.textContent = "等待手动启动的 SITL 连接 14550";
+    elements.controlHint.textContent = state.config?.deployment_mode === "real"
+      ? "等待 P9 链路、机载代理和飞控连接"
+      : "等待手动启动的 SITL 连接 14550";
   } else {
     elements.controlHint.textContent = "MAVLink 已连接，飞行命令可用";
   }
@@ -621,7 +947,11 @@ function handleWebsocketMessage(event) {
     if (body.available !== false) renderTelemetry(normalizeTelemetry(body));
   }
   if (type === "status" || type === "service_status") renderStatus(body);
-  if (type === "command_progress") {
+  if (type === "visual_semantic_result") {
+    renderVisualSemantic(body);
+  } else if (type === "mission_parse_result") {
+    renderMissionSemantic(body);
+  } else if (type === "command_progress") {
     applyCommandProgress(body);
   } else if (type === "command_result") {
     const requestId = body.command_id || body.request_id;
@@ -704,13 +1034,117 @@ async function refreshStatus() {
 
 async function refreshCameraStatus() {
   try {
-    renderCameraConfig(await requestJson("/api/camera/status"));
+    const camera = await requestJson("/api/camera/status");
+    renderCameraConfig(camera);
+    if (state.status) {
+      state.status.camera = camera;
+      renderLinkDiagnostics(state.status);
+    }
   } catch (error) {
     renderCameraConfig({
       state: "offline",
       stream_available: false,
       detail: `相机状态不可用：${error.message}`,
     });
+  }
+}
+
+async function refreshSemanticStatus() {
+  try {
+    const semantic = await requestJson("/api/semantic/status");
+    if (state.status) state.status.semantic = semantic;
+    renderSemanticStatus(semantic);
+  } catch (_error) {
+    renderSemanticStatus({});
+  }
+}
+
+async function restoreSemanticResults() {
+  try {
+    const payload = await requestJson("/api/semantic/latest");
+    if (payload.visual) renderVisualSemantic(payload.visual);
+    if (payload.mission) renderMissionSemantic(payload.mission);
+    setSemanticMode(state.semanticMode);
+    renderSemanticStatus(payload.status || {});
+  } catch (_error) {
+    // The ground station remains usable when the semantic service is absent.
+  }
+}
+
+async function openSerialSettings() {
+  elements.serialPort.value = state.config?.ground_serial_port || "COM3";
+  elements.serialBaudrate.value = String(state.config?.ground_serial_baudrate || 57600);
+  setSerialSettingsStatus("");
+  if (typeof elements.serialDialog.showModal === "function") {
+    elements.serialDialog.showModal();
+  }
+  await refreshSerialPorts();
+}
+
+async function refreshSerialPorts() {
+  elements.refreshSerialPorts.disabled = true;
+  elements.serialPortList.textContent = "正在扫描串口...";
+  try {
+    const payload = await requestJson("/api/serial/ports");
+    state.serialPorts = Array.isArray(payload.ports) ? payload.ports : [];
+    elements.serialPortOptions.replaceChildren(...state.serialPorts.map((port) => {
+      const option = document.createElement("option");
+      option.value = port.device;
+      option.label = port.description || port.hwid || port.device;
+      return option;
+    }));
+    elements.serialPortList.textContent = state.serialPorts.length
+      ? state.serialPorts.map((port) => `${port.device} · ${port.description || "未知设备"}`).join("\n")
+      : "未检测到串口；仍可手工输入 COM 端口或设备路径。";
+  } catch (error) {
+    elements.serialPortList.textContent = `扫描失败：${error.message}`;
+  } finally {
+    elements.refreshSerialPorts.disabled = false;
+  }
+}
+
+function setSerialSettingsStatus(message, type = "") {
+  elements.serialSettingsStatus.textContent = message;
+  elements.serialSettingsStatus.className = `serial-settings-status ${type}`.trim();
+}
+
+async function applySerialSettings(event) {
+  event.preventDefault();
+  if (state.serialApplying) return;
+  const port = elements.serialPort.value.trim();
+  const baudrate = finiteNumber(elements.serialBaudrate.value);
+  if (!port || baudrate === null || baudrate < 300 || baudrate > 4000000) {
+    setSerialSettingsStatus("请输入有效串口和 300-4000000 范围内的波特率。", "error");
+    return;
+  }
+
+  state.serialApplying = true;
+  elements.serialApply.disabled = true;
+  elements.serialCancel.disabled = true;
+  setSerialSettingsStatus(`正在连接 ${port} @ ${baudrate}...`);
+  try {
+    const result = await requestJson("/api/serial/config", {
+      method: "PUT",
+      body: JSON.stringify({ port, baudrate }),
+    });
+    const [config, status] = await Promise.all([
+      requestJson("/api/config"),
+      requestJson("/api/status"),
+    ]);
+    renderConfig(config);
+    renderStatus(status);
+    setSerialSettingsStatus(
+      `${result.port} @ ${result.baudrate} 已打开，正在等待机载端。`,
+      "success",
+    );
+    window.setTimeout(() => elements.serialDialog.close(), 700);
+  } catch (error) {
+    setSerialSettingsStatus(error.message, "error");
+    await refreshStatus();
+  } finally {
+    state.serialApplying = false;
+    elements.serialApply.disabled = false;
+    elements.serialCancel.disabled = false;
   }
 }
 
@@ -740,6 +1174,40 @@ function bindEvents() {
     state.track = [];
     void refreshStatus();
   });
+  elements.serialSettingsButton.addEventListener("click", () => {
+    void openSerialSettings();
+  });
+  elements.refreshSerialPorts.addEventListener("click", () => {
+    void refreshSerialPorts();
+  });
+  elements.serialForm.addEventListener("submit", (event) => {
+    void applySerialSettings(event);
+  });
+  elements.serialCancel.addEventListener("click", () => {
+    if (!state.serialApplying) elements.serialDialog.close();
+  });
+  elements.visionAnalysisForm.addEventListener("submit", (event) => {
+    void analyzeVision(event);
+  });
+  elements.missionParseForm.addEventListener("submit", (event) => {
+    void parseMission(event);
+  });
+  elements.semanticTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      state.semanticView = tab.dataset.semanticTab;
+      elements.semanticTabs.forEach((candidate) => {
+        const active = candidate === tab;
+        candidate.classList.toggle("active", active);
+        candidate.setAttribute("aria-selected", String(active));
+      });
+      renderSemanticResult();
+    });
+  });
+  elements.semanticModes.forEach((button) => {
+    button.addEventListener("click", () => {
+      setSemanticMode(button.dataset.semanticMode);
+    });
+  });
   window.addEventListener("resize", drawTrack);
   if (window.ResizeObserver) {
     new ResizeObserver(drawTrack).observe(elements.nedCanvas.parentElement);
@@ -757,6 +1225,7 @@ function adjustAltitude(delta) {
 async function bootstrap() {
   cacheElements();
   bindEvents();
+  setSemanticMode("vision");
   drawTrack();
   try {
     const [config, status] = await Promise.all([
@@ -766,6 +1235,7 @@ async function bootstrap() {
     renderConfig(config);
     renderStatus(status);
     await refreshCameraStatus();
+    await restoreSemanticResults();
   } catch (error) {
     state.apiOnline = false;
     setBadge(elements.apiBadge, "offline", "地面站离线");
@@ -775,6 +1245,7 @@ async function bootstrap() {
   connectWebsocket();
   window.setInterval(refreshStatus, 2000);
   window.setInterval(refreshCameraStatus, 2000);
+  window.setInterval(refreshSemanticStatus, 3000);
 }
 
 document.addEventListener("DOMContentLoaded", bootstrap);

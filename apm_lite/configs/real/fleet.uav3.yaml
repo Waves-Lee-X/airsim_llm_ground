@@ -1,0 +1,26 @@
+schema_version: "1.0"
+mode: real
+fleet_name: aeromind-uav3-bench
+vehicles:
+  - vehicle_id: 3
+    name: real-uav3
+    runtime_host: colony3
+    frame_calibration_id: uav3-local-ned-bench-v1
+    credential_env: AEROMIND_UAV3_TOKEN
+    sensor_source: none
+    setpoint_rate_hz: 20.0
+    trajectory_timeout_ms: 1000
+    companion_heartbeat_hz: 1.0
+    completion_hold_s: 0.5
+    fcu:
+      transport: serial
+      endpoint: /dev/ttyAMA0
+      baudrate: 921600
+      source_system: 203
+      source_component: 191
+      target_system: 3
+      target_component: 1
+    ground_link:
+      transport: serial
+      endpoint: /dev/ttyAMA1
+      baudrate: 57600

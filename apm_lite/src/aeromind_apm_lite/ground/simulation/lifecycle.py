@@ -42,7 +42,7 @@ class RuntimeState(str, Enum):
     FAILED = "failed"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProcessEvidence:
     name: str
     pid: int
@@ -54,7 +54,7 @@ class ProcessEvidence:
     external_pid: int | None = None
 
 
-@dataclass(slots=True)
+@dataclass
 class _ManagedProcess:
     evidence: ProcessEvidence
     process: Any

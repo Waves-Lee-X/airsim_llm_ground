@@ -1,89 +1,75 @@
-# M1.5 Manual Simulation Acceptance Record
+# M1.5 验收记录：手动 AirSim/SITL 与 Web 地面站
 
-Date: 2026-07-28
+验收日期：2026-07-28
 
-Status: **passed**
+状态：**已通过**
 
-## Scope
+## 验收范围
 
-M1.5 validates the operator-owned, non-ROS single-vehicle workflow in an
-AirSim-enabled UE scene other than Blocks. UE/AirSim, ArduCopter SITL and the
-Lite Web ground station remain separate processes started by the operator.
-
-The accepted path is:
+M1.5 验证非 Blocks UE 场景中的非 ROS 单机流程。UE/AirSim、ArduCopter SITL
+和 Lite Web 地面站由操作者分别启动：
 
 ```text
-Web browser
-  -> FastAPI/WebSocket ground gateway
-  -> authenticated OnboardAgent command
+Web 浏览器
+  -> FastAPI/WebSocket 地面网关
+  -> 认证后的 OnboardAgent 命令
   -> ApmLink/pymavlink UDP 14550
   -> ArduCopter SITL
-  -> AirSim vehicle physics
+  -> AirSim 物理模型
 ```
 
-AirSim RPC is used only for Scene image capture. It is not used to bypass
-ArduCopter for flight control.
+AirSim RPC 只负责 Scene 图像，不绕过 ArduCopter 控制飞机。
 
-## Operator Acceptance
+## 操作者验收
 
-The operator completed the formal manual integration in the
-`PopulationSystemFullPack` UE project and reported the M1.5 workflow complete.
-The session exercised the real SITL gateway on port `8000`, not DEMO command
-simulation.
+正式联调在 `PopulationSystemFullPack` UE 工程中完成，使用 `8000` 端口的真实
+SITL 网关，不是 DEMO 命令模拟。
 
-## Machine-Observed Evidence
+## 机器证据
 
-At evidence collection time:
+- `/api/health`：`runtime_mode=sitl`、`ready=true`、`fcu_link_ok=true`；
+- Agent 与 FCU 在线，GPS、EKF、pre-arm 健康；
+- 最终遥测：`mode=RTL`、`armed=false`、`landed_state=1`，相对高度接近 0；
+- 最终本地 NED 约为 `(0.051, -0.077, 0.005)` m；
+- `front_center` 通过 AirSim RPC `192.168.16.1:41451` 在线；
+- `/api/camera/frame` 返回 HTTP 200、`image/png`，PNG 签名
+  `89 50 4E 47 0D 0A 1A 0A`，帧序号 `2935`，大小 `1,463,559` bytes。
 
-- `GET /api/health` reported `runtime_mode=sitl`, `ready=true` and
-  `fcu_link_ok=true`.
-- The onboard agent and FCU link were connected, with healthy GPS, EKF and
-  pre-arm state.
-- Final telemetry reported `mode=RTL`, `armed=false`, `landed_state=1` and a
-  near-zero relative altitude.
-- Final local position was approximately NED `(0.051, -0.077, 0.005)` metres
-  from the local origin.
-- `front_center` was online through AirSim RPC `192.168.16.1:41451`.
-- `GET /api/camera/frame` returned HTTP 200, `image/png`, PNG signature
-  `89 50 4E 47 0D 0A 1A 0A`, frame sequence `2935` and 1,463,559 bytes.
+DataFlash `/home/waves/aeromind_sitl/manual-uav1/logs/00000002.BIN` 记录：
 
-ArduPilot DataFlash
-`/home/waves/aeromind_sitl/manual-uav1/logs/00000002.BIN` recorded:
-
-| Local time | Evidence |
+| 本地时间 | 证据 |
 |---|---|
-| 22:03:07 | `MAV_CMD_DO_SET_MODE` to GUIDED, result 0 |
-| 22:03:08 | `MAV_CMD_NAV_TAKEOFF`, target 3 m, result 0 |
-| 22:03:21 | `MAV_CMD_NAV_LAND`, result 0 |
-| 22:15:11 | arm command, result 0 |
-| 22:15:12 | `MAV_CMD_NAV_TAKEOFF`, target 3 m, result 0 |
-| 22:15:20 | `MAV_CMD_NAV_RETURN_TO_LAUNCH`, result 0 |
+| 22:03:07 | `MAV_CMD_DO_SET_MODE` 到 GUIDED，result 0 |
+| 22:03:08 | `MAV_CMD_NAV_TAKEOFF`，目标 3 m，result 0 |
+| 22:03:21 | `MAV_CMD_NAV_LAND`，result 0 |
+| 22:15:11 | ARM，result 0 |
+| 22:15:12 | `MAV_CMD_NAV_TAKEOFF`，目标 3 m，result 0 |
+| 22:15:20 | `MAV_CMD_NAV_RETURN_TO_LAUNCH`，result 0 |
 
-The final API state confirmed RTL completion by landed and disarmed telemetry,
-not by `COMMAND_ACK` alone. The DataFlash file was still open while SITL
-continued running, so no mutable-file hash is recorded here.
+最终 RTL 由已落地且已上锁的遥测确认，不以 ACK 单独判定。取证时 SITL 仍在写
+DataFlash，因此没有为可变文件记录哈希。
 
-## Software Gates
+## 当时的软件门禁
 
-- Full Lite test suite: `155 passed`.
-- Camera and browser focused tests: `13 passed`.
-- Python `compileall`: passed.
-- flake8: passed.
-- JavaScript syntax check: passed.
-- `git diff --check`: passed.
+```text
+Lite full suite: 155 passed
+camera/browser focused tests: 13 passed
+compileall: passed
+flake8: passed
+JavaScript syntax: passed
+git diff --check: passed
+```
 
-## Accepted Fixes
+后续加入 P9、RTSP 和 VLM 后，当前完整基线已增长到 `186 passed`。
 
-- Browser TAKEOFF now performs GUIDED, conditional ARM and TAKEOFF as one
-  evidence-tracked onboard transaction.
-- AirSim Scene image capture runs in a timeout-isolated worker, caches fresh
-  frames and automatically reconnects.
-- The Web camera panel polls dynamic camera status and displays cached frames
-  at about 5 FPS.
-- Camera failure remains isolated from MAVLink control and telemetry.
+## 本阶段修复
 
-## Boundary
+- Web TAKEOFF 在机载端组合执行 GUIDED、条件 ARM 和 TAKEOFF，并保留统一证据；
+- AirSim Scene 取图进入隔离工作线程，支持超时、最新帧缓存和自动重连；
+- Web 动态读取相机状态并显示缓存帧；
+- 相机失败与 MAVLink 控制、遥测隔离。
 
-M1.5 does not authorize real-aircraft flight. It does not validate a physical
-RGB camera, D435/depth sensing, VLM inference, path planning, formation flight
-or multi-vehicle operation. M2 begins with a propeller-removed CUAV V5+ bench.
+## 边界
+
+M1.5 不授权真机飞行，也不验证实机 D435 深度、VLM、路径规划、编队或多机任务。
+这些能力必须经过实机传感器、场地和安全门禁单独验收。

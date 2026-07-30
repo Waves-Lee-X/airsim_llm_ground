@@ -1,0 +1,37 @@
+[Unit]
+Description=AeroMind APM Lite onboard agent for UAV %i
+After=multi-user.target dev-ttyAMA0.device dev-ttyAMA1.device
+Wants=dev-ttyAMA0.device dev-ttyAMA1.device
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=aeromind
+Group=dialout
+EnvironmentFile=/etc/aeromind-apm-lite/uav%i.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=/opt/aeromind-apm-lite/src
+Environment=AEROMIND_COMMAND_OUTPUT_ENABLE=
+Environment=AEROMIND_ALLOW_ARM=
+Environment=AEROMIND_ALLOW_DISARM=
+WorkingDirectory=/opt/aeromind-apm-lite
+ExecStartPre=/opt/aeromind-apm-lite/deploy/raspberry-pi/preflight-onboard.sh
+ExecStart=/opt/aeromind-apm-lite/venv/bin/python -m aeromind_apm_lite.onboard.runtime --config /etc/aeromind-apm-lite/fleet.yaml --vehicle-id %i --telemetry-hz 2.0 --log-level INFO $AEROMIND_COMMAND_OUTPUT_ENABLE $AEROMIND_ALLOW_ARM $AEROMIND_ALLOW_DISARM
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
