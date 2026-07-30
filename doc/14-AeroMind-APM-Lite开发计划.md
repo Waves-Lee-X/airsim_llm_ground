@@ -2,7 +2,7 @@
 
 > 文档日期：2026-07-30
 > 开发分支：`codex/aeromind-apm-lite`
-> 文档状态：M0、M1、M1.5 已通过；M2 三号机 FCU/P9/RGB、ARM/DISARM 白名单和地面 VLM 预览链路完成，P9 压缩修复后的 60 秒稳定性回归通过；首版实机定位使用 GPS，统一坐标模块、版本化 GeoReference、Web 标定、配置哈希和往返报告完成，下一项为 SITL 统一 GOTO 状态机与故障注入
+> 文档状态：M0、M1、M1.5 已通过；M2 三号机 FCU/P9/RGB、ARM/DISARM 白名单和地面 VLM 预览链路完成，P9 压缩修复后的 60 秒稳定性回归通过；首版实机定位使用 GPS，统一坐标与 GeoReference 完成；统一 GOTO 状态机、HDOP/EKF 门禁和五类软件故障注入已实现，实际 AirSim/SITL 六份飞行报告待操作者启动仿真后生成
 > 旧系统定位：现有 ROS 2 + PX4 + AirSim 工程保留为原型和能力参考，不在本阶段原地改造成 APM 真机系统。
 
 ## 1. 决策摘要
@@ -572,6 +572,11 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 纯转换模块已完成；`draft/surveyed` GeoReference Schema、原子 YAML 持久化、
 不可变 SHA-256、Web 标定表单、API 和 1 cm 容差坐标往返报告已接入地面站。
 真实场地经纬高、真北航向和四机 Home 仍须在室外测量后才能冻结为 `surveyed`。
+统一导航执行器已实现 `GUIDED -> ARM -> TAKEOFF -> GOTO -> HOLD -> LAND`，并持续
+检查 GPS 3D Fix、HDOP、EKF、Home、遥测新鲜度、任务期限和 P9 链路。假飞控测试
+已覆盖正常闭环以及 GPS 丢失、HDOP 超限、EKF 异常、任务过期和 P9 失联后的
+HOLD/LAND 收敛。当前 `8000` 为三号真机而非 SITL，未发送飞行命令；实际 AirSim
+基线和五份故障注入报告仍待按 `M3_NAVIGATION_ACCEPTANCE.md` 执行。
 
 交付：
 
@@ -725,7 +730,7 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 18. [x] 冻结首版实机定位路线：使用 APM GPS，不采购 AprilTag/UWB，不在当前阶段实现 VIO。
 19. [x] 实现并测试 `WGS84 <-> ENU/map <-> LOCAL_NED <-> AirSim NED` 坐标模块；覆盖郑州场地、经度换日线、任意 Home、非法数值和完整虚实往返，当前全量基线为 `199 passed`。
 20. [x] 增加场地 `GeoReference` 配置、Web 标定表单、版本哈希和坐标往返报告；草稿可用于仿真预览，正式版本同 ID 禁止改写，当前全量基线为 `209 passed`。
-21. [ ] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。
+21. [ ] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。软件执行器、HDOP/EKF/P9 门禁、五类观察层注入和自动报告入口已完成，当前全量基线为 `224 passed`；待操作者启动 UE/SITL 后生成一份基线和五份故障飞行报告再勾选。
 22. [ ] 外场条件具备后，完成静态 GPS、场地标定、单机低空、RC/failsafe 和安全间距验收。
 23. [ ] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent；实机写操作继续经过人工确认和白名单。
 

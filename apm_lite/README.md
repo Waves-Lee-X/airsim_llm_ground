@@ -93,6 +93,10 @@ PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
 和往返报告。无室外测量数据时必须保持草稿状态，详见
 [`docs/GEOREFERENCE.md`](docs/GEOREFERENCE.md)。
 
+统一 `GUIDED -> ARM -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机和仿真故障注入
+命令见 [`docs/M3_NAVIGATION_ACCEPTANCE.md`](docs/M3_NAVIGATION_ACCEPTANCE.md)。
+该入口只接受 SIM/UDP 配置，不会连接实机串口。
+
 ## UAV3 实机地面站
 
 Windows 启动命令：
@@ -156,7 +160,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `209 passed`。提交前还应运行 JavaScript 语法检查和
+当前完整测试基线为 `224 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 ## 安全边界

@@ -175,6 +175,7 @@ class DemoApmLink:
             battery_voltage_v=15.6,
             gps_fix_type=0,
             satellites_visible=0,
+            gps_hdop=None,
             gps_healthy=False,
             prearm_ok=True,
             ekf_flags=None,

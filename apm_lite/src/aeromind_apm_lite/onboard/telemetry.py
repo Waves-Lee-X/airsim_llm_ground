@@ -10,6 +10,7 @@ from .mavlink.models import MavlinkEnvelope, TelemetrySnapshot
 MAV_MODE_FLAG_SAFETY_ARMED = 128
 MAV_SYS_STATUS_SENSOR_GPS = 1 << 5
 MAV_SYS_STATUS_PREARM_CHECK = 1 << 28
+GPS_DILUTION_UNKNOWN = 0xFFFF
 
 
 @dataclass
@@ -25,6 +26,7 @@ class TelemetryAccumulator:
     battery_voltage_v: float | None = None
     gps_fix_type: int | None = None
     satellites_visible: int | None = None
+    gps_hdop: float | None = None
     gps_healthy: bool | None = None
     prearm_ok: bool | None = None
     ekf_flags: int | None = None
@@ -59,6 +61,7 @@ class TelemetryAccumulator:
             battery_voltage_v=self.battery_voltage_v,
             gps_fix_type=self.gps_fix_type,
             satellites_visible=self.satellites_visible,
+            gps_hdop=self.gps_hdop,
             gps_healthy=self.gps_healthy,
             prearm_ok=self.prearm_ok,
             ekf_flags=self.ekf_flags,
@@ -145,6 +148,10 @@ class TelemetryAccumulator:
         elif message.name == "GPS_RAW_INT":
             self.gps_fix_type = int(fields.get("fix_type", 0))
             self.satellites_visible = int(fields.get("satellites_visible", 0))
+            eph = int(fields.get("eph", GPS_DILUTION_UNKNOWN))
+            self.gps_hdop = (
+                eph / 100.0 if eph != GPS_DILUTION_UNKNOWN else None
+            )
             self.touch("gps", now)
         elif message.name == "EKF_STATUS_REPORT":
             self.ekf_flags = int(fields.get("flags", 0))

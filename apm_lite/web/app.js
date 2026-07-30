@@ -166,6 +166,7 @@ function normalizeTelemetry(payload) {
     battery_remaining: candidate.battery_remaining,
     battery_voltage_v: candidate.battery_voltage_v,
     gps_fix_type: valueOr(candidate.gps_fix_type, health.gps_fix_type),
+    gps_hdop: valueOr(candidate.gps_hdop, health.gps_hdop),
     satellites_visible: candidate.satellites_visible,
     gps_healthy: valueOr(candidate.gps_healthy, health.gps_healthy),
     prearm_ok: valueOr(candidate.prearm_ok, health.prearm_ok),
@@ -602,7 +603,10 @@ function renderTelemetry(telemetry) {
   setHealth(elements.linkDot, linkOk);
   elements.linkHealth.textContent = linkOk ? "正常" : "离线";
   setHealth(elements.gpsDot, telemetry.gps_healthy);
-  elements.gpsHealth.textContent = booleanLabel(telemetry.gps_healthy);
+  const hdop = finiteNumber(telemetry.gps_hdop);
+  elements.gpsHealth.textContent = hdop === null
+    ? booleanLabel(telemetry.gps_healthy)
+    : `${booleanLabel(telemetry.gps_healthy)} · HDOP ${hdop.toFixed(2)}`;
   const ekfKnown = telemetry.ekf_flags !== null && telemetry.ekf_flags !== undefined;
   const ekfOk = telemetry.ekf_ok === true
     ? true

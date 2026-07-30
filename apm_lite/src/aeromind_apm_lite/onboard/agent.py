@@ -51,6 +51,7 @@ from .mavlink.models import (
     MavResult,
     PhysicalCompletionEvidence,
 )
+from .navigation_mission import EKF_REQUIRED_GPS_NAVIGATION_FLAGS
 
 
 class OnboardAgentError(RuntimeError):
@@ -925,8 +926,15 @@ class OnboardAgent:
             health=VehicleHealth(
                 fcu_link_ok=snapshot.fcu_link_ok,
                 gps_fix_type=snapshot.gps_fix_type or 0,
+                gps_hdop=snapshot.gps_hdop,
                 gps_healthy=snapshot.gps_healthy,
                 prearm_ok=snapshot.prearm_ok,
+                ekf_ok=(
+                    snapshot.ekf_flags is not None
+                    and snapshot.ekf_flags
+                    & EKF_REQUIRED_GPS_NAVIGATION_FLAGS
+                    == EKF_REQUIRED_GPS_NAVIGATION_FLAGS
+                ),
             ),
         )
 

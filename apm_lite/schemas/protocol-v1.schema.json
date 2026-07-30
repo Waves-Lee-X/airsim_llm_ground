@@ -1491,6 +1491,20 @@
               "title": "Gps Fix Type",
               "type": "integer"
             },
+            "gps_hdop": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Gps Hdop"
+            },
             "gps_healthy": {
               "anyOf": [
                 {

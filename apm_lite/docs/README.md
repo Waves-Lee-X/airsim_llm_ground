@@ -11,6 +11,7 @@ Lite 的实机验收结果。
 | [`M1_5_ACCEPTANCE.md`](M1_5_ACCEPTANCE.md) | 非 Blocks 场景手动 SITL、Web 和相机联调 | 已通过 |
 | [`MANUAL_SIMULATION.md`](MANUAL_SIMULATION.md) | 手动启动 UE、SITL、地面站的操作手册 | 可用 |
 | [`GEOREFERENCE.md`](GEOREFERENCE.md) | WGS84/map/NED/AirSim 场地标定、哈希和 Web 操作 | 软件链完成，外场实测待办 |
+| [`M3_NAVIGATION_ACCEPTANCE.md`](M3_NAVIGATION_ACCEPTANCE.md) | 统一 GOTO 状态机、SITL 命令和五类故障注入 | 软件测试通过，SITL 飞行待执行 |
 | [`REAL_SERIAL_DEPLOYMENT.md`](REAL_SERIAL_DEPLOYMENT.md) | P9 协议、树莓派安装、systemd、回滚和验收 | UAV3 已部署 |
 | [`UAV3_REAL_BENCH_AND_VIDEO.md`](UAV3_REAL_BENCH_AND_VIDEO.md) | UAV3 现场状态、视频、VLM、白名单和遗留项 | ARM/DISARM 待人工测试 |
 

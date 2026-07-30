@@ -180,6 +180,7 @@ class VehicleHealth(StrictModel):
     fcu_link_ok: bool
     ekf_ok: Optional[bool] = None
     gps_fix_type: int = Field(default=0, ge=0, le=6)
+    gps_hdop: Optional[float] = Field(default=None, ge=0.0, le=100.0)
     gps_healthy: Optional[bool] = None
     prearm_ok: Optional[bool] = None
     depth_ok: Optional[bool] = None

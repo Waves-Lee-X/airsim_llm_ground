@@ -33,6 +33,11 @@ from .fixed_mission import (
     command_result_dict,
     mission_result_dict,
 )
+from .fault_injection import (
+    NavigationFaultInjection,
+    NavigationFaultInjector,
+    NavigationFaultType,
+)
 from .lifecycle import (
     ProcessEvidence,
     RuntimeState,
@@ -63,6 +68,9 @@ __all__ = [
     "MissionEvidenceJournalError",
     "MissionStepEvidence",
     "MissionTerminalState",
+    "NavigationFaultInjection",
+    "NavigationFaultInjector",
+    "NavigationFaultType",
     "ProcessEvidence",
     "RuntimeState",
     "SimulationConfigError",

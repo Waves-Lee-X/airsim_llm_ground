@@ -157,6 +157,7 @@ class TelemetrySnapshot:
     battery_voltage_v: float | None
     gps_fix_type: int | None
     satellites_visible: int | None
+    gps_hdop: float | None
     gps_healthy: bool | None
     prearm_ok: bool | None
     ekf_flags: int | None

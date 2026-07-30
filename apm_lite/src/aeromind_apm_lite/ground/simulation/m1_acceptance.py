@@ -25,6 +25,9 @@ from aeromind_apm_lite.onboard.mavlink.models import (
     MavLandedState,
     TelemetrySnapshot,
 )
+from aeromind_apm_lite.onboard.navigation_mission import (
+    EKF_REQUIRED_GPS_NAVIGATION_FLAGS,
+)
 from aeromind_apm_lite.onboard.mavlink.pymavlink_transport import PymavlinkTransport
 from aeromind_apm_lite.onboard.probe import probe
 
@@ -220,6 +223,14 @@ def _flight_ready_reason(
         return "ArduPilot GPS health bit is not ready"
     if snapshot.gps_fix_type is None or snapshot.gps_fix_type < 3:
         return "GPS 3D fix is not ready"
+    if snapshot.gps_hdop is None:
+        return "GPS HDOP is unavailable"
+    if snapshot.gps_hdop > 2.5:
+        return f"GPS HDOP {snapshot.gps_hdop:.2f} exceeds 2.50"
+    if snapshot.ekf_flags is None or (
+        snapshot.ekf_flags & EKF_REQUIRED_GPS_NAVIGATION_FLAGS
+    ) != EKF_REQUIRED_GPS_NAVIGATION_FLAGS:
+        return "EKF flags do not permit GPS navigation"
     if required_mode is not None and snapshot.mode != required_mode:
         return f"vehicle mode is not {required_mode}"
     if snapshot.local_position_ned_m is None:
@@ -238,6 +249,7 @@ def _flight_ready_reason(
         "prearm": freshness_s,
         "gps_health": freshness_s,
         "gps": freshness_s,
+        "ekf": freshness_s,
         "local_position": freshness_s,
         "global_position": freshness_s,
         "velocity": freshness_s,
@@ -303,6 +315,8 @@ def _readiness_payload(snapshot: TelemetrySnapshot) -> dict[str, Any]:
         "gps_healthy": snapshot.gps_healthy,
         "gps_fix_type": snapshot.gps_fix_type,
         "satellites_visible": snapshot.satellites_visible,
+        "gps_hdop": snapshot.gps_hdop,
+        "ekf_flags": snapshot.ekf_flags,
         "local_position_ned_m": snapshot.local_position_ned_m,
         "global_position_deg_m": snapshot.global_position_deg_m,
         "home_position_deg_m": snapshot.home_position_deg_m,

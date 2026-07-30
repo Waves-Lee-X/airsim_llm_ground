@@ -35,7 +35,7 @@ def test_ground_station_assets_and_ids_are_self_consistent():
     document = _document()
 
     assert document.stylesheets == ["/styles.css?v=20260730.5"]
-    assert document.scripts == ["/app.js?v=20260730.5"]
+    assert document.scripts == ["/app.js?v=20260730.6"]
     assert len(document.ids) == len(set(document.ids))
     assert {"vehicleSelect", "nedCanvas", "evidenceList", "cameraFrame",
             "p9Badge", "agentBadge", "linkDiagnostics"} <= set(

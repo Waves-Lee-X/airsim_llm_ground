@@ -90,6 +90,7 @@ class StubApmLink:
             battery_voltage_v=15.2,
             gps_fix_type=3,
             satellites_visible=14,
+            gps_hdop=0.9,
             gps_healthy=True,
             prearm_ok=True,
             ekf_flags=None,

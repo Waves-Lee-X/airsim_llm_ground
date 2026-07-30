@@ -31,6 +31,9 @@ from aeromind_apm_lite.common.coordinates import (
     GeoReferenceStore,
 )
 from aeromind_apm_lite.ground.server import VehicleNotConnected
+from aeromind_apm_lite.onboard.navigation_mission import (
+    EKF_REQUIRED_GPS_NAVIGATION_FLAGS,
+)
 
 from .camera import (
     AirSimCameraBridge,
@@ -507,6 +510,7 @@ class BrowserGateway:
                 {
                     "fcu_link_ok": health["fcu_link_ok"],
                     "gps_fix_type": health["gps_fix_type"],
+                    "gps_hdop": health["gps_hdop"],
                     "gps_healthy": health["gps_healthy"],
                     "prearm_ok": health["prearm_ok"],
                     "ekf_ok": health["ekf_ok"],
@@ -538,8 +542,15 @@ class BrowserGateway:
         payload["health"] = {
             "fcu_link_ok": snapshot.fcu_link_ok,
             "gps_fix_type": snapshot.gps_fix_type or 0,
+            "gps_hdop": snapshot.gps_hdop,
             "gps_healthy": snapshot.gps_healthy,
             "prearm_ok": snapshot.prearm_ok,
+            "ekf_ok": (
+                snapshot.ekf_flags is not None
+                and snapshot.ekf_flags
+                & EKF_REQUIRED_GPS_NAVIGATION_FLAGS
+                == EKF_REQUIRED_GPS_NAVIGATION_FLAGS
+            ),
         }
         return payload
 
