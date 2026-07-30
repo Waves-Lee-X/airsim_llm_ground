@@ -49,6 +49,7 @@ from .lifecycle import (
     validate_m1_parameters,
     windows_path_from_wsl,
 )
+from .trajectory_recording import NavigationTrajectoryRecorder
 
 __all__ = [
     "AIRSIM_VERSION",
@@ -71,6 +72,7 @@ __all__ = [
     "NavigationFaultInjection",
     "NavigationFaultInjector",
     "NavigationFaultType",
+    "NavigationTrajectoryRecorder",
     "ProcessEvidence",
     "RuntimeState",
     "SimulationConfigError",

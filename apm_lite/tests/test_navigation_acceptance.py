@@ -58,3 +58,22 @@ def test_navigation_acceptance_cli_exposes_all_fault_scenarios():
     for fault in NavigationFaultType:
         args = parser.parse_args(["--fault", fault.value])
         assert args.fault == fault.value
+
+
+def test_navigation_acceptance_cli_exposes_optional_trajectory_evidence():
+    args = build_argument_parser().parse_args(
+        [
+            "--georeference-config",
+            "venue.yaml",
+            "--trajectory-evidence-dir",
+            "/tmp/evidence",
+            "--software-commit",
+            "8605422",
+            "--arducopter-version",
+            "4.5-test",
+        ]
+    )
+
+    assert args.georeference_config == Path("venue.yaml")
+    assert args.trajectory_evidence_dir == Path("/tmp/evidence")
+    assert args.software_commit == "8605422"

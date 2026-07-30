@@ -97,6 +97,11 @@ PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
 命令见 [`docs/M3_NAVIGATION_ACCEPTANCE.md`](docs/M3_NAVIGATION_ACCEPTANCE.md)。
 该入口只接受 SIM/UDP 配置，不会连接实机串口。
 
+`planned/predicted/observed` 版本化轨迹、SITL 自动记录、真机 GPS CSV 回放、虚实
+误差指标和非飞控证据 API 见
+[`docs/TRAJECTORY_EVIDENCE.md`](docs/TRAJECTORY_EVIDENCE.md)。轨迹证据接口不会发送
+飞行命令。
+
 ## UAV3 实机地面站
 
 Windows 启动命令：
@@ -160,7 +165,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `224 passed`。提交前还应运行 JavaScript 语法检查和
+当前完整测试基线为 `236 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 ## 安全边界

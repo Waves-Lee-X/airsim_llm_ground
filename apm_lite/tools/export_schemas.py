@@ -16,6 +16,10 @@ if str(SRC) not in sys.path:
 from aeromind_apm_lite.common.config import FleetConfig  # noqa: E402
 from aeromind_apm_lite.common.coordinates import GeoReference  # noqa: E402
 from aeromind_apm_lite.common.contracts.codec import wire_message_json_schema  # noqa: E402
+from aeromind_apm_lite.common.trajectory import (  # noqa: E402
+    TrajectoryComparisonReport,
+    TrajectoryEvidence,
+)
 
 
 def rendered_schema() -> str:
@@ -25,6 +29,10 @@ def rendered_schema() -> str:
         "schemas": {
             "fleet_config": FleetConfig.model_json_schema(),
             "georeference": GeoReference.model_json_schema(),
+            "trajectory_comparison_report": (
+                TrajectoryComparisonReport.model_json_schema()
+            ),
+            "trajectory_evidence": TrajectoryEvidence.model_json_schema(),
             "wire_message": wire_message_json_schema(),
         },
     }

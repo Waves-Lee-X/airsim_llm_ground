@@ -577,6 +577,9 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 已覆盖正常闭环以及 GPS 丢失、HDOP 超限、EKF 异常、任务过期和 P9 失联后的
 HOLD/LAND 收敛。当前 `8000` 为三号真机而非 SITL，未发送飞行命令；实际 AirSim
 基线和五份故障注入报告仍待按 `M3_NAVIGATION_ACCEPTANCE.md` 执行。
+版本化 `planned/predicted/observed` 证据、不可变内容哈希、SITL 自动记录、真机 GPS
+CSV 离线回放、三组虚实误差指标、CLI 和 Web API 已完成。草稿标定、缺少复现版本或
+未经外场确认的误差阈值只产生 `preview_only` 报告，不能误记为正式验收通过。
 
 交付：
 
@@ -730,7 +733,7 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 18. [x] 冻结首版实机定位路线：使用 APM GPS，不采购 AprilTag/UWB，不在当前阶段实现 VIO。
 19. [x] 实现并测试 `WGS84 <-> ENU/map <-> LOCAL_NED <-> AirSim NED` 坐标模块；覆盖郑州场地、经度换日线、任意 Home、非法数值和完整虚实往返，当前全量基线为 `199 passed`。
 20. [x] 增加场地 `GeoReference` 配置、Web 标定表单、版本哈希和坐标往返报告；草稿可用于仿真预览，正式版本同 ID 禁止改写，当前全量基线为 `209 passed`。
-21. [ ] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。软件执行器、HDOP/EKF/P9 门禁、五类观察层注入和自动报告入口已完成，当前全量基线为 `224 passed`；待操作者启动 UE/SITL 后生成一份基线和五份故障飞行报告再勾选。
+21. [ ] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。软件执行器、HDOP/EKF/P9 门禁、五类观察层注入和自动报告入口已完成，当前全量基线为 `236 passed`；待操作者启动 UE/SITL 后生成一份基线和五份故障飞行报告再勾选。planned/predicted SITL 自动记录、observed GPS CSV 回放、证据哈希、虚实误差报告和 API 已完成；该软件进展不替代上述飞行报告。
 22. [ ] 外场条件具备后，完成静态 GPS、场地标定、单机低空、RC/failsafe 和安全间距验收。
 23. [ ] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent；实机写操作继续经过人工确认和白名单。
 

@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,11 @@ from aeromind_apm_lite.common.config import (
     load_fleet_config,
 )
 from aeromind_apm_lite.common.mission import MissionState
+from aeromind_apm_lite.common.coordinates import load_georeference
+from aeromind_apm_lite.common.trajectory import (
+    ArtifactVersions,
+    write_evidence_file,
+)
 from aeromind_apm_lite.onboard import (
     ApmLink,
     NavigationFailureCode,
@@ -32,6 +38,7 @@ from .fault_injection import (
     NavigationFaultInjector,
     NavigationFaultType,
 )
+from .trajectory_recording import NavigationTrajectoryRecorder
 
 
 EXPECTED_FAILURES = {
@@ -95,7 +102,20 @@ async def run_navigation_acceptance(
     plan: NavigationMissionPlan,
     *,
     fault: NavigationFaultType | None = None,
+    trajectory_recorder: NavigationTrajectoryRecorder | None = None,
+    trajectory_evidence_dir: Path | None = None,
 ) -> dict[str, Any]:
+    if trajectory_recorder is not None:
+        if trajectory_evidence_dir is None:
+            raise NavigationAcceptanceError(
+                "trajectory_evidence_dir is required when recording evidence"
+            )
+        if not trajectory_evidence_dir.is_absolute():
+            raise NavigationAcceptanceError("trajectory evidence directory must be absolute")
+    elif trajectory_evidence_dir is not None:
+        raise NavigationAcceptanceError(
+            "trajectory_recorder is required with trajectory_evidence_dir"
+        )
     transport = PymavlinkTransport(vehicle.fcu)
     link = ApmLink.from_vehicle_config(transport, vehicle)
     injector = (
@@ -103,16 +123,32 @@ async def run_navigation_acceptance(
         if fault is not None
         else None
     )
+
+    def observation_filter(phase, observation):
+        if trajectory_recorder is not None:
+            trajectory_recorder.observation_filter(phase, observation)
+        return injector(phase, observation) if injector is not None else observation
+
     await link.start()
     try:
         runner = NavigationMissionRunner(
             link,
             safety_limits=None,
-            observation_filter=injector,
+            observation_filter=(
+                observation_filter
+                if injector is not None or trajectory_recorder is not None
+                else None
+            ),
             preflight_timeout_s=30.0,
             preflight_hold_s=1.0,
         )
         result = await runner.run(plan)
+        if trajectory_recorder is not None:
+            trajectory_recorder.record_snapshot(
+                "landed",
+                link.telemetry_snapshot(),
+                time.monotonic(),
+            )
     finally:
         await link.stop()
 
@@ -121,7 +157,7 @@ async def run_navigation_acceptance(
         result.failure_code,
         fault,
     )
-    return {
+    payload = {
         "gate": "M3_UNIFIED_NAVIGATION_SITL",
         "passed": passed,
         "vehicle_id": vehicle.vehicle_id,
@@ -141,6 +177,25 @@ async def run_navigation_acceptance(
         },
         "result": navigation_mission_result_dict(result),
     }
+    if trajectory_recorder is not None:
+        assert trajectory_evidence_dir is not None
+        planned, predicted = trajectory_recorder.finalize()
+        scenario = fault.value if fault is not None else "baseline"
+        evidence_summary: dict[str, Any] = {}
+        for evidence in (planned, predicted):
+            output = trajectory_evidence_dir / (
+                f"{plan.mission_id}-{scenario}-{evidence.role.value}.json"
+            )
+            write_evidence_file(output, evidence)
+            evidence_summary[evidence.role.value] = {
+                "path": str(output),
+                "evidence_id": str(evidence.evidence_id),
+                "evidence_hash": evidence.evidence_hash,
+                "sample_count": len(evidence.samples),
+                "preview_only": evidence.preview_only,
+            }
+        payload["trajectory_evidence"] = evidence_summary
+    return payload
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -166,6 +221,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         choices=tuple(fault.value for fault in NavigationFaultType),
     )
     parser.add_argument("--report", type=Path)
+    parser.add_argument(
+        "--georeference-config",
+        type=Path,
+        help="Complete GeoReference used to normalize optional trajectory evidence.",
+    )
+    parser.add_argument(
+        "--trajectory-evidence-dir",
+        type=Path,
+        help="Absolute output directory for planned and predicted evidence.",
+    )
+    parser.add_argument("--producer-version", default="aeromind-apm-lite-working-tree")
+    parser.add_argument("--software-commit")
+    parser.add_argument("--arducopter-version")
+    parser.add_argument("--parameter-hash")
+    parser.add_argument("--scene-hash")
     return parser
 
 
@@ -184,8 +254,34 @@ def main(argv: list[str] | None = None) -> int:
             goto_timeout_s=args.goto_timeout_s,
         )
         fault = NavigationFaultType(args.fault) if args.fault else None
+        if (args.georeference_config is None) != (
+            args.trajectory_evidence_dir is None
+        ):
+            raise NavigationAcceptanceError(
+                "--georeference-config and --trajectory-evidence-dir must be used together"
+            )
+        recorder = None
+        if args.georeference_config is not None:
+            recorder = NavigationTrajectoryRecorder(
+                load_georeference(args.georeference_config),
+                plan,
+                vehicle_id=vehicle.vehicle_id,
+                producer_version=args.producer_version,
+                versions=ArtifactVersions(
+                    software_commit=args.software_commit,
+                    arducopter_version=args.arducopter_version,
+                    parameter_hash=args.parameter_hash,
+                    scene_hash=args.scene_hash,
+                ),
+            )
         payload = asyncio.run(
-            run_navigation_acceptance(vehicle, plan, fault=fault)
+            run_navigation_acceptance(
+                vehicle,
+                plan,
+                fault=fault,
+                trajectory_recorder=recorder,
+                trajectory_evidence_dir=args.trajectory_evidence_dir,
+            )
         )
         if args.report is not None:
             _write_report(args.report, payload)

@@ -68,6 +68,18 @@ PYTHONPATH=src python3 -m \
 - LAND 后有物理落地证据；
 - `failure_code=null` 且没有恢复步骤。
 
+需要同时自动保存 `planned/predicted` 轨迹时，增加完整 GeoReference 和绝对输出目录：
+
+```bash
+  --georeference-config "$PWD/configs/calibration/venue.yaml" \
+  --trajectory-evidence-dir /tmp/aeromind-m3-trajectory \
+  --software-commit 8605422 \
+  --arducopter-version 4.7.0
+```
+
+证据记录发生在故障观察层之前，不会被软件故障注入修改。文件结构、GPS 真机日志
+回放和误差报告命令见 [`TRAJECTORY_EVIDENCE.md`](TRAJECTORY_EVIDENCE.md)。
+
 ## 4. 软件故障注入
 
 每次测试前确认 SITL 已落地并加锁，一次只运行一种故障：
@@ -95,7 +107,8 @@ ArduPilot 内部传感器或参数，报告固定写明
 
 2026-07-30 收尾检查时，本机 `8000` 连接的是三号真机 `real_serial`，不是 SITL，
 且室内 GPS 为 `FIX 1`。因此本轮没有执行任何飞行命令。自动化假飞控测试已经覆盖
-正常六阶段和五类故障收敛；真实 AirSim/SITL 飞行证据仍需在操作者启动仿真后生成。
+正常六阶段和五类故障收敛；planned/predicted 自动记录、observed GPS CSV 回放和
+虚实误差报告也已完成。真实 AirSim/SITL 飞行证据仍需在操作者启动仿真后生成。
 
 ## 6. 安全边界
 

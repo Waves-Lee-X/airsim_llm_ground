@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any, AsyncIterator
+from uuid import UUID
 from fastapi import Body, FastAPI, HTTPException, Response, WebSocket
 from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -29,6 +30,13 @@ from aeromind_apm_lite.common.coordinates import (
     GeoReferenceConflict,
     GeoReferenceError,
     GeoReferenceStore,
+)
+from aeromind_apm_lite.common.trajectory import (
+    TrajectoryEvidence,
+    TrajectoryEvidenceError,
+    TrajectoryEvidenceStore,
+    TrajectoryThresholds,
+    compare_trajectories,
 )
 from aeromind_apm_lite.ground.server import VehicleNotConnected
 from aeromind_apm_lite.onboard.navigation_mission import (
@@ -98,6 +106,13 @@ class MissionParseRequest(BaseModel):
     instruction: str = Field(min_length=1, max_length=4_000)
 
 
+class TrajectoryReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_ids: tuple[UUID, ...] = Field(min_length=2, max_length=3)
+    thresholds: TrajectoryThresholds = Field(default_factory=TrajectoryThresholds)
+
+
 class EventBroker:
     """Bounded fan-out for browser clients; no vehicle credentials cross it."""
 
@@ -159,6 +174,7 @@ class BrowserGateway:
         camera: CameraBridge | None = None,
         semantic: SemanticService | None = None,
         georeference: GeoReferenceStore | None = None,
+        trajectory_evidence: TrajectoryEvidenceStore | None = None,
         telemetry_interval_s: float = 0.2,
     ) -> None:
         if telemetry_interval_s <= 0.0:
@@ -167,6 +183,9 @@ class BrowserGateway:
         self.camera = camera
         self.semantic = semantic or SemanticService()
         self.georeference = georeference or GeoReferenceStore()
+        self.trajectory_evidence = trajectory_evidence or TrajectoryEvidenceStore(
+            Path.home() / ".aeromind" / "trajectory-evidence"
+        )
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
@@ -246,6 +265,73 @@ class BrowserGateway:
         payload = self.georeference_payload()
         await self.events.publish("georeference_updated", payload)
         return payload
+
+    async def save_trajectory_evidence(
+        self,
+        evidence: TrajectoryEvidence,
+    ) -> dict[str, Any]:
+        reference = self.georeference.value
+        if evidence.frame_calibration_id != reference.calibration_id:
+            raise HTTPException(
+                status_code=409,
+                detail="trajectory calibration_id does not match the active GeoReference",
+            )
+        if evidence.frame_calibration_hash != reference.config_hash:
+            raise HTTPException(
+                status_code=409,
+                detail="trajectory calibration hash does not match the active GeoReference",
+            )
+        if evidence.calibration_status != reference.status:
+            raise HTTPException(
+                status_code=409,
+                detail="trajectory calibration status does not match the active GeoReference",
+            )
+        try:
+            saved = await asyncio.to_thread(self.trajectory_evidence.save, evidence)
+        except TrajectoryEvidenceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        payload = saved.public_payload()
+        await self.events.publish(
+            "trajectory_evidence_saved",
+            {
+                "evidence_id": str(saved.evidence_id),
+                "evidence_hash": saved.evidence_hash,
+                "role": saved.role.value,
+            },
+        )
+        return payload
+
+    async def load_trajectory_evidence(
+        self,
+        evidence_id: UUID,
+    ) -> dict[str, Any]:
+        try:
+            evidence = await asyncio.to_thread(
+                self.trajectory_evidence.load,
+                evidence_id,
+            )
+            return evidence.public_payload()
+        except TrajectoryEvidenceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    async def trajectory_report(
+        self,
+        request: TrajectoryReportRequest,
+    ) -> dict[str, Any]:
+        if len(set(request.evidence_ids)) != len(request.evidence_ids):
+            raise HTTPException(status_code=422, detail="evidence_ids must be unique")
+
+        def build_report() -> dict[str, Any]:
+            evidence = [
+                self.trajectory_evidence.load(evidence_id)
+                for evidence_id in request.evidence_ids
+            ]
+            return compare_trajectories(evidence, request.thresholds).public_payload()
+
+        try:
+            return await asyncio.to_thread(build_report)
+        except TrajectoryEvidenceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     async def available_serial_ports(self) -> list[dict[str, Any]]:
         def enumerate_ports() -> list[dict[str, Any]]:
@@ -843,12 +929,17 @@ def _default_georeference_path() -> Path:
     return Path(__file__).resolve().parents[4] / "configs/calibration/venue.yaml"
 
 
+def _default_trajectory_evidence_dir() -> Path:
+    return Path.home() / ".aeromind" / "trajectory-evidence"
+
+
 def create_app(
     runtime: ManualRuntime | None = None,
     *,
     camera: CameraBridge | None = None,
     semantic: SemanticService | None = None,
     georeference: GeoReferenceStore | None = None,
+    trajectory_evidence: TrajectoryEvidenceStore | None = None,
     static_dir: str | Path | None = None,
 ) -> FastAPI:
     runtime = runtime or ManualRuntime()
@@ -857,6 +948,7 @@ def create_app(
         camera=camera,
         semantic=semantic,
         georeference=georeference,
+        trajectory_evidence=trajectory_evidence,
     )
 
     @asynccontextmanager
@@ -895,6 +987,32 @@ def create_app(
         payload: GeoReference,
     ) -> dict[str, Any]:
         return await gateway.update_georeference(payload)
+
+    @app.get("/api/trajectory/evidence")
+    async def trajectory_evidence_list() -> dict[str, Any]:
+        try:
+            items = await asyncio.to_thread(
+                gateway.trajectory_evidence.list_summaries
+            )
+        except TrajectoryEvidenceError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"items": items}
+
+    @app.post("/api/trajectory/evidence", status_code=201)
+    async def save_trajectory_evidence(
+        payload: TrajectoryEvidence,
+    ) -> dict[str, Any]:
+        return await gateway.save_trajectory_evidence(payload)
+
+    @app.get("/api/trajectory/evidence/{evidence_id}")
+    async def get_trajectory_evidence(evidence_id: UUID) -> dict[str, Any]:
+        return await gateway.load_trajectory_evidence(evidence_id)
+
+    @app.post("/api/trajectory/reports")
+    async def create_trajectory_report(
+        payload: TrajectoryReportRequest,
+    ) -> dict[str, Any]:
+        return await gateway.trajectory_report(payload)
 
     @app.get("/api/serial/ports")
     async def serial_ports() -> dict[str, Any]:
@@ -1119,6 +1237,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Active venue GeoReference YAML path.",
     )
     parser.add_argument(
+        "--trajectory-evidence-dir",
+        type=Path,
+        default=_default_trajectory_evidence_dir(),
+        help="Directory for immutable planned/predicted/observed evidence.",
+    )
+    parser.add_argument(
         "--airsim-host",
         help=(
             "AirSim RPC host; defaults to the Windows gateway detected from "
@@ -1210,6 +1334,7 @@ def main(argv: list[str] | None = None) -> int:
         runtime,
         camera=camera,
         georeference=georeference,
+        trajectory_evidence=TrajectoryEvidenceStore(args.trajectory_evidence_dir),
         static_dir=args.static_dir,
     )
     import uvicorn

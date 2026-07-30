@@ -541,6 +541,648 @@
       "title": "GeoReference",
       "type": "object"
     },
+    "trajectory_comparison_report": {
+      "$defs": {
+        "TrajectoryPairMetrics": {
+          "additionalProperties": false,
+          "properties": {
+            "compared_role": {
+              "$ref": "#/$defs/TrajectoryRole"
+            },
+            "endpoint_3d_error_m": {
+              "minimum": 0.0,
+              "title": "Endpoint 3D Error M",
+              "type": "number"
+            },
+            "horizontal_rmse_m": {
+              "minimum": 0.0,
+              "title": "Horizontal Rmse M",
+              "type": "number"
+            },
+            "maximum_3d_error_m": {
+              "minimum": 0.0,
+              "title": "Maximum 3D Error M",
+              "type": "number"
+            },
+            "overlap_end_ms": {
+              "minimum": 0,
+              "title": "Overlap End Ms",
+              "type": "integer"
+            },
+            "overlap_start_ms": {
+              "minimum": 0,
+              "title": "Overlap Start Ms",
+              "type": "integer"
+            },
+            "p95_3d_error_m": {
+              "minimum": 0.0,
+              "title": "P95 3D Error M",
+              "type": "number"
+            },
+            "reference_role": {
+              "$ref": "#/$defs/TrajectoryRole"
+            },
+            "sample_count": {
+              "minimum": 2,
+              "title": "Sample Count",
+              "type": "integer"
+            },
+            "three_dimensional_rmse_m": {
+              "minimum": 0.0,
+              "title": "Three Dimensional Rmse M",
+              "type": "number"
+            },
+            "vertical_rmse_m": {
+              "minimum": 0.0,
+              "title": "Vertical Rmse M",
+              "type": "number"
+            },
+            "within_thresholds": {
+              "title": "Within Thresholds",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "reference_role",
+            "compared_role",
+            "sample_count",
+            "overlap_start_ms",
+            "overlap_end_ms",
+            "horizontal_rmse_m",
+            "vertical_rmse_m",
+            "three_dimensional_rmse_m",
+            "maximum_3d_error_m",
+            "p95_3d_error_m",
+            "endpoint_3d_error_m",
+            "within_thresholds"
+          ],
+          "title": "TrajectoryPairMetrics",
+          "type": "object"
+        },
+        "TrajectoryRole": {
+          "enum": [
+            "planned",
+            "predicted",
+            "observed"
+          ],
+          "title": "TrajectoryRole",
+          "type": "string"
+        },
+        "TrajectoryThresholds": {
+          "additionalProperties": false,
+          "properties": {
+            "endpoint_3d_error_m": {
+              "default": 5.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 200.0,
+              "title": "Endpoint 3D Error M",
+              "type": "number"
+            },
+            "horizontal_rmse_m": {
+              "default": 3.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 100.0,
+              "title": "Horizontal Rmse M",
+              "type": "number"
+            },
+            "maximum_3d_error_m": {
+              "default": 8.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 200.0,
+              "title": "Maximum 3D Error M",
+              "type": "number"
+            },
+            "sample_period_ms": {
+              "default": 200,
+              "maximum": 10000,
+              "minimum": 20,
+              "title": "Sample Period Ms",
+              "type": "integer"
+            },
+            "validated_for_venue": {
+              "default": false,
+              "title": "Validated For Venue",
+              "type": "boolean"
+            },
+            "vertical_rmse_m": {
+              "default": 2.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 100.0,
+              "title": "Vertical Rmse M",
+              "type": "number"
+            }
+          },
+          "title": "TrajectoryThresholds",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_passed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Acceptance Passed"
+        },
+        "comparisons": {
+          "items": {
+            "$ref": "#/$defs/TrajectoryPairMetrics"
+          },
+          "title": "Comparisons",
+          "type": "array"
+        },
+        "evidence_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/TrajectoryRole"
+          },
+          "title": "Evidence Hashes",
+          "type": "object"
+        },
+        "frame_calibration_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Frame Calibration Hash",
+          "type": "string"
+        },
+        "frame_calibration_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Frame Calibration Id",
+          "type": "string"
+        },
+        "generated_at_utc": {
+          "format": "date-time",
+          "title": "Generated At Utc",
+          "type": "string"
+        },
+        "limitations": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "metrics_within_thresholds": {
+          "title": "Metrics Within Thresholds",
+          "type": "boolean"
+        },
+        "mission_id": {
+          "format": "uuid",
+          "title": "Mission Id",
+          "type": "string"
+        },
+        "preview_only": {
+          "title": "Preview Only",
+          "type": "boolean"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "report_id": {
+          "format": "uuid",
+          "title": "Report Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/TrajectoryThresholds"
+        },
+        "vehicle_id": {
+          "maximum": 255,
+          "minimum": 1,
+          "title": "Vehicle Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mission_id",
+        "vehicle_id",
+        "frame_calibration_id",
+        "frame_calibration_hash",
+        "evidence_hashes",
+        "thresholds",
+        "comparisons",
+        "ready",
+        "preview_only",
+        "metrics_within_thresholds",
+        "acceptance_passed"
+      ],
+      "title": "TrajectoryComparisonReport",
+      "type": "object"
+    },
+    "trajectory_evidence": {
+      "$defs": {
+        "ArtifactVersions": {
+          "additionalProperties": false,
+          "description": "Versions needed to reproduce one trajectory source.",
+          "properties": {
+            "arducopter_version": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Arducopter Version"
+            },
+            "mission_plan_hash": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mission Plan Hash"
+            },
+            "parameter_hash": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parameter Hash"
+            },
+            "scene_hash": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Scene Hash"
+            },
+            "software_commit": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Software Commit"
+            }
+          },
+          "title": "ArtifactVersions",
+          "type": "object"
+        },
+        "CalibrationStatus": {
+          "enum": [
+            "draft",
+            "surveyed"
+          ],
+          "title": "CalibrationStatus",
+          "type": "string"
+        },
+        "GpsQuality": {
+          "additionalProperties": false,
+          "properties": {
+            "fix_type": {
+              "anyOf": [
+                {
+                  "maximum": 6,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Fix Type"
+            },
+            "hdop": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hdop"
+            },
+            "satellites_visible": {
+              "anyOf": [
+                {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Satellites Visible"
+            }
+          },
+          "title": "GpsQuality",
+          "type": "object"
+        },
+        "TrajectoryRole": {
+          "enum": [
+            "planned",
+            "predicted",
+            "observed"
+          ],
+          "title": "TrajectoryRole",
+          "type": "string"
+        },
+        "TrajectorySample": {
+          "additionalProperties": false,
+          "properties": {
+            "gps_quality": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GpsQuality"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "observed_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Observed At Utc"
+            },
+            "phase": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Phase"
+            },
+            "position_map_m": {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "title": "Position Map M",
+              "type": "array"
+            },
+            "source_wgs84": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Wgs84Position"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "time_from_start_ms": {
+              "maximum": 86400000,
+              "minimum": 0,
+              "title": "Time From Start Ms",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "time_from_start_ms",
+            "position_map_m"
+          ],
+          "title": "TrajectorySample",
+          "type": "object"
+        },
+        "TrajectorySource": {
+          "enum": [
+            "mission_plan",
+            "airsim",
+            "sitl",
+            "real_telemetry",
+            "gps_log_replay"
+          ],
+          "title": "TrajectorySource",
+          "type": "string"
+        },
+        "Wgs84Position": {
+          "additionalProperties": false,
+          "properties": {
+            "altitude_m": {
+              "maximum": 20000.0,
+              "minimum": -1000.0,
+              "title": "Altitude M",
+              "type": "number"
+            },
+            "latitude_deg": {
+              "maximum": 90.0,
+              "minimum": -90.0,
+              "title": "Latitude Deg",
+              "type": "number"
+            },
+            "longitude_deg": {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "title": "Longitude Deg",
+              "type": "number"
+            }
+          },
+          "required": [
+            "latitude_deg",
+            "longitude_deg",
+            "altitude_m"
+          ],
+          "title": "Wgs84Position",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "One immutable planned, predicted or observed trajectory in map metres.",
+      "properties": {
+        "calibration_status": {
+          "$ref": "#/$defs/CalibrationStatus"
+        },
+        "coordinate_frame": {
+          "const": "map",
+          "default": "map",
+          "title": "Coordinate Frame",
+          "type": "string"
+        },
+        "created_at_utc": {
+          "format": "date-time",
+          "title": "Created At Utc",
+          "type": "string"
+        },
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "frame_calibration_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Frame Calibration Hash",
+          "type": "string"
+        },
+        "frame_calibration_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Frame Calibration Id",
+          "type": "string"
+        },
+        "mission_id": {
+          "format": "uuid",
+          "title": "Mission Id",
+          "type": "string"
+        },
+        "preview_only": {
+          "default": true,
+          "title": "Preview Only",
+          "type": "boolean"
+        },
+        "producer_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Producer Version",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TrajectoryRole"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/TrajectorySample"
+          },
+          "maxItems": 200000,
+          "minItems": 2,
+          "title": "Samples",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/TrajectorySource"
+        },
+        "source_metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Source Metadata",
+          "type": "object"
+        },
+        "started_at_utc": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At Utc"
+        },
+        "vehicle_id": {
+          "maximum": 255,
+          "minimum": 1,
+          "title": "Vehicle Id",
+          "type": "integer"
+        },
+        "versions": {
+          "$ref": "#/$defs/ArtifactVersions"
+        }
+      },
+      "required": [
+        "mission_id",
+        "vehicle_id",
+        "role",
+        "source",
+        "frame_calibration_id",
+        "frame_calibration_hash",
+        "calibration_status",
+        "producer_version",
+        "samples"
+      ],
+      "title": "TrajectoryEvidence",
+      "type": "object"
+    },
     "wire_message": {
       "$defs": {
         "AckStatus": {
