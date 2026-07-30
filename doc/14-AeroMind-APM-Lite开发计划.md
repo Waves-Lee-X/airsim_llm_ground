@@ -575,8 +575,10 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 统一导航执行器已实现 `GUIDED -> ARM -> TAKEOFF -> GOTO -> HOLD -> LAND`，并持续
 检查 GPS 3D Fix、HDOP、EKF、Home、遥测新鲜度、任务期限和 P9 链路。假飞控测试
 已覆盖正常闭环以及 GPS 丢失、HDOP 超限、EKF 异常、任务过期和 P9 失联后的
-HOLD/LAND 收敛。当前 `8000` 为三号真机而非 SITL，未发送飞行命令；实际 AirSim
-基线和五份故障注入报告仍待按 `M3_NAVIGATION_ACCEPTANCE.md` 执行。
+HOLD/LAND 收敛。2026-07-30 已用 AirSim 1.8.1、UE 4.27 和 ArduCopter 4.7.0
+完成一份导航基线及五类故障注入，均按预期收敛到 `safety_hold -> recovery_land`；
+当前 `8000` 为三号真机而非 SITL，本次软件开发未向真机发送飞行命令。外场
+GeoReference、真机轨迹镜像、RC/failsafe 和低空验收仍待第 22 项执行。
 版本化 `planned/predicted/observed` 证据、不可变内容哈希、SITL 自动记录、真机 GPS
 CSV 离线回放、三组虚实误差指标、CLI 和 Web API 已完成。草稿标定、缺少复现版本或
 未经外场确认的误差阈值只产生 `preview_only` 报告，不能误记为正式验收通过。
@@ -593,8 +595,10 @@ CSV 离线回放、三组虚实误差指标、CLI 和 Web API 已完成。草稿
 ### M4：LLM/VLM 服务化
 
 进度：已完成不依赖 ROS 的最新 RGB 帧 VLM 调用、任务语义草案、JSON 降级解析、
-Web 结构化结果/模型原文展示和 `preview_only` 安全隔离。真实模型准确率、多帧证据、
-OpenCV 交叉验证和证据持久化尚未验收。
+Web 结构化结果/模型原文展示和 `preview_only` 安全隔离；Mission Agent 已支持多轮
+对话、实时飞机状态上下文、受控原子工具草案、确认时二次门禁，以及接入现有命令
+证据链。模型不能直接执行飞行命令，GOTO、编队、搜索和路径规划仍被确定性阻断。
+真实模型准确率、多帧证据、OpenCV 交叉验证和证据持久化尚未验收。
 
 交付：
 
@@ -735,7 +739,7 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 20. [x] 增加场地 `GeoReference` 配置、Web 标定表单、版本哈希和坐标往返报告；草稿可用于仿真预览，正式版本同 ID 禁止改写，当前全量基线为 `209 passed`。
 21. [x] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。2026-07-30 已用 AirSim 1.8.1、UE 4.27 和 ArduCopter 4.7.0 完成一份基线及 `gps_loss`、`hdop_exceeded`、`ekf_failure`、`mission_expired`、`ground_link_loss` 五份故障报告，五类故障均完成 `safety_hold -> recovery_land`。最终证据绑定提交 `e844420`，保存在 `D:\AirSim\aeromind-apm-lite-m3\run-20260730-r3`；planned/predicted 终点三维误差为 `0.777 m`，但场地标定仍为 `draft/preview_only`。当前全量基线为 `237 passed`；该项不替代第 22 项外场验收。
 22. [ ] 外场条件具备后，完成静态 GPS、场地标定、单机低空、RC/failsafe 和安全间距验收。
-23. [ ] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent；实机写操作继续经过人工确认和白名单。
+23. [x] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent。2026-07-30 已完成内存多轮会话、遥测/P9/FCU/白名单/视觉/场地标定上下文注入、六种原子动作草案、120 秒单次确认票据、确认时二次门禁，以及接入原有 ACK/物理完成证据链；GOTO、编队、搜索和路径规划继续被确定性阻断，实机白名单仍只有 ARM/DISARM。Web 已提供对话、阻断原因、人工确认和取消操作，说明见 `apm_lite/docs/MISSION_AGENT.md`，当前全量基线为 `244 passed`。
 
 ## 18. 后续里程碑必须确认的外部条件
 

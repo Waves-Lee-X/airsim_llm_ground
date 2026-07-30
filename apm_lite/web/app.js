@@ -26,6 +26,7 @@ const state = {
   track: [],
   commandRows: [],
   pendingCommand: null,
+  pendingAgentDraft: null,
   lastTelemetryAt: null,
   cameraTimer: null,
   cameraStreamUrl: null,
@@ -36,6 +37,9 @@ const state = {
   semanticView: "structured",
   semanticLatest: null,
   semanticResults: { vision: null, mission: null },
+  agentSessionId: null,
+  agentDraft: null,
+  agentReplyKeys: new Set(),
   georeference: null,
   geoApplying: false,
 };
@@ -64,6 +68,10 @@ function cacheElements() {
     "visionWorkspace", "missionWorkspace", "visionFrameState", "visionRequestState",
     "missionRequestState", "missionSummary", "semanticResultTitle",
     "semanticConfidenceBar", "semanticRiskCell",
+    "agentVehicleState", "agentLinkState", "agentGpsState",
+    "agentPermissionState", "resetAgentSession", "agentConversation",
+    "agentDraft", "agentDraftAction", "agentDraftStatus",
+    "agentDraftBlockers", "cancelAgentDraft", "confirmAgentDraft",
     "runtimeLabel", "linkDiagnostics", "lastUpdate",
     "p9Badge", "agentBadge",
     "confirmDialog", "confirmTitle", "confirmText", "confirmVehicle",
@@ -321,7 +329,8 @@ function stopCameraStream() {
 function renderSemanticStatus(payload) {
   const semantic = payload && typeof payload === "object" ? payload : {};
   const visionAvailable = semantic.vision_available === true;
-  const missionAvailable = semantic.mission_parser_available === true;
+  const missionAvailable = semantic.agent_available === true
+    || semantic.mission_parser_available === true;
   const busy = semantic.busy === true || state.semanticBusy;
   const available = visionAvailable || missionAvailable;
   elements.vlmBadge.className = `camera-badge ${available ? busy ? "offline" : "online" : "unavailable"}`;
@@ -367,7 +376,7 @@ function setSemanticMode(mode) {
     button.setAttribute("aria-selected", String(active));
   });
   state.semanticLatest = state.semanticResults[mode];
-  elements.semanticResultTitle.textContent = mode === "vision" ? "识别结果" : "任务草案";
+  elements.semanticResultTitle.textContent = mode === "vision" ? "识别结果" : "Agent 状态";
   const current = state.semanticLatest;
   elements.semanticLatency.textContent = current
     ? `${current.model || (mode === "vision" ? "VLM" : "LLM")} · ${fixed(current.latency_ms, 0)} ms`
@@ -380,7 +389,7 @@ function renderSemanticResult() {
   if (!payload) {
     const empty = document.createElement("span");
     empty.className = "semantic-empty";
-    empty.textContent = state.semanticMode === "vision" ? "尚无视觉识别结果" : "尚无任务解析结果";
+    empty.textContent = state.semanticMode === "vision" ? "尚无视觉识别结果" : "尚无 Agent 对话结果";
     elements.semanticResult.replaceChildren(empty);
     return;
   }
@@ -401,6 +410,15 @@ function renderSemanticResult() {
       semanticResultRow("建议", result.suggestion),
       semanticResultRow("任务关联", result.mission_relevance),
       semanticResultRow("格式", result.format_warning || "JSON 已校验"),
+    );
+  } else if (payload.kind === "mission_agent_reply") {
+    list.append(
+      semanticResultRow("状态摘要", payload.state_summary),
+      semanticResultRow("风险等级", payload.risk_level),
+      semanticResultRow("待确认问题", payload.questions),
+      semanticResultRow("工具草案", payload.draft?.action),
+      semanticResultRow("门禁结果", payload.draft?.blockers),
+      semanticResultRow("执行策略", "operator_confirmation_required"),
     );
   } else {
     const plan = payload.plan || {};
@@ -478,6 +496,201 @@ function renderMissionSemantic(payload) {
   }
 }
 
+function renderAgentContext() {
+  const telemetry = state.telemetry || {};
+  const health = telemetry.health || {};
+  const status = state.status || {};
+  const vehicleId = status.vehicle_id || state.selectedVehicleId || "--";
+  const vehicleLabel = vehicleId === "--" ? "--" : String(vehicleId).padStart(2, "0");
+  elements.agentVehicleState.textContent = `UAV ${vehicleLabel} · ${telemetry.armed ? "ARM" : "SAFE"}`;
+  const agentOnline = status.onboard_agent_connected
+    ?? status.agent_connected
+    ?? status.vehicle_connected
+    ?? false;
+  elements.agentLinkState.textContent = agentOnline && telemetry.fcu_link_ok === true
+    ? "P9 / FCU 正常"
+    : agentOnline ? "FCU 等待" : "Agent 离线";
+  const fix = finiteNumber(telemetry.gps_fix_type ?? health.gps_fix_type);
+  const hdop = finiteNumber(telemetry.gps_hdop ?? health.gps_hdop);
+  elements.agentGpsState.textContent = fix === null
+    ? "未知"
+    : `FIX ${fix}${hdop === null ? "" : ` · ${hdop.toFixed(2)}`}`;
+  const simulated = state.config?.commands_are_simulated === true;
+  const allowed = Array.isArray(status.allowed_commands) ? status.allowed_commands : [];
+  elements.agentPermissionState.textContent = simulated
+    ? "DEMO"
+    : allowed.length ? allowed.map((item) => COMMAND_LABELS[item] || item).join(" / ") : "只读";
+}
+
+function agentDraftStatusLabel(status) {
+  const labels = {
+    pending_confirmation: "等待人工确认",
+    blocked: "门禁阻断",
+    executing: "执行中",
+    completed: "已完成",
+    failed: "执行失败",
+    cancelled: "已取消",
+    expired: "已过期",
+  };
+  return labels[status] || status || "未知";
+}
+
+function renderAgentDraft(draft) {
+  state.agentDraft = draft || null;
+  if (!draft) {
+    elements.agentDraft.hidden = true;
+    return;
+  }
+  elements.agentDraft.hidden = false;
+  const label = COMMAND_LABELS[draft.action] || draft.action || "未知动作";
+  const altitude = finiteNumber(draft.arguments?.altitude_m);
+  elements.agentDraftAction.textContent = altitude === null
+    ? label
+    : `${label} ${altitude.toFixed(1)} m`;
+  elements.agentDraftStatus.textContent = agentDraftStatusLabel(draft.status);
+  elements.agentDraft.dataset.status = draft.status || "unknown";
+  elements.missionSummary.textContent = draft.reason || "Mission Agent 工具草案";
+  const blockers = Array.isArray(draft.blockers) ? draft.blockers : [];
+  elements.agentDraftBlockers.replaceChildren(...blockers.map((blocker) => {
+    const item = document.createElement("span");
+    item.textContent = blocker;
+    return item;
+  }));
+  elements.agentDraftBlockers.hidden = blockers.length === 0;
+  elements.confirmAgentDraft.disabled = draft.executable !== true;
+  elements.cancelAgentDraft.disabled = draft.status !== "pending_confirmation";
+}
+
+function createAgentMessage(role, content, payload = null) {
+  const row = document.createElement("div");
+  row.className = `agent-message ${role}`;
+  const heading = document.createElement("div");
+  const identity = document.createElement("strong");
+  identity.textContent = role === "user" ? "操作员" : role === "assistant" ? "Mission Agent" : "系统";
+  const meta = document.createElement("span");
+  meta.textContent = payload?.risk_level && payload.risk_level !== "unknown"
+    ? `风险 ${String(payload.risk_level).toUpperCase()}`
+    : "";
+  heading.append(identity, meta);
+  const text = document.createElement("p");
+  text.textContent = content || "--";
+  row.append(heading, text);
+  return row;
+}
+
+function appendAgentMessage(role, content, payload = null) {
+  const empty = elements.agentConversation.querySelector(".agent-empty");
+  if (empty) empty.remove();
+  elements.agentConversation.append(createAgentMessage(role, content, payload));
+  elements.agentConversation.scrollTop = elements.agentConversation.scrollHeight;
+}
+
+function renderAgentSession(session) {
+  elements.agentConversation.replaceChildren();
+  const turns = Array.isArray(session?.turns) ? session.turns : [];
+  turns.forEach((turn) => appendAgentMessage(turn.role, turn.content, turn.payload));
+  if (!turns.length) {
+    const empty = document.createElement("div");
+    empty.className = "agent-empty";
+    empty.textContent = "尚无对话";
+    elements.agentConversation.append(empty);
+  }
+  const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
+  if (latestAssistant) {
+    const payload = {
+      kind: "mission_agent_reply",
+      session_id: session.session_id,
+      created_at_utc: latestAssistant.created_at_utc,
+      reply: latestAssistant.content,
+      ...(latestAssistant.payload || {}),
+    };
+    state.semanticResults.mission = payload;
+    if (state.semanticMode === "mission") {
+      state.semanticLatest = payload;
+      elements.semanticResultTitle.textContent = "Agent 状态";
+      renderSemanticResult();
+    }
+  }
+  renderAgentDraft(session?.latest_draft || null);
+}
+
+function renderAgentReply(payload) {
+  if (!payload || payload.kind !== "mission_agent_reply") return;
+  const key = `${payload.session_id || "session"}:${payload.created_at_utc || payload.latency_ms}`;
+  if (state.agentReplyKeys.has(key)) return;
+  state.agentReplyKeys.add(key);
+  if (payload.user_message) appendAgentMessage("user", payload.user_message);
+  appendAgentMessage("assistant", payload.reply, {
+    risk_level: payload.risk_level,
+  });
+  renderAgentDraft(payload.draft || null);
+  state.semanticResults.mission = payload;
+  if (state.semanticMode === "mission") {
+    state.semanticLatest = payload;
+    elements.semanticLatency.textContent = `${payload.model || "LLM"} · ${fixed(payload.latency_ms, 0)} ms`;
+    elements.semanticResultTitle.textContent = "Agent 状态";
+    renderSemanticResult();
+  }
+  elements.missionRequestState.textContent = payload.draft
+    ? agentDraftStatusLabel(payload.draft.status)
+    : "回复完成";
+}
+
+function persistAgentSession(sessionId) {
+  state.agentSessionId = sessionId || null;
+  try {
+    if (sessionId) window.sessionStorage.setItem("aeromindAgentSession", sessionId);
+    else window.sessionStorage.removeItem("aeromindAgentSession");
+  } catch (_error) {
+    // Private browser sessions may disable sessionStorage.
+  }
+}
+
+async function createAgentSession() {
+  const session = await requestJson("/api/agent/sessions", { method: "POST" });
+  persistAgentSession(session.session_id);
+  state.agentReplyKeys.clear();
+  renderAgentSession(session);
+  elements.missionRequestState.textContent = "会话已就绪";
+  return session.session_id;
+}
+
+async function restoreAgentSession() {
+  let saved = null;
+  try {
+    saved = window.sessionStorage.getItem("aeromindAgentSession");
+  } catch (_error) {
+    saved = null;
+  }
+  if (!saved) {
+    await createAgentSession();
+    return;
+  }
+  try {
+    const session = await requestJson(`/api/agent/sessions/${saved}`);
+    persistAgentSession(session.session_id);
+    renderAgentSession(session);
+    elements.missionRequestState.textContent = "会话已恢复";
+  } catch (_error) {
+    persistAgentSession(null);
+    await createAgentSession();
+  }
+}
+
+async function resetAgentSession() {
+  const previous = state.agentSessionId;
+  persistAgentSession(null);
+  state.agentReplyKeys.clear();
+  if (previous) {
+    try {
+      await requestJson(`/api/agent/sessions/${previous}`, { method: "DELETE" });
+    } catch (_error) {
+      // A server restart already invalidates the in-memory session.
+    }
+  }
+  await createAgentSession();
+}
+
 function setSemanticBusy(busy) {
   state.semanticBusy = busy;
   renderSemanticStatus(state.status?.semantic || state.config?.semantic || {});
@@ -513,20 +726,102 @@ async function parseMission(event) {
     return;
   }
   setSemanticBusy(true);
-  elements.missionRequestState.textContent = "解析中...";
-  elements.semanticResult.textContent = "正在解析任务语义...";
+  elements.missionRequestState.textContent = "Agent 思考中...";
   try {
-    const payload = await requestJson("/api/semantic/mission/parse", {
+    const sessionId = state.agentSessionId || await createAgentSession();
+    const payload = await requestJson(`/api/agent/sessions/${sessionId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ instruction }),
+      body: JSON.stringify({ message: instruction }),
     });
-    renderMissionSemantic(payload);
+    renderAgentReply(payload);
+    elements.missionInstruction.value = "";
   } catch (error) {
     elements.missionRequestState.textContent = "请求失败";
-    elements.semanticResult.textContent = `任务解析失败：${error.message}`;
+    appendAgentMessage("system", `Agent 请求失败：${error.message}`);
   } finally {
     setSemanticBusy(false);
     await refreshSemanticStatus();
+  }
+}
+
+function showAgentDraftConfirmation() {
+  const draft = state.agentDraft;
+  if (!draft?.executable) return;
+  state.pendingCommand = null;
+  state.pendingAgentDraft = draft;
+  const label = COMMAND_LABELS[draft.action] || draft.action;
+  const altitude = finiteNumber(draft.arguments?.altitude_m);
+  elements.confirmTitle.textContent = `确认 Agent ${label}`;
+  elements.confirmText.textContent = altitude === null
+    ? `${draft.reason}。确认后将提交到现有飞行命令证据链。`
+    : `${draft.reason}。目标高度 ${altitude.toFixed(1)} m。`;
+  elements.confirmVehicle.textContent = `UAV ${draft.vehicle_id}`;
+  elements.confirmMode.textContent = String(state.config?.deployment_mode || "SIM").toUpperCase();
+  elements.confirmSubmit.textContent = "确认执行";
+  if (typeof elements.confirmDialog.showModal === "function") {
+    elements.confirmDialog.showModal();
+  } else if (window.confirm(elements.confirmText.textContent)) {
+    state.pendingAgentDraft = null;
+    void executeAgentDraft(draft);
+  } else {
+    state.pendingAgentDraft = null;
+  }
+}
+
+async function executeAgentDraft(draft) {
+  elements.confirmAgentDraft.disabled = true;
+  elements.cancelAgentDraft.disabled = true;
+  elements.missionRequestState.textContent = "执行中...";
+  try {
+    const payload = await requestJson(`/api/agent/drafts/${draft.draft_id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ confirmed: true }),
+    });
+    renderAgentDraft(payload.draft);
+    const command = payload.command_result || {};
+    const row = {
+      localId: command.command_id || draft.draft_id,
+      requestId: command.command_id,
+      command: draft.action,
+      label: COMMAND_LABELS[draft.action] || draft.action,
+      createdAt: new Date(),
+      application: "pending",
+      mavlink: "pending",
+      physical: "pending",
+      status: "running",
+      detail: draft.reason,
+    };
+    applyCommandResult(row, command);
+    state.commandRows.unshift(row);
+    state.commandRows = state.commandRows.slice(0, 100);
+    renderEvidence();
+    appendAgentMessage("system", command.successful
+      ? `${row.label}已完成，物理结果已确认。`
+      : `${row.label}未完成：${command.detail || "未知原因"}`);
+    elements.missionRequestState.textContent = command.successful ? "执行完成" : "执行失败";
+  } catch (error) {
+    elements.missionRequestState.textContent = "确认失败";
+    appendAgentMessage("system", `草案确认失败：${error.message}`);
+    try {
+      const session = await requestJson(`/api/agent/sessions/${state.agentSessionId}`);
+      renderAgentDraft(session.latest_draft);
+    } catch (_ignored) {
+      renderAgentDraft(state.agentDraft);
+    }
+  }
+}
+
+async function cancelAgentDraft() {
+  const draft = state.agentDraft;
+  if (!draft || draft.status !== "pending_confirmation") return;
+  try {
+    const payload = await requestJson(`/api/agent/drafts/${draft.draft_id}/cancel`, {
+      method: "POST",
+    });
+    renderAgentDraft(payload);
+    elements.missionRequestState.textContent = "草案已取消";
+  } catch (error) {
+    elements.missionRequestState.textContent = `取消失败：${error.message}`;
   }
 }
 
@@ -568,6 +863,7 @@ function renderStatus(payload) {
     setBadge(elements.fcuBadge, "offline", "FCU 离线");
   }
   updateControlState();
+  renderAgentContext();
 }
 
 function renderLinkDiagnostics(status) {
@@ -627,6 +923,7 @@ function renderTelemetry(telemetry) {
 
   appendTrackPoint(telemetry);
   updateControlState();
+  renderAgentContext();
 }
 
 function formatBattery(telemetry) {
@@ -801,6 +1098,7 @@ function showCommandConfirmation(command) {
     return;
   }
   state.pendingCommand = command;
+  state.pendingAgentDraft = null;
   elements.confirmTitle.textContent = `确认${label}`;
   const altitude = finiteNumber(elements.takeoffAltitude.value) || 3;
   elements.confirmText.textContent = command === "takeoff"
@@ -808,6 +1106,7 @@ function showCommandConfirmation(command) {
     : COMMAND_CONFIRMATIONS[command];
   elements.confirmVehicle.textContent = elements.vehicleName.textContent;
   elements.confirmMode.textContent = String(state.config?.deployment_mode || "SIM").toUpperCase();
+  elements.confirmSubmit.textContent = "确认发送";
   if (typeof elements.confirmDialog.showModal === "function") {
     elements.confirmDialog.showModal();
   } else if (window.confirm(elements.confirmText.textContent)) {
@@ -965,6 +1264,12 @@ function handleWebsocketMessage(event) {
     renderVisualSemantic(body);
   } else if (type === "mission_parse_result") {
     renderMissionSemantic(body);
+  } else if (type === "mission_agent_reply") {
+    renderAgentReply(body);
+  } else if (type === "mission_agent_draft_updated") {
+    renderAgentDraft(body);
+  } else if (type === "mission_agent_execution") {
+    renderAgentDraft(body.draft);
   } else if (type === "command_progress") {
     applyCommandProgress(body);
   } else if (type === "command_result") {
@@ -1396,12 +1701,17 @@ function bindEvents() {
   });
   elements.confirmSubmit.addEventListener("click", () => {
     const command = state.pendingCommand;
+    const draft = state.pendingAgentDraft;
     state.pendingCommand = null;
+    state.pendingAgentDraft = null;
     elements.confirmDialog.close();
-    if (command) void sendCommand(command);
+    if (draft) void executeAgentDraft(draft);
+    else if (command) void sendCommand(command);
   });
   elements.confirmDialog.addEventListener("close", () => {
     state.pendingCommand = null;
+    state.pendingAgentDraft = null;
+    elements.confirmSubmit.textContent = "确认发送";
   });
   elements.altitudeMinus.addEventListener("click", () => adjustAltitude(-1));
   elements.altitudePlus.addEventListener("click", () => adjustAltitude(1));
@@ -1449,6 +1759,13 @@ function bindEvents() {
   });
   elements.missionParseForm.addEventListener("submit", (event) => {
     void parseMission(event);
+  });
+  elements.resetAgentSession.addEventListener("click", () => {
+    void resetAgentSession();
+  });
+  elements.confirmAgentDraft.addEventListener("click", showAgentDraftConfirmation);
+  elements.cancelAgentDraft.addEventListener("click", () => {
+    void cancelAgentDraft();
   });
   elements.semanticTabs.forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -1499,6 +1816,7 @@ async function bootstrap() {
     }
     await refreshCameraStatus();
     await restoreSemanticResults();
+    await restoreAgentSession();
   } catch (error) {
     state.apiOnline = false;
     setBadge(elements.apiBadge, "offline", "地面站离线");

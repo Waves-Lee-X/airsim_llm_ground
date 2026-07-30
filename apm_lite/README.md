@@ -17,6 +17,7 @@ ROS 2、MAVROS、`px4_msgs` 或 PX4 Offboard。
 | M1.5 手动仿真 | 已通过 | 非 Blocks 场景、手动启动 UE/SITL、Web 控制、相机、LAND/RTL 闭环 |
 | M2 UAV3 基础链路 | 已打通 | V5+、树莓派、P9、D435i RGB、RTSP、Web 和 VLM 在线 |
 | M2 真机命令台架 | 待人工完成 | 机载只允许 ARM/DISARM；TAKEOFF/HOLD/LAND/RTL 继续禁用 |
+| Mission Agent | 软件已完成 | 连续对话、实时状态、受控原子工具草案、二次门禁和人工确认 |
 | 深度避障与多机任务 | 未验收 | D435i Depth/IR、路径规划、编队和寻物任务尚未进入实机授权 |
 
 2026-07-30 的 UAV3 在线状态为：
@@ -27,7 +28,8 @@ ROS 2、MAVROS、`px4_msgs` 或 PX4 Offboard。
 - D435i RGB 经 RTSP 到达 Web，Depth、双 IR 和 IMU 尚未接入 Lite；
 - 机载心跳上报 `command_output_enabled=true` 和
   `allowed_commands=["arm", "disarm"]`；
-- VLM 使用地面端兼容接口，任务解析固定为 `preview_only`，不能生成飞行命令。
+- VLM/LLM 使用地面端兼容接口；Mission Agent 只能生成受控草案，实机权限仍由
+  人工确认、地面门禁和机载白名单共同决定。
 
 ## 系统架构
 
@@ -150,11 +152,14 @@ AEROMIND_LLM_MODEL=qwen3-vl-plus
 
 ```text
 最新 RGB 帧 -> VLM -> 结构化结果与原始回复 -> Web 展示
-自然语言任务 -> 结构化任务草案 -> Web 展示
+自然语言消息 + 实时飞机状态 -> Mission Agent 回复 -> 受控工具草案
+受控工具草案 -> 代码门禁 -> 人工确认 -> 原有命令证据链
 ```
 
-视觉结果不会进入飞行命令队列，任务接口始终返回
-`execution_policy=preview_only`。
+视觉结果本身不会进入飞行命令队列。旧任务解析接口继续保持
+`execution_policy=preview_only`；Mission Agent 仅允许六种原子动作，并在人工确认时
+重新检查实时状态和机载白名单。详细说明见
+[`docs/MISSION_AGENT.md`](docs/MISSION_AGENT.md)。
 
 ## 本地验证
 
@@ -165,7 +170,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `237 passed`。提交前还应运行 JavaScript 语法检查和
+当前完整测试基线为 `244 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 ## 安全边界
@@ -174,4 +179,5 @@ python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 - `COMMAND_ACK=ACCEPTED` 不代表动作物理完成，必须继续检查新鲜遥测。
 - D435i RGB 在线不代表具备深度避障能力。
 - 没有完成场地标定、定位、RC/failsafe 和多机最小间距验收前，不得实飞编队。
-- VLM 只提供语义结果和任务草案，不直接控制飞控。
+- VLM/LLM 只提供语义结果和工具草案，不直接控制飞控；Mission Agent 确认接口也
+  不能绕过地面门禁、机载白名单或物理完成证据。

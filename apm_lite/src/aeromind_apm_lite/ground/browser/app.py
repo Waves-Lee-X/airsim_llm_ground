@@ -53,6 +53,14 @@ from .camera import (
     RtspCameraConfig,
 )
 from .runtime import ManualRuntime, ManualRuntimeConfig, ManualRuntimeMode
+from .mission_agent import (
+    AgentDraftBlocked,
+    AgentDraftConflict,
+    AgentDraftExpired,
+    AgentDraftNotFound,
+    AgentSessionNotFound,
+    MissionAgentService,
+)
 from .semantic import (
     SemanticBusy,
     SemanticService,
@@ -104,6 +112,18 @@ class MissionParseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     instruction: str = Field(min_length=1, max_length=4_000)
+
+
+class AgentMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=4_000)
+
+
+class AgentConfirmationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed: bool
 
 
 class TrajectoryReportRequest(BaseModel):
@@ -173,6 +193,7 @@ class BrowserGateway:
         *,
         camera: CameraBridge | None = None,
         semantic: SemanticService | None = None,
+        mission_agent: MissionAgentService | None = None,
         georeference: GeoReferenceStore | None = None,
         trajectory_evidence: TrajectoryEvidenceStore | None = None,
         telemetry_interval_s: float = 0.2,
@@ -182,6 +203,7 @@ class BrowserGateway:
         self.runtime = runtime
         self.camera = camera
         self.semantic = semantic or SemanticService()
+        self.mission_agent = mission_agent or MissionAgentService(self.semantic)
         self.georeference = georeference or GeoReferenceStore()
         self.trajectory_evidence = trajectory_evidence or TrajectoryEvidenceStore(
             Path.home() / ".aeromind" / "trajectory-evidence"
@@ -236,6 +258,7 @@ class BrowserGateway:
         payload = self.runtime.public_config()
         payload["camera"] = self.camera_status_payload()
         payload["semantic"] = self.semantic.status_payload()
+        payload["mission_agent"] = self.mission_agent.status_payload()
         payload["serial_runtime_configurable"] = (
             self.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL
         )
@@ -552,6 +575,7 @@ class BrowserGateway:
             },
             "camera": self.camera_status_payload(),
             "semantic": self.semantic.status_payload(),
+            "mission_agent": self.mission_agent.status_payload(),
         }
 
     async def analyze_current_frame(self, prompt: str) -> dict[str, Any]:
@@ -563,6 +587,138 @@ class BrowserGateway:
     async def parse_mission(self, instruction: str) -> dict[str, Any]:
         payload = await self.semantic.parse_mission(instruction)
         await self.events.publish("mission_parse_result", payload)
+        return payload
+
+    def mission_agent_context(self) -> dict[str, Any]:
+        status = self.status_payload()
+        telemetry = status.get("telemetry")
+        if not isinstance(telemetry, dict):
+            telemetry = {}
+        health = telemetry.get("health")
+        if not isinstance(health, dict):
+            health = {}
+        selected_telemetry = {
+            key: telemetry.get(key)
+            for key in (
+                "armed",
+                "mode",
+                "battery_remaining",
+                "battery_voltage_v",
+                "local_position_ned_m",
+                "velocity_ned_m_s",
+                "global_position_deg_m",
+                "home_position_deg_m",
+                "landed_state",
+                "last_status_text",
+            )
+        }
+        selected_telemetry["health"] = {
+            key: health.get(key)
+            for key in (
+                "fcu_link_ok",
+                "gps_fix_type",
+                "gps_hdop",
+                "gps_healthy",
+                "prearm_ok",
+                "ekf_ok",
+            )
+        }
+        latest_visual = self.semantic.latest_payload().get("visual")
+        visual_result = (
+            latest_visual.get("result")
+            if isinstance(latest_visual, dict)
+            else None
+        )
+        reference = self.georeference.value
+        return {
+            "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+            "vehicle_id": self.runtime.config.vehicle_id,
+            "vehicle_name": self.runtime.config.vehicle_name,
+            "deployment_mode": (
+                "real"
+                if self.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL
+                else self.runtime.config.mode.value
+            ),
+            "agent_connected": bool(
+                status.get("onboard_agent_connected")
+                or status.get("vehicle_connected")
+            ),
+            "fcu_link_ok": status.get("fcu_link_ok") is True,
+            "command_output_enabled": status.get("command_output_enabled") is True,
+            "allowed_commands": status.get("allowed_commands", []),
+            "telemetry": selected_telemetry,
+            "ground_link": {
+                "transport": status.get("ground_link", {}).get("transport"),
+                "reconnecting": status.get("ground_link", {}).get("reconnecting"),
+                "error": status.get("ground_link", {}).get("error"),
+            },
+            "camera": self.camera_status_payload(),
+            "latest_visual_result": visual_result,
+            "georeference": {
+                "calibration_id": reference.calibration_id,
+                "status": reference.status.value,
+                "complete": reference.is_complete,
+                "config_hash": reference.config_hash,
+            },
+        }
+
+    async def chat_with_mission_agent(
+        self,
+        session_id: UUID,
+        message: str,
+    ) -> dict[str, Any]:
+        payload = await self.mission_agent.chat(
+            session_id,
+            message,
+            self.mission_agent_context(),
+        )
+        await self.events.publish("mission_agent_reply", payload)
+        return payload
+
+    async def confirm_agent_draft(
+        self,
+        draft_id: UUID,
+    ) -> dict[str, Any]:
+        claim = self.mission_agent.claim_draft(
+            draft_id,
+            self.mission_agent_context(),
+        )
+        request = CommandRequest(
+            altitude_m=claim["arguments"].get("altitude_m"),
+            reason=(
+                f"operator-confirmed Mission Agent: {claim['reason']}"
+            )[:256],
+        )
+        try:
+            command = await self.issue_command(
+                claim["vehicle_id"],
+                BrowserAction(claim["action"]),
+                request,
+            )
+        except Exception as exc:
+            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            self.mission_agent.record_execution(
+                draft_id,
+                succeeded=False,
+                result={"detail": str(detail)},
+            )
+            raise
+        draft = self.mission_agent.record_execution(
+            draft_id,
+            succeeded=command.get("successful") is True,
+            result=command,
+        )
+        payload = {
+            "kind": "mission_agent_execution",
+            "draft": draft,
+            "command_result": command,
+        }
+        await self.events.publish("mission_agent_execution", payload)
+        return payload
+
+    async def cancel_agent_draft(self, draft_id: UUID) -> dict[str, Any]:
+        payload = self.mission_agent.cancel_draft(draft_id)
+        await self.events.publish("mission_agent_draft_updated", payload)
         return payload
 
     def telemetry_payload(self) -> dict[str, Any]:
@@ -938,6 +1094,7 @@ def create_app(
     *,
     camera: CameraBridge | None = None,
     semantic: SemanticService | None = None,
+    mission_agent: MissionAgentService | None = None,
     georeference: GeoReferenceStore | None = None,
     trajectory_evidence: TrajectoryEvidenceStore | None = None,
     static_dir: str | Path | None = None,
@@ -947,6 +1104,7 @@ def create_app(
         runtime,
         camera=camera,
         semantic=semantic,
+        mission_agent=mission_agent,
         georeference=georeference,
         trajectory_evidence=trajectory_evidence,
     )
@@ -1108,6 +1266,72 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/api/agent/status")
+    async def mission_agent_status() -> dict[str, Any]:
+        return gateway.mission_agent.status_payload()
+
+    @app.post("/api/agent/sessions")
+    async def create_mission_agent_session() -> dict[str, Any]:
+        return gateway.mission_agent.create_session()
+
+    @app.get("/api/agent/sessions/{session_id}")
+    async def mission_agent_session(session_id: UUID) -> dict[str, Any]:
+        try:
+            return gateway.mission_agent.session_payload(session_id)
+        except AgentSessionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.delete("/api/agent/sessions/{session_id}")
+    async def close_mission_agent_session(session_id: UUID) -> dict[str, Any]:
+        try:
+            return gateway.mission_agent.close_session(session_id)
+        except AgentSessionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/agent/sessions/{session_id}/messages")
+    async def send_mission_agent_message(
+        session_id: UUID,
+        payload: AgentMessageRequest,
+    ) -> dict[str, Any]:
+        try:
+            return await gateway.chat_with_mission_agent(
+                session_id,
+                payload.message,
+            )
+        except AgentSessionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except SemanticUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except SemanticBusy as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/api/agent/drafts/{draft_id}/confirm")
+    async def confirm_mission_agent_draft(
+        draft_id: UUID,
+        payload: AgentConfirmationRequest,
+    ) -> dict[str, Any]:
+        if payload.confirmed is not True:
+            raise HTTPException(status_code=422, detail="必须明确确认任务草案")
+        try:
+            return await gateway.confirm_agent_draft(draft_id)
+        except AgentDraftNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except AgentDraftExpired as exc:
+            raise HTTPException(status_code=410, detail=str(exc)) from exc
+        except (AgentDraftBlocked, AgentDraftConflict) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/agent/drafts/{draft_id}/cancel")
+    async def cancel_mission_agent_draft(draft_id: UUID) -> dict[str, Any]:
+        try:
+            return await gateway.cancel_agent_draft(draft_id)
+        except AgentDraftNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except AgentDraftConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/vehicles/{vehicle_id}/commands/{action}")
     async def vehicle_command(

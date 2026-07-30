@@ -97,7 +97,7 @@ ground P9 Radio -> Windows CP210x COM3 @ 57600（本次枚举结果）
 | FCU/P9 | `/dev/ttyAMA0 @ 921600`、`/dev/ttyAMA1 @ 57600` |
 | 当前网络 | `192.168.1.109`，仅用于 SSH/RTSP，不替代 P9 控制链路 |
 | 命令权限 | 仅 ARM/DISARM；TAKEOFF/HOLD/LAND/RTL 禁用 |
-| 视觉语义 | Windows 地面端 VLM，`preview_only`，不生成飞行命令 |
+| 视觉语义与 Agent | Windows 地面端 VLM/LLM；模型只生成语义结果或受控草案，确认后仍经过地面门禁和机载白名单 |
 
 这些结论只适用于三号机当前台架，不能直接外推到其他三架飞机。
 

@@ -206,6 +206,7 @@ class SemanticService:
             ),
             "vision_available": self.config.vision_available,
             "mission_parser_available": self.config.mission_available,
+            "agent_available": self.config.mission_available,
             "vision_model": self.config.vision_model or None,
             "mission_model": self.config.mission_model or None,
             "busy": self._request_lock.locked(),
@@ -310,6 +311,36 @@ class SemanticService:
                 self._latest_mission = payload
                 self._last_error = None
                 return payload
+            except Exception as exc:
+                self._last_error = self._public_error(exc)
+                raise
+
+    async def complete_agent(
+        self,
+        messages: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """Complete one Agent turn under the shared model concurrency gate."""
+        if not self.config.mission_available:
+            raise SemanticUnavailable(
+                "Mission Agent 未配置，请设置 AEROMIND_VLM_API_URL 和模型名"
+            )
+        request_started = time.monotonic()
+        async with self._exclusive_request("agent"):
+            try:
+                content = await asyncio.to_thread(
+                    self._call_api,
+                    self.config.mission_model,
+                    messages,
+                )
+                self._last_error = None
+                return {
+                    "content": content,
+                    "model": self.config.mission_model,
+                    "latency_ms": round(
+                        (time.monotonic() - request_started) * 1000.0,
+                        1,
+                    ),
+                }
             except Exception as exc:
                 self._last_error = self._public_error(exc)
                 raise

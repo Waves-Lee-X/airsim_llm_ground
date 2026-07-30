@@ -34,8 +34,8 @@ def _document():
 def test_ground_station_assets_and_ids_are_self_consistent():
     document = _document()
 
-    assert document.stylesheets == ["/styles.css?v=20260730.5"]
-    assert document.scripts == ["/app.js?v=20260730.6"]
+    assert document.stylesheets == ["/styles.css?v=20260730.6"]
+    assert document.scripts == ["/app.js?v=20260730.7"]
     assert len(document.ids) == len(set(document.ids))
     assert {"vehicleSelect", "nedCanvas", "evidenceList", "cameraFrame",
             "p9Badge", "agentBadge", "linkDiagnostics"} <= set(
@@ -79,7 +79,7 @@ def test_ground_station_does_not_claim_ros_depth_or_unconfigured_vlm():
     assert 'id="cameraBadge" class="camera-badge offline"' in html
 
 
-def test_ground_station_exposes_visible_semantic_controls_and_raw_result():
+def test_ground_station_exposes_visible_semantic_and_agent_controls():
     document = _document()
     required = {
         "visionAnalysisForm",
@@ -92,11 +92,22 @@ def test_ground_station_exposes_visible_semantic_controls_and_raw_result():
         "visionWorkspace",
         "missionWorkspace",
         "semanticResultTitle",
+        "agentConversation",
+        "agentVehicleState",
+        "agentLinkState",
+        "agentGpsState",
+        "agentPermissionState",
+        "agentDraft",
+        "confirmAgentDraft",
+        "cancelAgentDraft",
+        "resetAgentSession",
     }
     assert required <= set(document.ids)
     javascript = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
     assert "/api/semantic/vision/analyze" in javascript
-    assert "/api/semantic/mission/parse" in javascript
+    assert "/api/agent/sessions" in javascript
+    assert "/api/agent/drafts/" in javascript
+    assert "/api/semantic/mission/parse" not in javascript
     assert "raw_response" in javascript
     assert "flight_command_generated" not in javascript
 

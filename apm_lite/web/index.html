@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>AeroMind APM Lite 地面站</title>
-    <link rel="stylesheet" href="/styles.css?v=20260730.5" />
+    <link rel="stylesheet" href="/styles.css?v=20260730.6" />
   </head>
   <body>
     <div class="app-shell">
@@ -214,7 +214,7 @@
                 <span aria-hidden="true">◎</span><strong>视觉识别</strong><small>当前帧</small>
               </button>
               <button class="semantic-mode" type="button" data-semantic-mode="mission" role="tab" aria-selected="false">
-                <span aria-hidden="true">≡</span><strong>任务解析</strong><small>自然语言</small>
+                <span aria-hidden="true">›_</span><strong>Mission Agent</strong><small>状态对话</small>
               </button>
             </div>
 
@@ -243,20 +243,40 @@
             </div>
 
             <div id="missionWorkspace" class="semantic-workspace" role="tabpanel" hidden>
+              <div class="agent-toolbar">
+                <div class="agent-live-state" aria-label="Agent 飞机状态">
+                  <div><span>飞机</span><strong id="agentVehicleState">--</strong></div>
+                  <div><span>链路</span><strong id="agentLinkState">--</strong></div>
+                  <div><span>GPS</span><strong id="agentGpsState">--</strong></div>
+                  <div><span>权限</span><strong id="agentPermissionState">--</strong></div>
+                </div>
+                <button id="resetAgentSession" class="icon-button agent-reset" type="button" title="新建 Mission Agent 会话" aria-label="新建 Mission Agent 会话">↻</button>
+              </div>
+              <div id="agentConversation" class="agent-conversation" aria-live="polite">
+                <div class="agent-empty">尚无对话</div>
+              </div>
               <form id="missionParseForm" class="semantic-compose mission-compose">
                 <div class="semantic-compose-heading">
-                  <label for="missionInstruction">任务指令</label>
-                  <span>PLAN DRAFT</span>
+                  <label for="missionInstruction">消息</label>
+                  <span>STATE AWARE</span>
                 </div>
-                <textarea id="missionInstruction" rows="5" maxlength="4000" placeholder="让 3 号机寻找红色箱体，在标识面最近的安全位置降落"></textarea>
+                <textarea id="missionInstruction" rows="3" maxlength="4000" placeholder="三号机当前状态怎么样？"></textarea>
                 <div class="semantic-compose-footer">
-                  <span id="missionRequestState">等待提交</span>
-                  <button id="parseMission" class="semantic-action" type="submit"><span aria-hidden="true">≡</span>生成任务草案</button>
+                  <span id="missionRequestState">等待输入</span>
+                  <button id="parseMission" class="semantic-action" type="submit"><span aria-hidden="true">↑</span>发送</button>
                 </div>
               </form>
-              <div class="mission-summary">
-                <span>任务摘要</span>
-                <strong id="missionSummary">尚无任务草案</strong>
+              <div id="agentDraft" class="agent-draft" hidden>
+                <div class="agent-draft-heading">
+                  <div><span>工具草案</span><strong id="agentDraftAction">--</strong></div>
+                  <span id="agentDraftStatus">--</span>
+                </div>
+                <p id="missionSummary">尚无工具草案</p>
+                <div id="agentDraftBlockers" class="agent-draft-blockers"></div>
+                <div class="agent-draft-actions">
+                  <button id="cancelAgentDraft" type="button">取消草案</button>
+                  <button id="confirmAgentDraft" class="semantic-action" type="button">人工确认</button>
+                </div>
               </div>
             </div>
 
@@ -271,7 +291,7 @@
               </div>
               <div id="semanticResult" class="semantic-result" aria-live="polite"><span class="semantic-empty">尚无分析结果</span></div>
             </div>
-            <div class="semantic-policy"><strong>PREVIEW ONLY</strong><span>AI 输出与飞行命令隔离</span><i aria-hidden="true">LOCKED</i></div>
+            <div class="semantic-policy"><strong>CONFIRM REQUIRED</strong><span>工具草案必须通过人工确认与飞行门禁</span><i aria-hidden="true">LOCKED</i></div>
           </section>
         </section>
       </main>
@@ -407,6 +427,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=20260730.6" defer></script>
+    <script src="/app.js?v=20260730.7" defer></script>
   </body>
 </html>

@@ -343,6 +343,11 @@ POST /api/semantic/mission/parse
 `execution_policy=preview_only` 和 `flight_command_generated=false`。模型输出不会
 进入 Lite 飞行命令队列，也不会绕过机载 `command_output_enabled` 门禁。
 
+同日后续增加 Mission Agent。旧 `/api/semantic/mission/parse` 继续保留上述只读语义
+预览行为，Web 的任务区域改用 `/api/agent/...` 完成连续对话和工具草案。工具草案
+仍不等于命令；必须人工确认，并在确认时重新检查实时飞机状态、地面门禁和机载
+白名单。详见 [`MISSION_AGENT.md`](MISSION_AGENT.md)。
+
 配置文件位于 Windows 地面电脑：
 
 ```text
