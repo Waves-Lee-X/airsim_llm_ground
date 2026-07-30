@@ -175,6 +175,12 @@ class NavigationTrajectoryRecorder:
             target_ned = (0.0, 0.0, 0.0)
         elif phase == "takeoff":
             target_ned = (0.0, 0.0, -self.plan.takeoff_altitude_m)
+        elif phase == "landed":
+            target_ned = (
+                self.plan.target_position_ned_m[0],
+                self.plan.target_position_ned_m[1],
+                0.0,
+            )
         else:
             target_ned = self.plan.target_position_ned_m
         return local_ned_to_map(

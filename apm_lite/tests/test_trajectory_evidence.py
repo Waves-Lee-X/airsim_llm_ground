@@ -292,7 +292,7 @@ def test_navigation_recorder_builds_aligned_planned_and_predicted_evidence():
     )
     recorder.record_snapshot("preflight", telemetry_snapshot((0.0, 0.0, 0.0)), 10.0)
     recorder.record_snapshot("goto", telemetry_snapshot((5.0, 2.0, -2.0)), 11.0)
-    recorder.record_snapshot("landed", telemetry_snapshot((0.0, 0.0, 0.0)), 12.0)
+    recorder.record_snapshot("landed", telemetry_snapshot((5.0, 2.0, 0.0)), 12.0)
 
     planned, predicted = recorder.finalize()
 
@@ -305,7 +305,8 @@ def test_navigation_recorder_builds_aligned_planned_and_predicted_evidence():
     ]
     assert predicted.samples[1].position_map_m == pytest.approx((5.0, -2.0, 2.0))
     assert planned.samples[1].position_map_m == pytest.approx((5.0, -2.0, 2.0))
-    assert planned.samples[2].position_map_m == pytest.approx((5.0, -2.0, 2.0))
+    assert predicted.samples[2].position_map_m == pytest.approx((5.0, -2.0, 0.0))
+    assert planned.samples[2].position_map_m == pytest.approx((5.0, -2.0, 0.0))
     assert planned.versions.mission_plan_hash is not None
     assert predicted.samples[1].observed_at_utc == datetime(
         2026, 7, 30, 0, 0, 1, tzinfo=timezone.utc
