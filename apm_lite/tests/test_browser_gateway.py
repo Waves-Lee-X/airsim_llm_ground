@@ -12,6 +12,7 @@ from aeromind_apm_lite.ground.browser.runtime import (
 )
 from aeromind_apm_lite.common.communication import SerialChannelClosed
 from aeromind_apm_lite.common.contracts import VehicleCommandType
+from aeromind_apm_lite.common.coordinates import GeoReferenceStore
 
 
 REAL_SECRET = b"browser-real-serial-test-secret-32-bytes"
@@ -38,14 +39,18 @@ class IdleSerialStream:
             await self.incoming.put(None)
 
 
-def demo_app(*, static_dir=None):
+def demo_app(*, static_dir=None, georeference=None):
     runtime = ManualRuntime(
         ManualRuntimeConfig(
             mode=ManualRuntimeMode.DEMO,
             startup_timeout_s=2.0,
         )
     )
-    return create_app(runtime, static_dir=static_dir)
+    return create_app(
+        runtime,
+        static_dir=static_dir,
+        georeference=georeference,
+    )
 
 
 def wait_for_telemetry(client: TestClient, timeout_s=2.0, predicate=None):
@@ -340,3 +345,75 @@ def test_serial_reconfiguration_is_rejected_outside_real_mode():
             json={"port": "COM7", "baudrate": 57_600},
         )
         assert response.status_code == 409
+
+
+def test_georeference_api_saves_version_hash_and_round_trip_report(tmp_path):
+    config_path = tmp_path / "venue.yaml"
+    app = demo_app(georeference=GeoReferenceStore(config_path))
+    with TestClient(app) as client:
+        initial = client.get("/api/georeference")
+        assert initial.status_code == 200
+        assert initial.json()["configuration"]["status"] == "draft"
+        assert not initial.json()["round_trip_report"]["ready"]
+
+        payload = initial.json()["configuration"]
+        payload.update(
+            {
+                "calibration_id": "test-venue-v1",
+                "status": "surveyed",
+                "map_origin_wgs84": {
+                    "latitude_deg": 34.7472,
+                    "longitude_deg": 113.6253,
+                    "altitude_m": 112.4,
+                },
+                "map_x_heading_from_true_north_deg": 28.0,
+                "airsim_origin_wgs84": {
+                    "latitude_deg": 34.74718,
+                    "longitude_deg": 113.62525,
+                    "altitude_m": 111.9,
+                },
+            }
+        )
+        response = client.put("/api/georeference", json=payload)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["immutable"]
+        assert len(result["config_hash"]) == 64
+        assert result["round_trip_report"]["passed"]
+        assert config_path.is_file()
+        assert GeoReferenceStore(config_path).value.calibration_id == "test-venue-v1"
+
+        public = client.get("/api/config").json()["georeference"]
+        assert public["config_hash"] == result["config_hash"]
+        assert public["complete"]
+
+
+def test_georeference_api_rejects_mutating_a_surveyed_id(tmp_path):
+    store = GeoReferenceStore(tmp_path / "venue.yaml")
+    app = demo_app(georeference=store)
+    with TestClient(app) as client:
+        payload = client.get("/api/georeference").json()["configuration"]
+        payload.update(
+            {
+                "calibration_id": "immutable-v1",
+                "status": "surveyed",
+                "map_origin_wgs84": {
+                    "latitude_deg": 34.7,
+                    "longitude_deg": 113.6,
+                    "altitude_m": 100.0,
+                },
+                "map_x_heading_from_true_north_deg": 0.0,
+                "airsim_origin_wgs84": {
+                    "latitude_deg": 34.7,
+                    "longitude_deg": 113.6,
+                    "altitude_m": 100.0,
+                },
+            }
+        )
+        assert client.put("/api/georeference", json=payload).status_code == 200
+
+        payload["notes"] = "attempted mutation"
+        rejected = client.put("/api/georeference", json=payload)
+        assert rejected.status_code == 409
+        assert "new calibration_id" in rejected.json()["detail"]

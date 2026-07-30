@@ -24,6 +24,12 @@ from aeromind_apm_lite.common.contracts import (
     VehicleCommandType,
 )
 from aeromind_apm_lite.common.credentials import load_shared_secret
+from aeromind_apm_lite.common.coordinates import (
+    GeoReference,
+    GeoReferenceConflict,
+    GeoReferenceError,
+    GeoReferenceStore,
+)
 from aeromind_apm_lite.ground.server import VehicleNotConnected
 
 from .camera import (
@@ -149,6 +155,7 @@ class BrowserGateway:
         *,
         camera: CameraBridge | None = None,
         semantic: SemanticService | None = None,
+        georeference: GeoReferenceStore | None = None,
         telemetry_interval_s: float = 0.2,
     ) -> None:
         if telemetry_interval_s <= 0.0:
@@ -156,11 +163,13 @@ class BrowserGateway:
         self.runtime = runtime
         self.camera = camera
         self.semantic = semantic or SemanticService()
+        self.georeference = georeference or GeoReferenceStore()
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
         self._command_tasks: set[asyncio.Task[dict[str, Any]]] = set()
         self._runtime_lock = asyncio.Lock()
+        self._georeference_lock = asyncio.Lock()
         self._runtime_error: str | None = None
         self._serial_reconnecting = False
 
@@ -208,6 +217,31 @@ class BrowserGateway:
         payload["serial_runtime_configurable"] = (
             self.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL
         )
+        reference = self.georeference.value
+        payload["georeference"] = {
+            "calibration_id": reference.calibration_id,
+            "status": reference.status.value,
+            "config_hash": reference.config_hash,
+            "complete": reference.is_complete,
+        }
+        return payload
+
+    def georeference_payload(self) -> dict[str, Any]:
+        return self.georeference.public_payload()
+
+    async def update_georeference(
+        self,
+        reference: GeoReference,
+    ) -> dict[str, Any]:
+        async with self._georeference_lock:
+            try:
+                await asyncio.to_thread(self.georeference.save, reference)
+            except GeoReferenceConflict as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except GeoReferenceError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+        payload = self.georeference_payload()
+        await self.events.publish("georeference_updated", payload)
         return payload
 
     async def available_serial_ports(self) -> list[dict[str, Any]]:
@@ -794,15 +828,25 @@ def _default_static_dir() -> Path | None:
     return None
 
 
+def _default_georeference_path() -> Path:
+    return Path(__file__).resolve().parents[4] / "configs/calibration/venue.yaml"
+
+
 def create_app(
     runtime: ManualRuntime | None = None,
     *,
     camera: CameraBridge | None = None,
     semantic: SemanticService | None = None,
+    georeference: GeoReferenceStore | None = None,
     static_dir: str | Path | None = None,
 ) -> FastAPI:
     runtime = runtime or ManualRuntime()
-    gateway = BrowserGateway(runtime, camera=camera, semantic=semantic)
+    gateway = BrowserGateway(
+        runtime,
+        camera=camera,
+        semantic=semantic,
+        georeference=georeference,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -830,6 +874,16 @@ def create_app(
     @app.get("/api/status")
     async def status() -> dict[str, Any]:
         return gateway.status_payload()
+
+    @app.get("/api/georeference")
+    async def georeference_config() -> dict[str, Any]:
+        return gateway.georeference_payload()
+
+    @app.put("/api/georeference")
+    async def update_georeference_config(
+        payload: GeoReference,
+    ) -> dict[str, Any]:
+        return await gateway.update_georeference(payload)
 
     @app.get("/api/serial/ports")
     async def serial_ports() -> dict[str, Any]:
@@ -1048,6 +1102,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--static-dir", type=Path)
     parser.add_argument(
+        "--georeference-config",
+        type=Path,
+        default=_default_georeference_path(),
+        help="Active venue GeoReference YAML path.",
+    )
+    parser.add_argument(
         "--airsim-host",
         help=(
             "AirSim RPC host; defaults to the Windows gateway detected from "
@@ -1131,7 +1191,16 @@ def main(argv: list[str] | None = None) -> int:
                 request_timeout_s=args.camera_timeout,
             )
         )
-    app = create_app(runtime, camera=camera, static_dir=args.static_dir)
+    try:
+        georeference = GeoReferenceStore(args.georeference_config)
+    except GeoReferenceError as exc:
+        raise SystemExit(str(exc)) from exc
+    app = create_app(
+        runtime,
+        camera=camera,
+        georeference=georeference,
+        static_dir=args.static_dir,
+    )
     import uvicorn
 
     uvicorn.run(app, host=args.host, port=args.port)

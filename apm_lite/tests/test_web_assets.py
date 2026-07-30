@@ -34,8 +34,8 @@ def _document():
 def test_ground_station_assets_and_ids_are_self_consistent():
     document = _document()
 
-    assert document.stylesheets == ["/styles.css?v=20260730.4"]
-    assert document.scripts == ["/app.js?v=20260730.4"]
+    assert document.stylesheets == ["/styles.css?v=20260730.5"]
+    assert document.scripts == ["/app.js?v=20260730.5"]
     assert len(document.ids) == len(set(document.ids))
     assert {"vehicleSelect", "nedCanvas", "evidenceList", "cameraFrame",
             "p9Badge", "agentBadge", "linkDiagnostics"} <= set(
@@ -131,3 +131,27 @@ def test_ground_station_has_desktop_and_mobile_layout_breakpoints():
     assert "@media (max-width: 780px)" in css
     assert "@media (max-width: 420px)" in css
     assert "letter-spacing: 0" in css
+
+
+def test_ground_station_exposes_georeference_editor_and_round_trip_result():
+    document = _document()
+    required = {
+        "geoSettingsButton",
+        "geoDialog",
+        "geoForm",
+        "geoCalibrationId",
+        "geoStatus",
+        "geoHeading",
+        "geoMapLatitude",
+        "geoAirSimLatitude",
+        "geoHomes",
+        "geoCurrentHash",
+        "geoRoundTrip",
+    }
+    assert required <= set(document.ids)
+
+    javascript = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    assert 'requestJson("/api/georeference")' in javascript
+    assert 'method: "PUT"' in javascript
+    assert "map_x_heading_from_true_north_deg" in javascript
+    assert "round_trip_report" in javascript

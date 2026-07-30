@@ -1,0 +1,91 @@
+# GeoReference 场地标定与坐标核验
+
+`GeoReference` 把真实场地、ArduPilot 和 AirSim 放入同一套可追溯坐标关系：
+
+```text
+真实 GPS WGS84
+  <-> 场地 map（X/Y/Z，米，Z 向上）
+  <-> 每架飞机 Home 的 LOCAL_NED
+  <-> AirSim OriginGeopoint 的 NED
+```
+
+该配置解决“同一个任务点在虚拟和真实环境中分别在哪里”的问题，不提高 GPS
+本身的定位精度。普通单点 GPS 仍只能用于室外较大间距航线和观察区域，不能据此
+宣称可以在箱体指定面附近精确降落。
+
+## 1. 配置文件
+
+示例位于 `configs/calibration/venue.example.yaml`。地面站默认读写：
+
+```text
+configs/calibration/venue.yaml
+```
+
+需要使用其他场地文件时显式指定：
+
+```bash
+cd ~/aeromind_ws/apm_lite
+PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
+  --mode demo --host 127.0.0.1 --port 8000 \
+  --georeference-config configs/calibration/classroom-demo.yaml \
+  --disable-camera
+```
+
+配置文件不存在时，地面站以内存中的四机草稿启动；首次在 Web 保存后创建 YAML。
+YAML 使用临时文件和原子替换写入，写入失败不会用半份配置覆盖当前文件。
+
+## 2. 字段定义
+
+| 字段 | 含义 |
+|---|---|
+| `calibration_id` | 场地标定版本 ID，只允许字母、数字、点、下划线和连字符 |
+| `status` | `draft` 为草稿，`surveyed` 为室外实测并冻结 |
+| `map_origin_wgs84` | 场地 map 原点的纬度、经度和高度 |
+| `map_x_heading_from_true_north_deg` | map 正 X 轴从真北顺时针旋转的角度 |
+| `airsim_origin_wgs84` | AirSim `OriginGeopoint` 使用的纬度、经度和高度 |
+| `map_scale` | 固定为 `1.0`，即虚拟米与真实米保持 1:1 |
+| `height_reference.datum` | 全配置统一使用 `amsl` 或 `wgs84_ellipsoid` |
+| `vehicle_homes` | 各飞机在 map 中的计划起飞点，坐标单位为米 |
+
+`amsl` 和 `wgs84_ellipsoid` 不能混用。APM 遥测、场地测量工具和 AirSim
+`OriginGeopoint` 必须确认使用相同高度基准；无法确认时保持 `draft`。
+
+## 3. Web 操作
+
+1. 启动地面站，打开 `http://127.0.0.1:8000/`。
+2. 点击顶部“场地标定”。
+3. 在无外场数据时保持“草稿 / 仿真预览”，填写或调整四架机的 map Home。
+4. 填写真实 map 原点、AirSim 原点和 map X 相对真北航向。
+5. 查看顶部“往返校验”。只有显示“通过”才说明数学转换可逆。
+6. 室外完成实测并复核高度基准后，将状态改为“已实测 / 冻结版本”并保存。
+
+冻结后，同一个 `calibration_id` 的任何字段都不能再修改。重新测量、移动场地原点
+或修改 Home 时，应复制现有值并使用新的 ID，例如从 `venue-20260730-v1` 改为
+`venue-20260805-v2`。配置内容按规范化 JSON 计算 SHA-256，地面 API 和 Web 都会
+显示该哈希；后续任务记录必须保存同一个哈希，才能追溯当时使用的坐标版本。
+
+## 4. API 与往返报告
+
+读取当前配置：
+
+```bash
+curl http://127.0.0.1:8000/api/georeference
+```
+
+响应包含：
+
+- `configuration`：完整 GeoReference；
+- `config_hash`：64 位 SHA-256；
+- `immutable`：是否已经冻结；
+- `round_trip_report`：map/WGS84、map/AirSim NED 和 Home LOCAL_NED 的误差。
+
+报告容差为 `0.01 m`。它只验证公式和当前输入能否稳定往返，不证明经纬度、真北
+航向或 Home 是正确的现场测量值。冻结同 ID 后再修改会返回 HTTP `409`。
+
+## 5. 当前门禁
+
+- `draft` 可以用于 SITL/AirSim 坐标预览，不得用于真实 GPS 轨迹命令。
+- `surveyed` 只表示配置字段已冻结，不代替 GPS 3D Fix、HDOP、EKF 和 Home 检查。
+- 当前真机白名单仍只有 ARM/DISARM；GeoReference 不扩展任何实机命令权限。
+- 室外静态 GPS、原点和航向实测、单机低空航点误差及 RC/failsafe 仍待外场验收。
+

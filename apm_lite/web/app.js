@@ -36,6 +36,8 @@ const state = {
   semanticView: "structured",
   semanticLatest: null,
   semanticResults: { vision: null, mission: null },
+  georeference: null,
+  geoApplying: false,
 };
 
 const elements = {};
@@ -69,6 +71,12 @@ function cacheElements() {
     "serialSettingsButton", "serialDialog", "serialForm", "serialPort",
     "serialPortOptions", "serialBaudrate", "refreshSerialPorts",
     "serialPortList", "serialSettingsStatus", "serialCancel", "serialApply",
+    "geoSettingsButton", "geoDialog", "geoForm", "geoCalibrationId",
+    "geoStatus", "geoHeading", "geoAltitudeDatum", "geoMapLatitude",
+    "geoMapLongitude", "geoMapAltitude", "geoAirSimLatitude",
+    "geoAirSimLongitude", "geoAirSimAltitude", "geoHomes", "geoAddHome",
+    "geoNotes", "geoCurrentStatus", "geoCurrentHash", "geoRoundTrip",
+    "geoSettingsStatus", "geoCancel", "geoApply",
   ].forEach((id) => {
     elements[id] = byId(id);
   });
@@ -947,7 +955,9 @@ function handleWebsocketMessage(event) {
     if (body.available !== false) renderTelemetry(normalizeTelemetry(body));
   }
   if (type === "status" || type === "service_status") renderStatus(body);
-  if (type === "visual_semantic_result") {
+  if (type === "georeference_updated") {
+    renderGeoreferenceMeta(body);
+  } else if (type === "visual_semantic_result") {
     renderVisualSemantic(body);
   } else if (type === "mission_parse_result") {
     renderMissionSemantic(body);
@@ -1148,6 +1158,234 @@ async function applySerialSettings(event) {
   }
 }
 
+function setInputValue(element, value) {
+  element.value = value === null || value === undefined ? "" : String(value);
+}
+
+function createGeoHomeRow(home = {}) {
+  const row = document.createElement("div");
+  row.className = "geo-home-row";
+  row.dataset.vehicleHome = "";
+  const fields = [
+    ["vehicle_id", home.vehicle_id ?? "", "机号", "1", "255", "1"],
+    ["x", home.map_position_m?.[0] ?? 0, "Home X", "-100000", "100000", "0.01"],
+    ["y", home.map_position_m?.[1] ?? 0, "Home Y", "-100000", "100000", "0.01"],
+    ["z", home.map_position_m?.[2] ?? 0, "Home Z", "-10000", "10000", "0.01"],
+  ];
+  fields.forEach(([name, value, label, minimum, maximum, step]) => {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.dataset.geoHomeField = name;
+    input.value = String(value);
+    input.min = minimum;
+    input.max = maximum;
+    input.step = step;
+    input.inputMode = "decimal";
+    input.required = true;
+    input.setAttribute("aria-label", label);
+    row.append(input);
+  });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.title = "移除飞行器 Home";
+  remove.setAttribute("aria-label", "移除飞行器 Home");
+  remove.textContent = "×";
+  remove.addEventListener("click", () => {
+    if (elements.geoHomes.children.length > 1) row.remove();
+  });
+  row.append(remove);
+  return row;
+}
+
+function renderGeoHomes(homes) {
+  const values = Array.isArray(homes) && homes.length
+    ? homes
+    : [{ vehicle_id: 1, map_position_m: [0, 0, 0] }];
+  elements.geoHomes.replaceChildren(...values.map(createGeoHomeRow));
+}
+
+function renderGeoreferenceMeta(payload) {
+  if (!payload?.configuration) return;
+  state.georeference = payload;
+  const configuration = payload.configuration;
+  const surveyed = configuration.status === "surveyed";
+  elements.geoCurrentStatus.textContent = surveyed ? "已实测 / 冻结" : "草稿 / 可编辑";
+  elements.geoCurrentStatus.className = surveyed ? "ok" : "warn";
+  elements.geoCurrentHash.textContent = payload.config_hash?.slice(0, 16) || "--";
+  elements.geoCurrentHash.title = payload.config_hash || "";
+  const report = payload.round_trip_report || {};
+  if (!report.ready) {
+    elements.geoRoundTrip.textContent = "未就绪";
+    elements.geoRoundTrip.className = "warn";
+  } else if (report.passed) {
+    elements.geoRoundTrip.textContent = `通过 · ${Number(report.maximum_error_m || 0).toExponential(2)} m`;
+    elements.geoRoundTrip.className = "ok";
+  } else {
+    elements.geoRoundTrip.textContent = "误差超限";
+    elements.geoRoundTrip.className = "warn";
+  }
+}
+
+function populateGeoreferenceForm(payload) {
+  renderGeoreferenceMeta(payload);
+  const config = payload.configuration;
+  elements.geoCalibrationId.value = config.calibration_id || "venue-draft";
+  elements.geoStatus.value = config.status || "draft";
+  setInputValue(elements.geoHeading, config.map_x_heading_from_true_north_deg);
+  elements.geoAltitudeDatum.value = config.height_reference?.datum || "amsl";
+  setInputValue(elements.geoMapLatitude, config.map_origin_wgs84?.latitude_deg);
+  setInputValue(elements.geoMapLongitude, config.map_origin_wgs84?.longitude_deg);
+  setInputValue(elements.geoMapAltitude, config.map_origin_wgs84?.altitude_m);
+  setInputValue(elements.geoAirSimLatitude, config.airsim_origin_wgs84?.latitude_deg);
+  setInputValue(elements.geoAirSimLongitude, config.airsim_origin_wgs84?.longitude_deg);
+  setInputValue(elements.geoAirSimAltitude, config.airsim_origin_wgs84?.altitude_m);
+  elements.geoNotes.value = config.notes || "";
+  renderGeoHomes(config.vehicle_homes);
+}
+
+function setGeoSettingsStatus(message, type = "") {
+  elements.geoSettingsStatus.textContent = message;
+  elements.geoSettingsStatus.className = `serial-settings-status ${type}`.trim();
+}
+
+async function refreshGeoreference() {
+  const payload = await requestJson("/api/georeference");
+  renderGeoreferenceMeta(payload);
+  return payload;
+}
+
+async function openGeoreferenceSettings() {
+  setGeoSettingsStatus("正在读取场地配置...");
+  if (typeof elements.geoDialog.showModal === "function") {
+    elements.geoDialog.showModal();
+  }
+  try {
+    populateGeoreferenceForm(await refreshGeoreference());
+    setGeoSettingsStatus("");
+  } catch (error) {
+    setGeoSettingsStatus(error.message, "error");
+  }
+}
+
+function readGeoPosition(latitude, longitude, altitude, label) {
+  const inputs = [latitude, longitude, altitude];
+  const present = inputs.map((input) => input.value.trim() !== "");
+  if (!present.some(Boolean)) return null;
+  if (!present.every(Boolean) || inputs.some((input) => !input.checkValidity())) {
+    throw new Error(`${label}必须同时填写有效的纬度、经度和高度。`);
+  }
+  return {
+    latitude_deg: Number(latitude.value),
+    longitude_deg: Number(longitude.value),
+    altitude_m: Number(altitude.value),
+  };
+}
+
+function collectGeoHomes() {
+  const homes = Array.from(elements.geoHomes.querySelectorAll("[data-vehicle-home]")).map((row) => {
+    const value = (name) => row.querySelector(`[data-geo-home-field="${name}"]`);
+    const inputs = [value("vehicle_id"), value("x"), value("y"), value("z")];
+    if (inputs.some((input) => !input.checkValidity() || finiteNumber(input.value) === null)) {
+      throw new Error("每个 Home 都必须填写有效的机号和 X/Y/Z 坐标。");
+    }
+    return {
+      vehicle_id: Number(inputs[0].value),
+      map_position_m: inputs.slice(1).map((input) => Number(input.value)),
+      expected_wgs84: null,
+    };
+  });
+  if (!homes.length) throw new Error("至少保留一个飞行器 Home。");
+  if (new Set(homes.map((home) => home.vehicle_id)).size !== homes.length) {
+    throw new Error("飞行器 Home 的机号不能重复。");
+  }
+  return homes;
+}
+
+function collectGeoreference() {
+  const calibrationId = elements.geoCalibrationId.value.trim();
+  if (!calibrationId || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(calibrationId)) {
+    throw new Error("标定版本 ID 只能使用字母、数字、点、下划线和连字符。");
+  }
+  const mapOrigin = readGeoPosition(
+    elements.geoMapLatitude,
+    elements.geoMapLongitude,
+    elements.geoMapAltitude,
+    "真实场地原点",
+  );
+  const airsimOrigin = readGeoPosition(
+    elements.geoAirSimLatitude,
+    elements.geoAirSimLongitude,
+    elements.geoAirSimAltitude,
+    "AirSim 原点",
+  );
+  const heading = elements.geoHeading.value.trim() === ""
+    ? null
+    : finiteNumber(elements.geoHeading.value);
+  if (heading !== null && !elements.geoHeading.checkValidity()) {
+    throw new Error("map X 航向必须在 -180° 到 180° 之间。");
+  }
+  if (elements.geoStatus.value === "surveyed" && (!mapOrigin || !airsimOrigin || heading === null)) {
+    throw new Error("冻结为已实测版本前，必须填写两个原点和 map X 真北航向。");
+  }
+  const previous = state.georeference?.configuration || {};
+  return {
+    schema_version: "1.0",
+    calibration_id: calibrationId,
+    status: elements.geoStatus.value,
+    map_definition: previous.map_definition || {
+      origin_marker: "O",
+      positive_x_marker: "X1",
+      x_axis_reference: "true_north",
+      z_axis: "up",
+      units: "m",
+    },
+    map_origin_wgs84: mapOrigin,
+    map_x_heading_from_true_north_deg: heading,
+    airsim_origin_wgs84: airsimOrigin,
+    map_scale: 1.0,
+    height_reference: {
+      datum: elements.geoAltitudeDatum.value,
+      map_z_zero: "map_origin",
+    },
+    vehicle_homes: collectGeoHomes(),
+    notes: elements.geoNotes.value,
+  };
+}
+
+async function applyGeoreference(event) {
+  event.preventDefault();
+  if (state.geoApplying) return;
+  let payload;
+  try {
+    payload = collectGeoreference();
+  } catch (error) {
+    setGeoSettingsStatus(error.message, "error");
+    return;
+  }
+  state.geoApplying = true;
+  elements.geoApply.disabled = true;
+  elements.geoCancel.disabled = true;
+  setGeoSettingsStatus("正在校验并保存标定配置...");
+  try {
+    const result = await requestJson("/api/georeference", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    populateGeoreferenceForm(result);
+    setGeoSettingsStatus(
+      result.immutable ? "已保存并冻结；修改时必须使用新的标定版本 ID。" : "草稿已保存。",
+      "success",
+    );
+    window.setTimeout(() => elements.geoDialog.close(), 900);
+  } catch (error) {
+    setGeoSettingsStatus(error.message, "error");
+  } finally {
+    state.geoApplying = false;
+    elements.geoApply.disabled = false;
+    elements.geoCancel.disabled = false;
+  }
+}
+
 function bindEvents() {
   elements.commandButtons.forEach((button) => {
     button.addEventListener("click", () => showCommandConfirmation(button.dataset.command));
@@ -1185,6 +1423,22 @@ function bindEvents() {
   });
   elements.serialCancel.addEventListener("click", () => {
     if (!state.serialApplying) elements.serialDialog.close();
+  });
+  elements.geoSettingsButton.addEventListener("click", () => {
+    void openGeoreferenceSettings();
+  });
+  elements.geoForm.addEventListener("submit", (event) => {
+    void applyGeoreference(event);
+  });
+  elements.geoCancel.addEventListener("click", () => {
+    if (!state.geoApplying) elements.geoDialog.close();
+  });
+  elements.geoAddHome.addEventListener("click", () => {
+    const used = Array.from(elements.geoHomes.querySelectorAll('[data-geo-home-field="vehicle_id"]'))
+      .map((input) => Number(input.value));
+    let vehicleId = 1;
+    while (used.includes(vehicleId)) vehicleId += 1;
+    elements.geoHomes.append(createGeoHomeRow({ vehicle_id: vehicleId, map_position_m: [0, 0, 0] }));
   });
   elements.visionAnalysisForm.addEventListener("submit", (event) => {
     void analyzeVision(event);
@@ -1234,6 +1488,11 @@ async function bootstrap() {
     ]);
     renderConfig(config);
     renderStatus(status);
+    try {
+      await refreshGeoreference();
+    } catch (_error) {
+      // Flight monitoring remains available if the calibration file is unavailable.
+    }
     await refreshCameraStatus();
     await restoreSemanticResults();
   } catch (error) {

@@ -89,6 +89,10 @@ PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
 打开 `http://127.0.0.1:8000/`。仅检查 UI 时使用 `--mode demo`，DEMO 命令不会
 进入 MAVLink。
 
+顶部“场地标定”用于维护 WGS84/map/LOCAL_NED/AirSim 的统一坐标配置、版本哈希
+和往返报告。无室外测量数据时必须保持草稿状态，详见
+[`docs/GEOREFERENCE.md`](docs/GEOREFERENCE.md)。
+
 ## UAV3 实机地面站
 
 Windows 启动命令：
@@ -152,7 +156,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `186 passed`。提交前还应运行 JavaScript 语法检查和
+当前完整测试基线为 `209 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 ## 安全边界

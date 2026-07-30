@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>AeroMind APM Lite 地面站</title>
-    <link rel="stylesheet" href="/styles.css?v=20260730.4" />
+    <link rel="stylesheet" href="/styles.css?v=20260730.5" />
   </head>
   <body>
     <div class="app-shell">
@@ -29,6 +29,9 @@
               <option value="1">UAV 01</option>
             </select>
           </label>
+          <button id="geoSettingsButton" class="serial-settings-button" type="button">
+            场地标定
+          </button>
           <button id="serialSettingsButton" class="serial-settings-button" type="button" hidden>
             串口设置
           </button>
@@ -308,6 +311,84 @@
       </form>
     </dialog>
 
+    <dialog id="geoDialog" class="geo-dialog">
+      <form id="geoForm">
+        <div class="dialog-heading">
+          <span aria-hidden="true">MAP</span>
+          <div><small>GEOREFERENCE</small><h2>场地坐标标定</h2></div>
+        </div>
+        <div class="geo-meta" aria-label="标定状态">
+          <div><span>状态</span><strong id="geoCurrentStatus">草稿</strong></div>
+          <div><span>配置哈希</span><strong id="geoCurrentHash">--</strong></div>
+          <div><span>往返校验</span><strong id="geoRoundTrip">未就绪</strong></div>
+        </div>
+
+        <div class="geo-scroll">
+          <div class="geo-fields-grid">
+            <label class="serial-field" for="geoCalibrationId">
+              <span>标定版本 ID</span>
+              <input id="geoCalibrationId" name="calibration_id" autocomplete="off" required />
+            </label>
+            <label class="serial-field" for="geoStatus">
+              <span>标定状态</span>
+              <select id="geoStatus" name="status">
+                <option value="draft">草稿 / 仿真预览</option>
+                <option value="surveyed">已实测 / 冻结版本</option>
+              </select>
+            </label>
+            <label class="serial-field" for="geoHeading">
+              <span>map X 相对真北航向 °</span>
+              <input id="geoHeading" name="map_heading" type="number" min="-180" max="180" step="0.000001" inputmode="decimal" />
+            </label>
+            <label class="serial-field" for="geoAltitudeDatum">
+              <span>高度基准</span>
+              <select id="geoAltitudeDatum" name="altitude_datum">
+                <option value="amsl">AMSL 平均海平面</option>
+                <option value="wgs84_ellipsoid">WGS84 椭球高</option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset class="geo-fieldset">
+            <legend>真实场地 map 原点</legend>
+            <div class="geo-coordinate-row">
+              <label>纬度 °<input id="geoMapLatitude" type="number" min="-90" max="90" step="0.00000001" inputmode="decimal" /></label>
+              <label>经度 °<input id="geoMapLongitude" type="number" min="-180" max="180" step="0.00000001" inputmode="decimal" /></label>
+              <label>高度 m<input id="geoMapAltitude" type="number" min="-1000" max="20000" step="0.01" inputmode="decimal" /></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="geo-fieldset">
+            <legend>AirSim OriginGeopoint</legend>
+            <div class="geo-coordinate-row">
+              <label>纬度 °<input id="geoAirSimLatitude" type="number" min="-90" max="90" step="0.00000001" inputmode="decimal" /></label>
+              <label>经度 °<input id="geoAirSimLongitude" type="number" min="-180" max="180" step="0.00000001" inputmode="decimal" /></label>
+              <label>高度 m<input id="geoAirSimAltitude" type="number" min="-1000" max="20000" step="0.01" inputmode="decimal" /></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="geo-fieldset geo-home-fieldset">
+            <legend>飞行器 Home / map 起飞点</legend>
+            <div class="geo-home-header" aria-hidden="true">
+              <span>机号</span><span>X m</span><span>Y m</span><span>Z m</span><span></span>
+            </div>
+            <div id="geoHomes" class="geo-homes"></div>
+            <button id="geoAddHome" class="geo-add-home" type="button" title="增加飞行器 Home" aria-label="增加飞行器 Home">+ 增加 Home</button>
+          </fieldset>
+
+          <label class="serial-field geo-notes" for="geoNotes">
+            <span>标定备注</span>
+            <textarea id="geoNotes" maxlength="1000" rows="2"></textarea>
+          </label>
+        </div>
+        <p id="geoSettingsStatus" class="serial-settings-status" role="status"></p>
+        <div class="dialog-actions">
+          <button id="geoCancel" type="button">取消</button>
+          <button id="geoApply" class="confirm-submit" type="submit">保存标定</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="confirmDialog" class="confirm-dialog">
       <form method="dialog">
         <div class="dialog-heading">
@@ -326,6 +407,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=20260730.4" defer></script>
+    <script src="/app.js?v=20260730.5" defer></script>
   </body>
 </html>

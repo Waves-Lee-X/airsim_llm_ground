@@ -10,13 +10,14 @@ Lite 的实机验收结果。
 | [`M1_PROGRESS.md`](M1_PROGRESS.md) | AirSim/ArduCopter 自动任务 10/10 与 RTL 证据 | 已通过 |
 | [`M1_5_ACCEPTANCE.md`](M1_5_ACCEPTANCE.md) | 非 Blocks 场景手动 SITL、Web 和相机联调 | 已通过 |
 | [`MANUAL_SIMULATION.md`](MANUAL_SIMULATION.md) | 手动启动 UE、SITL、地面站的操作手册 | 可用 |
+| [`GEOREFERENCE.md`](GEOREFERENCE.md) | WGS84/map/NED/AirSim 场地标定、哈希和 Web 操作 | 软件链完成，外场实测待办 |
 | [`REAL_SERIAL_DEPLOYMENT.md`](REAL_SERIAL_DEPLOYMENT.md) | P9 协议、树莓派安装、systemd、回滚和验收 | UAV3 已部署 |
 | [`UAV3_REAL_BENCH_AND_VIDEO.md`](UAV3_REAL_BENCH_AND_VIDEO.md) | UAV3 现场状态、视频、VLM、白名单和遗留项 | ARM/DISARM 待人工测试 |
 
 ## 阅读顺序
 
 1. 新成员先读根目录 [`README.md`](../README.md) 和硬件基线。
-2. 仿真开发读 M0、M1、M1.5 和手动仿真手册。
+2. 仿真开发读 M0、M1、M1.5、手动仿真和场地标定手册。
 3. 实机维护先读实机部署，再读 UAV3 台架记录。
 4. 路线、阶段门禁和三个表演项目读
    [`doc/14-AeroMind-APM-Lite开发计划.md`](../../doc/14-AeroMind-APM-Lite开发计划.md)。

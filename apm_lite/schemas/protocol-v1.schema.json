@@ -300,6 +300,247 @@
       "title": "FleetConfig",
       "type": "object"
     },
+    "georeference": {
+      "$defs": {
+        "AltitudeDatum": {
+          "enum": [
+            "amsl",
+            "wgs84_ellipsoid"
+          ],
+          "title": "AltitudeDatum",
+          "type": "string"
+        },
+        "CalibrationStatus": {
+          "enum": [
+            "draft",
+            "surveyed"
+          ],
+          "title": "CalibrationStatus",
+          "type": "string"
+        },
+        "HeightReference": {
+          "additionalProperties": false,
+          "properties": {
+            "datum": {
+              "$ref": "#/$defs/AltitudeDatum",
+              "default": "amsl"
+            },
+            "map_z_zero": {
+              "const": "map_origin",
+              "default": "map_origin",
+              "title": "Map Z Zero",
+              "type": "string"
+            }
+          },
+          "title": "HeightReference",
+          "type": "object"
+        },
+        "MapDefinition": {
+          "additionalProperties": false,
+          "properties": {
+            "origin_marker": {
+              "default": "O",
+              "maxLength": 32,
+              "minLength": 1,
+              "title": "Origin Marker",
+              "type": "string"
+            },
+            "positive_x_marker": {
+              "default": "X1",
+              "maxLength": 32,
+              "minLength": 1,
+              "title": "Positive X Marker",
+              "type": "string"
+            },
+            "units": {
+              "const": "m",
+              "default": "m",
+              "title": "Units",
+              "type": "string"
+            },
+            "x_axis_reference": {
+              "const": "true_north",
+              "default": "true_north",
+              "title": "X Axis Reference",
+              "type": "string"
+            },
+            "z_axis": {
+              "const": "up",
+              "default": "up",
+              "title": "Z Axis",
+              "type": "string"
+            }
+          },
+          "title": "MapDefinition",
+          "type": "object"
+        },
+        "VehicleHome": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_wgs84": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Wgs84Position"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "map_position_m": {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "title": "Map Position M",
+              "type": "array"
+            },
+            "vehicle_id": {
+              "maximum": 255,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "map_position_m"
+          ],
+          "title": "VehicleHome",
+          "type": "object"
+        },
+        "Wgs84Position": {
+          "additionalProperties": false,
+          "properties": {
+            "altitude_m": {
+              "maximum": 20000.0,
+              "minimum": -1000.0,
+              "title": "Altitude M",
+              "type": "number"
+            },
+            "latitude_deg": {
+              "maximum": 90.0,
+              "minimum": -90.0,
+              "title": "Latitude Deg",
+              "type": "number"
+            },
+            "longitude_deg": {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "title": "Longitude Deg",
+              "type": "number"
+            }
+          },
+          "required": [
+            "latitude_deg",
+            "longitude_deg",
+            "altitude_m"
+          ],
+          "title": "Wgs84Position",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "One immutable-by-id mapping between the real venue and AirSim.",
+      "properties": {
+        "airsim_origin_wgs84": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Wgs84Position"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "calibration_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Calibration Id",
+          "type": "string"
+        },
+        "height_reference": {
+          "$ref": "#/$defs/HeightReference"
+        },
+        "map_definition": {
+          "$ref": "#/$defs/MapDefinition"
+        },
+        "map_origin_wgs84": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Wgs84Position"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "map_scale": {
+          "const": 1.0,
+          "default": 1.0,
+          "title": "Map Scale",
+          "type": "number"
+        },
+        "map_x_heading_from_true_north_deg": {
+          "anyOf": [
+            {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Map X Heading From True North Deg"
+        },
+        "notes": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Notes",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CalibrationStatus",
+          "default": "draft"
+        },
+        "vehicle_homes": {
+          "items": {
+            "$ref": "#/$defs/VehicleHome"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Vehicle Homes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "calibration_id",
+        "vehicle_homes"
+      ],
+      "title": "GeoReference",
+      "type": "object"
+    },
     "wire_message": {
       "$defs": {
         "AckStatus": {

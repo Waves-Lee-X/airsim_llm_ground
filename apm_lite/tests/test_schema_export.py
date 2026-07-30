@@ -4,9 +4,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_committed_protocol_schema_contains_wire_and_fleet_contracts():
+def test_committed_protocol_schema_contains_wire_fleet_and_georeference():
     schema_path = ROOT / "schemas" / "protocol-v1.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     assert schema["schema_version"] == "1.0"
-    assert set(schema["schemas"]) == {"fleet_config", "wire_message"}
+    assert set(schema["schemas"]) == {
+        "fleet_config",
+        "georeference",
+        "wire_message",
+    }
+    reference = schema["schemas"]["georeference"]
+    assert reference["properties"]["schema_version"]["const"] == "1.0"
+    assert "vehicle_homes" in reference["required"]

@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from aeromind_apm_lite.common.config import FleetConfig  # noqa: E402
+from aeromind_apm_lite.common.coordinates import GeoReference  # noqa: E402
 from aeromind_apm_lite.common.contracts.codec import wire_message_json_schema  # noqa: E402
 
 
@@ -23,6 +24,7 @@ def rendered_schema() -> str:
         "schema_version": "1.0",
         "schemas": {
             "fleet_config": FleetConfig.model_json_schema(),
+            "georeference": GeoReference.model_json_schema(),
             "wire_message": wire_message_json_schema(),
         },
     }
