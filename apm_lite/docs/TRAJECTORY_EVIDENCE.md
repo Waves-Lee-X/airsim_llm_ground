@@ -127,7 +127,12 @@ POST /api/trajectory/reports
 
 ## 6. 当前边界
 
-- 软件已具备证据、回放、比较、CLI、API 和确定性测试。
-- 当前没有运行中的 AirSim/SITL，因此尚未生成第 21 项的一份基线和五份故障报告。
+- 软件已具备证据、回放、比较、CLI、API 和确定性测试，当前全量基线为
+  `237 passed`。
+- 2026-07-30 已生成第 21 项的一份基线、五份故障报告和 12 份 planned/predicted
+  证据，绑定提交 `e844420`，保存在
+  `D:\AirSim\aeromind-apm-lite-m3\run-20260730-r3`。
+- 基线 planned/predicted 终点三维误差为 `0.777 m`，但报告仍为
+  `draft/preview_only`，`acceptance_passed=null`。
 - `draft` 仿真结果不能替代室外场地实测。
 - GPS 回放不能替代静态 GPS、低空航点、RC/failsafe 和编队安全间距验收。

@@ -733,7 +733,7 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 18. [x] 冻结首版实机定位路线：使用 APM GPS，不采购 AprilTag/UWB，不在当前阶段实现 VIO。
 19. [x] 实现并测试 `WGS84 <-> ENU/map <-> LOCAL_NED <-> AirSim NED` 坐标模块；覆盖郑州场地、经度换日线、任意 Home、非法数值和完整虚实往返，当前全量基线为 `199 passed`。
 20. [x] 增加场地 `GeoReference` 配置、Web 标定表单、版本哈希和坐标往返报告；草稿可用于仿真预览，正式版本同 ID 禁止改写，当前全量基线为 `209 passed`。
-21. [ ] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。软件执行器、HDOP/EKF/P9 门禁、五类观察层注入和自动报告入口已完成，当前全量基线为 `236 passed`；待操作者启动 UE/SITL 后生成一份基线和五份故障飞行报告再勾选。planned/predicted SITL 自动记录、observed GPS CSV 回放、证据哈希、虚实误差报告和 API 已完成；该软件进展不替代上述飞行报告。
+21. [x] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。2026-07-30 已用 AirSim 1.8.1、UE 4.27 和 ArduCopter 4.7.0 完成一份基线及 `gps_loss`、`hdop_exceeded`、`ekf_failure`、`mission_expired`、`ground_link_loss` 五份故障报告，五类故障均完成 `safety_hold -> recovery_land`。最终证据绑定提交 `e844420`，保存在 `D:\AirSim\aeromind-apm-lite-m3\run-20260730-r3`；planned/predicted 终点三维误差为 `0.777 m`，但场地标定仍为 `draft/preview_only`。当前全量基线为 `237 passed`；该项不替代第 22 项外场验收。
 22. [ ] 外场条件具备后，完成静态 GPS、场地标定、单机低空、RC/failsafe 和安全间距验收。
 23. [ ] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent；实机写操作继续经过人工确认和白名单。
 

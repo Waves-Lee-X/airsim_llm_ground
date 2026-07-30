@@ -105,10 +105,27 @@ ArduPilot 内部传感器或参数，报告固定写明
 
 ## 5. 当前现场状态
 
-2026-07-30 收尾检查时，本机 `8000` 连接的是三号真机 `real_serial`，不是 SITL，
-且室内 GPS 为 `FIX 1`。因此本轮没有执行任何飞行命令。自动化假飞控测试已经覆盖
-正常六阶段和五类故障收敛；planned/predicted 自动记录、observed GPS CSV 回放和
-虚实误差报告也已完成。真实 AirSim/SITL 飞行证据仍需在操作者启动仿真后生成。
+2026-07-30 已在独立仿真端口完成实飞控隔离的 AirSim/SITL 验收，未连接三号真机、
+P9 或实机串口。环境为 AirSim 1.8.1、UE 4.27、ArduCopter 4.7.0，Lite 软件提交为
+`e844420`。最终证据目录为：
+
+```text
+D:\AirSim\aeromind-apm-lite-m3\run-20260730-r3
+```
+
+| 场景 | 终态/失败码 | 安全恢复 | 结果 |
+|---|---|---|---|
+| baseline | `completed` | 无 | 通过 |
+| gps_loss | `failed / gps_unhealthy` | `HOLD -> LAND` | 通过 |
+| hdop_exceeded | `failed / hdop_exceeded` | `HOLD -> LAND` | 通过 |
+| ekf_failure | `failed / ekf_unhealthy` | `HOLD -> LAND` | 通过 |
+| mission_expired | `expired / mission_expired` | `HOLD -> LAND` | 通过 |
+| ground_link_loss | `failed / ground_link_lost` | `HOLD -> LAND` | 通过 |
+
+六轮均生成 planned/predicted 证据。基线比较结果为：水平 RMSE `1.704 m`、垂直
+RMSE `0.899 m`、最大三维误差 `3.189 m`、终点三维误差 `0.777 m`。这些指标在
+当前软件占位阈值内，但标定状态仍为 `draft`，报告为 `preview_only`，不能作为外场
+精度验收结论。
 
 ## 6. 安全边界
 
@@ -116,4 +133,4 @@ ArduPilot 内部传感器或参数，报告固定写明
 - 不得在真机地面站或 P9 链路上试运行本阶段 GOTO。
 - 当前 UAV3 实机白名单仍只有 ARM/DISARM。
 - 软件注入通过不代表真实 GPS 失锁、EKF 异常或数传失联试验已经验收。
-- SITL 基线和五份故障报告齐全后，才能在计划中将第 21 项标记为完全完成。
+- SITL 基线和五份故障报告已齐全，开发计划第 21 项已完成；第 22 项外场验收仍未完成。
