@@ -81,7 +81,7 @@ PYTHONPATH=src python3 -m \
 ```
 
 生成器只写配置并打印匹配的 SITL 命令，不会启动或结束 UE、AirSim、SITL。
-按照 [`docs/MANUAL_SIMULATION.md`](docs/MANUAL_SIMULATION.md) 的顺序启动后，运行：
+按照 [`docs/07-仿真环境启动与调试.md`](docs/07-仿真环境启动与调试.md) 的顺序启动后，运行：
 
 ```bash
 PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
@@ -93,15 +93,15 @@ PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
 
 顶部“场地标定”用于维护 WGS84/map/LOCAL_NED/AirSim 的统一坐标配置、版本哈希
 和往返报告。无室外测量数据时必须保持草稿状态，详见
-[`docs/GEOREFERENCE.md`](docs/GEOREFERENCE.md)。
+[`docs/11-场地标定与坐标转换.md`](docs/11-场地标定与坐标转换.md)。
 
 统一 `GUIDED -> ARM -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机和仿真故障注入
-命令见 [`docs/M3_NAVIGATION_ACCEPTANCE.md`](docs/M3_NAVIGATION_ACCEPTANCE.md)。
+命令见 [`docs/12-导航状态机与故障注入.md`](docs/12-导航状态机与故障注入.md)。
 该入口只接受 SIM/UDP 配置，不会连接实机串口。
 
 `planned/predicted/observed` 版本化轨迹、SITL 自动记录、真机 GPS CSV 回放、虚实
 误差指标和非飞控证据 API 见
-[`docs/TRAJECTORY_EVIDENCE.md`](docs/TRAJECTORY_EVIDENCE.md)。轨迹证据接口不会发送
+[`docs/13-轨迹证据与虚实误差.md`](docs/13-轨迹证据与虚实误差.md)。轨迹证据接口不会发送
 飞行命令。
 
 ## UAV3 实机地面站
@@ -159,7 +159,7 @@ AEROMIND_LLM_MODEL=qwen3-vl-plus
 视觉结果本身不会进入飞行命令队列。旧任务解析接口继续保持
 `execution_policy=preview_only`；Mission Agent 仅允许六种原子动作，并在人工确认时
 重新检查实时状态和机载白名单。详细说明见
-[`docs/MISSION_AGENT.md`](docs/MISSION_AGENT.md)。
+[`docs/10-Mission-Agent设计与调试.md`](docs/10-Mission-Agent设计与调试.md)。
 
 ## 本地验证
 
@@ -170,7 +170,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `244 passed`。提交前还应运行 JavaScript 语法检查和
+当前完整测试基线为 `245 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 ## 安全边界

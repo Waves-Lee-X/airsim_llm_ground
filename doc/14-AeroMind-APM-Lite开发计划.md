@@ -524,7 +524,7 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 
 ### M1：单机 ArduPilot SITL 闭环
 
-状态：**已通过（2026-07-28）**。AirSim 1.8.1 / ArduCopter 4.7.0 固定任务完成 `10/10`，独立 RTL 通过；完整证据与哈希见 `apm_lite/docs/M1_PROGRESS.md`。
+状态：**已通过（2026-07-28）**。AirSim 1.8.1 / ArduCopter 4.7.0 固定任务完成 `10/10`，独立 RTL 通过；完整证据与哈希见 `apm_lite/docs/91-M1单机自动仿真验收记录.md`。
 
 交付：
 
@@ -536,7 +536,7 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 
 ### M1.5：手动仿真与 Lite Web 地面站
 
-状态：**已通过（2026-07-28）**。自动 M1 生命周期和固定任务链保留不变；操作者已在非 Blocks 的 AirSim 场景中完成 UE/SITL/Web 正式现场联调，机器证据见 `apm_lite/docs/M1_5_ACCEPTANCE.md`。
+状态：**已通过（2026-07-28）**。自动 M1 生命周期和固定任务链保留不变；操作者已在非 Blocks 的 AirSim 场景中完成 UE/SITL/Web 正式现场联调，机器证据见 `apm_lite/docs/92-M1.5手动仿真与Web联调记录.md`。
 
 交付：
 
@@ -550,7 +550,7 @@ CI 必须检查 `apm_lite/` 不导入 `rclpy`、`px4_msgs` 或 MAVROS，并检�
 
 ### M2：真实 APM 台架与单机低空
 
-状态：**三号机 FCU/P9/RGB/VLM、永久服务和 ARM/DISARM 白名单基础闭环完成；室外 GPS 低空测试待外场条件（2026-07-30）**。已完成 P9 透明串口 Lite v1 分帧、CRC32、选择性 ACK/重传、重复抑制、最新状态合并、多机 ID 隔离、树莓派独立入口、Web `real_serial` 模式、D435i RGB/RTSP 最新帧画面、地面 VLM 和任务语义预览。P9 大帧使用受限 zlib 压缩，实机遥测调整为 1 Hz；修复后 60 秒只读采样控制锁定和 FCU 离线均为 0，121 个新增有效帧中 CRC、废弃字节、重试和无效负载增量均为 0。机载采用“总开关 + 命令白名单”，当前只允许 ARM/DISARM；地面 API 与机载 Agent 双重拒绝 TAKEOFF/HOLD/LAND/RTL。Depth/IR、RC/failsafe、其他命令和实飞仍未验收，详见 `apm_lite/docs/REAL_SERIAL_DEPLOYMENT.md`。
+状态：**三号机 FCU/P9/RGB/VLM、永久服务和 ARM/DISARM 白名单基础闭环完成；室外 GPS 低空测试待外场条件（2026-07-30）**。已完成 P9 透明串口 Lite v1 分帧、CRC32、选择性 ACK/重传、重复抑制、最新状态合并、多机 ID 隔离、树莓派独立入口、Web `real_serial` 模式、D435i RGB/RTSP 最新帧画面、地面 VLM 和任务语义预览。P9 大帧使用受限 zlib 压缩，实机遥测调整为 1 Hz；修复后 60 秒只读采样控制锁定和 FCU 离线均为 0，121 个新增有效帧中 CRC、废弃字节、重试和无效负载增量均为 0。机载采用“总开关 + 命令白名单”，当前只允许 ARM/DISARM；地面 API 与机载 Agent 双重拒绝 TAKEOFF/HOLD/LAND/RTL。Depth/IR、RC/failsafe、其他命令和实飞仍未验收，详见 `apm_lite/docs/08-实机部署与P9串口调试.md`。
 
 交付：
 
@@ -737,9 +737,9 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 18. [x] 冻结首版实机定位路线：使用 APM GPS，不采购 AprilTag/UWB，不在当前阶段实现 VIO。
 19. [x] 实现并测试 `WGS84 <-> ENU/map <-> LOCAL_NED <-> AirSim NED` 坐标模块；覆盖郑州场地、经度换日线、任意 Home、非法数值和完整虚实往返，当前全量基线为 `199 passed`。
 20. [x] 增加场地 `GeoReference` 配置、Web 标定表单、版本哈希和坐标往返报告；草稿可用于仿真预览，正式版本同 ID 禁止改写，当前全量基线为 `209 passed`。
-21. [x] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。2026-07-30 已用 AirSim 1.8.1、UE 4.27 和 ArduCopter 4.7.0 完成一份基线及 `gps_loss`、`hdop_exceeded`、`ekf_failure`、`mission_expired`、`ground_link_loss` 五份故障报告，五类故障均完成 `safety_hold -> recovery_land`。最终证据绑定提交 `e844420`，保存在 `D:\AirSim\aeromind-apm-lite-m3\run-20260730-r3`；planned/predicted 终点三维误差为 `0.777 m`，但场地标定仍为 `draft/preview_only`。当前全量基线为 `237 passed`；该项不替代第 22 项外场验收。
+21. [x] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。2026-07-30 已用 AirSim 1.8.1、UE 4.27 和 ArduCopter 4.7.0 完成一份基线及 `gps_loss`、`hdop_exceeded`、`ekf_failure`、`mission_expired`、`ground_link_loss` 五份故障报告，五类故障均完成 `safety_hold -> recovery_land`。最终证据绑定提交 `e844420`，保存在 `D:\AirSim\aeromind-apm-lite-m3\run-20260730-r3`；planned/predicted 终点三维误差为 `0.777 m`，但场地标定仍为 `draft/preview_only`。该项完成时全量基线为 `237 passed`；该项不替代第 22 项外场验收。
 22. [ ] 外场条件具备后，完成静态 GPS、场地标定、单机低空、RC/failsafe 和安全间距验收。
-23. [x] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent。2026-07-30 已完成内存多轮会话、遥测/P9/FCU/白名单/视觉/场地标定上下文注入、六种原子动作草案、120 秒单次确认票据、确认时二次门禁，以及接入原有 ACK/物理完成证据链；GOTO、编队、搜索和路径规划继续被确定性阻断，实机白名单仍只有 ARM/DISARM。Web 已提供对话、阻断原因、人工确认和取消操作，说明见 `apm_lite/docs/MISSION_AGENT.md`，当前全量基线为 `244 passed`。
+23. [x] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent。2026-07-30 已完成内存多轮会话、遥测/P9/FCU/白名单/视觉/场地标定上下文注入、六种原子动作草案、120 秒单次确认票据、确认时二次门禁，以及接入原有 ACK/物理完成证据链；GOTO、编队、搜索和路径规划继续被确定性阻断，实机白名单仍只有 ARM/DISARM。Web 已提供对话、阻断原因、人工确认和取消操作，说明见 `apm_lite/docs/10-Mission-Agent设计与调试.md`，当前全量基线为 `245 passed`。
 
 ## 18. 后续里程碑必须确认的外部条件
 
