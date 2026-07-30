@@ -17,7 +17,7 @@ Environment=AEROMIND_ALLOW_ARM=
 Environment=AEROMIND_ALLOW_DISARM=
 WorkingDirectory=/opt/aeromind-apm-lite
 ExecStartPre=/opt/aeromind-apm-lite/deploy/raspberry-pi/preflight-onboard.sh
-ExecStart=/opt/aeromind-apm-lite/venv/bin/python -m aeromind_apm_lite.onboard.runtime --config /etc/aeromind-apm-lite/fleet.yaml --vehicle-id %i --telemetry-hz 2.0 --log-level INFO $AEROMIND_COMMAND_OUTPUT_ENABLE $AEROMIND_ALLOW_ARM $AEROMIND_ALLOW_DISARM
+ExecStart=/opt/aeromind-apm-lite/venv/bin/python -m aeromind_apm_lite.onboard.runtime --config /etc/aeromind-apm-lite/fleet.yaml --vehicle-id %i --telemetry-hz 1.0 --log-level INFO $AEROMIND_COMMAND_OUTPUT_ENABLE $AEROMIND_ALLOW_ARM $AEROMIND_ALLOW_DISARM
 Restart=always
 RestartSec=2
 TimeoutStopSec=10

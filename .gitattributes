@@ -2,3 +2,5 @@
 *.pdf binary
 *.png binary
 *.pptx binary
+*.service text eol=lf
+*.sh text eol=lf

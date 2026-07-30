@@ -127,6 +127,37 @@ def test_serial_decoder_recovers_after_noise_fragmentation_and_bad_crc():
     assert decoder.discarded_bytes >= 6
 
 
+def test_serial_frame_compresses_large_payload_and_round_trips():
+    frame = SerialFrame(
+        kind=SerialFrameKind.DATA,
+        direction=SerialDirection.ONBOARD_TO_GROUND,
+        vehicle_id=3,
+        sequence=43,
+        payload=(b'{"message_type":"vehicle_telemetry","value":123}' * 20),
+    )
+
+    encoded = encode_serial_frame(frame)
+    decoded = SerialFrameDecoder().feed(encoded)
+
+    assert len(encoded) < len(frame.payload)
+    assert decoded == [frame]
+
+
+def test_serial_decoder_rejects_oversized_compressed_payload():
+    frame = SerialFrame(
+        kind=SerialFrameKind.DATA,
+        direction=SerialDirection.ONBOARD_TO_GROUND,
+        vehicle_id=3,
+        sequence=44,
+        payload=b"a" * 2048,
+    )
+    encoded = encode_serial_frame(frame, max_payload_bytes=4096)
+    decoder = SerialFrameDecoder(max_payload_bytes=1024)
+
+    assert decoder.feed(encoded) == []
+    assert decoder.discarded_bytes == len(encoded)
+
+
 def test_reliable_serial_retries_and_suppresses_duplicate_delivery():
     async def scenario():
         onboard_stream, ground_stream = memory_stream_pair()

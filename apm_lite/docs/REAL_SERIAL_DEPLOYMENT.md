@@ -272,6 +272,31 @@ STATUSTEXT 诊断。
 无效负载增量均为 0，Agent、FCU、RGB 在线，机载进程 `NRestarts=0`。该样本没有
 发送 ARM 或 DISARM。
 
+2026-07-30 现场出现 Web 飞行控制区间歇锁定和 ARM `gateway timeout`。45 秒
+只读采样确认 FCU 与机载服务没有重启，但 P9 大帧持续发生 CRC 错误，约 3 秒收不到
+有效心跳时 Web 按安全规则锁定。只开 UAV3 后问题仍存在，排除同频多机串扰；根因是
+签名 JSON 心跳和遥测超过当前 P9 空中链路的稳定吞吐能力。
+
+修复后，Lite 串口层会对大于等于 256 字节且压缩后更小的负载使用 zlib 快速压缩，
+CRC32 继续覆盖实际传输字节，解压结果受原有最大负载限制；未压缩帧保持兼容。实机
+systemd 遥测频率由 `2 Hz` 调整为 `1 Hz`，命令 ACK、HMAC、TTL、重放保护和
+ARM/DISARM 双层白名单均未放宽。更新两端并重启后，60 秒只读回归结果为：
+
+```text
+samples=118
+locked_samples=0
+fcu_offline_samples=0
+received_delta=121
+crc_delta=0
+discarded_delta=0
+retries_delta=0
+invalid_payload_delta=0
+```
+
+Windows 打包部署时，所有 `*.sh` 必须保持 LF 换行和执行位；否则 systemd 会在
+`ExecStartPre` 阶段以 `203/EXEC` 失败。本仓库通过 `.gitattributes` 固定 shell
+脚本为 LF，安装器仍以 `0755` 安装预检脚本。
+
 ## 12. 回滚
 
 先停止 Lite 并确认 UART 已释放：

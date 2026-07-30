@@ -17,6 +17,9 @@ from typing import Any, Protocol
 SERIAL_MAGIC = b"\xA9\x4C"
 SERIAL_VERSION = 1
 SERIAL_FLAG_RELIABLE = 0x01
+SERIAL_FLAG_COMPRESSED = 0x02
+SERIAL_ALLOWED_FLAGS = SERIAL_FLAG_RELIABLE | SERIAL_FLAG_COMPRESSED
+SERIAL_COMPRESSION_THRESHOLD_BYTES = 256
 DEFAULT_MAX_PAYLOAD_BYTES = 8 * 1024
 
 _HEADER = struct.Struct("<2sBBBBBIH")
@@ -97,7 +100,13 @@ def encode_serial_frame(
         )
     if frame.kind == SerialFrameKind.ACK and frame.payload:
         raise ValueError("serial ACK frames cannot contain a payload")
+    wire_payload = frame.payload
     flags = SERIAL_FLAG_RELIABLE if frame.reliable else 0
+    if len(frame.payload) >= SERIAL_COMPRESSION_THRESHOLD_BYTES:
+        compressed = zlib.compress(frame.payload, level=1)
+        if len(compressed) < len(frame.payload):
+            wire_payload = compressed
+            flags |= SERIAL_FLAG_COMPRESSED
     header = _HEADER.pack(
         SERIAL_MAGIC,
         SERIAL_VERSION,
@@ -106,10 +115,26 @@ def encode_serial_frame(
         frame.vehicle_id,
         flags,
         frame.sequence,
-        len(frame.payload),
+        len(wire_payload),
     )
-    checksum = zlib.crc32(header[2:] + frame.payload) & 0xFFFFFFFF
-    return header + frame.payload + _CRC.pack(checksum)
+    checksum = zlib.crc32(header[2:] + wire_payload) & 0xFFFFFFFF
+    return header + wire_payload + _CRC.pack(checksum)
+
+
+def _decompress_serial_payload(payload: bytes, *, max_payload_bytes: int) -> bytes:
+    decompressor = zlib.decompressobj()
+    decoded = decompressor.decompress(payload, max_payload_bytes + 1)
+    if (
+        len(decoded) > max_payload_bytes
+        or decompressor.unconsumed_tail
+        or not decompressor.eof
+        or decompressor.unused_data
+    ):
+        raise ValueError("invalid or oversized compressed serial payload")
+    decoded += decompressor.flush()
+    if len(decoded) > max_payload_bytes:
+        raise ValueError("compressed serial payload exceeds decoded size limit")
+    return decoded
 
 
 class SerialFrameDecoder:
@@ -163,9 +188,12 @@ class SerialFrameDecoder:
             if (
                 version != SERIAL_VERSION
                 or vehicle_id == 0
-                or flags & ~SERIAL_FLAG_RELIABLE
+                or flags & ~SERIAL_ALLOWED_FLAGS
                 or payload_length > self.max_payload_bytes
-                or (kind == SerialFrameKind.ACK and payload_length != 0)
+                or (
+                    kind == SerialFrameKind.ACK
+                    and (payload_length != 0 or flags & SERIAL_FLAG_COMPRESSED)
+                )
             ):
                 self.discarded_bytes += 1
                 del self._buffer[0]
@@ -174,7 +202,7 @@ class SerialFrameDecoder:
             if len(self._buffer) < frame_length:
                 break
             payload_end = _HEADER.size + payload_length
-            payload = bytes(self._buffer[_HEADER.size:payload_end])
+            wire_payload = bytes(self._buffer[_HEADER.size:payload_end])
             expected_crc = _CRC.unpack_from(self._buffer, payload_end)[0]
             actual_crc = zlib.crc32(bytes(self._buffer[2:payload_end])) & 0xFFFFFFFF
             if not secrets.compare_digest(
@@ -186,6 +214,16 @@ class SerialFrameDecoder:
                 del self._buffer[0]
                 continue
             del self._buffer[:frame_length]
+            if flags & SERIAL_FLAG_COMPRESSED:
+                try:
+                    payload = _decompress_serial_payload(
+                        wire_payload, max_payload_bytes=self.max_payload_bytes
+                    )
+                except (ValueError, zlib.error):
+                    self.discarded_bytes += frame_length
+                    continue
+            else:
+                payload = wire_payload
             frames.append(
                 SerialFrame(
                     kind=kind,
