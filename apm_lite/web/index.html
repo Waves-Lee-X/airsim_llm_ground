@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>AeroMind APM Lite 地面站</title>
-    <link rel="stylesheet" href="/styles.css?v=20260731.8" />
+    <link rel="stylesheet" href="/styles.css?v=20260731.9" />
   </head>
   <body>
     <div class="app-shell">
@@ -192,7 +192,13 @@
       <span id="situationStamp" class="count-chip">--</span>
     </div>
     <div class="situation-canvas-wrap">
-      <canvas id="situationMap" aria-label="全机共享态势地图（俯视）"></canvas>
+      <canvas id="situationMap" aria-label="全机共享态势地图（俯视，滚轮缩放/拖动平移）"></canvas>
+      <div class="situation-zoom" aria-label="地图缩放">
+        <button id="situationZoomIn" type="button" title="放大" aria-label="放大">+</button>
+        <button id="situationZoomOut" type="button" title="缩小" aria-label="缩小">−</button>
+        <button id="situationZoomReset" type="button" title="重置视野" aria-label="重置视野">⟲</button>
+      </div>
+      <div class="situation-hint">滚轮缩放 · 拖动平移 · 双击重置</div>
       <div class="north-label">N</div>
       <div class="east-label">E</div>
       <div id="situationEmpty" class="canvas-empty">等待无人机位置</div>
@@ -498,6 +504,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=20260731.8" defer></script>
+    <script src="/app.js?v=20260731.9" defer></script>
   </body>
 </html>

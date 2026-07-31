@@ -285,6 +285,9 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .left-column {
@@ -545,7 +548,7 @@ button:disabled {
 }
 
 .nav-canvas-wrap {
-  min-height: 250px;
+  min-height: 300px;
   flex: 1;
   position: relative;
   overflow: hidden;
@@ -980,7 +983,7 @@ button:disabled {
 }
 
 .right-column .nav-panel {
-  min-height: 250px;
+  min-height: 300px;
 }
 
 .right-column .evidence-panel {
@@ -2563,7 +2566,7 @@ button:disabled {
 }
 
 .situation-canvas-wrap {
-  min-height: 260px;
+  min-height: 380px;
   flex: 1;
   position: relative;
   overflow: hidden;
@@ -2574,6 +2577,52 @@ button:disabled {
   width: 100%;
   height: 100%;
   display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+#situationMap.dragging {
+  cursor: grabbing;
+}
+
+.situation-zoom {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 2;
+}
+
+.situation-zoom button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(10, 14, 17, 0.88);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.situation-zoom button:hover {
+  color: var(--text);
+  border-color: var(--cyan);
+}
+
+.situation-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 9px;
+  pointer-events: none;
 }
 
 .situation-legend {

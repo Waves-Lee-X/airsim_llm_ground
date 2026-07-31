@@ -27,6 +27,9 @@ const state = {
   situationTrails: {},
   situationPayload: null,
   fleetStatus: null,
+  situationView: null,
+  situationAutoView: null,
+  situationDrag: null,
   commandRows: [],
   pendingCommand: null,
   pendingAgentDraft: null,
@@ -80,6 +83,7 @@ function cacheElements() {
     "fleetMissionPhase", "fleetMissionVehicles",
     "gotoX", "gotoY", "gotoZ", "gotoFly",
     "situationMap", "situationEmpty", "situationLegend", "situationStamp",
+    "situationZoomIn", "situationZoomOut", "situationZoomReset",
     "agentVehicleState", "agentLinkState", "agentGpsState",
     "agentPermissionState", "resetAgentSession", "agentConversation",
     "agentDraft", "agentDraftAction", "agentDraftStatus",
@@ -1528,8 +1532,11 @@ function renderSituationMap() {
 
   if (elements.situationEmpty) elements.situationEmpty.hidden = vehicles.length > 0;
   if (elements.situationStamp) {
+    const range = state.situationView
+      ? Math.round(state.situationView.halfRange)
+      : null;
     elements.situationStamp.textContent = vehicles.length > 0
-      ? `${vehicles.length} 机在线`
+      ? `${vehicles.length} 机在线${range ? ` · ±${range}m` : ""}`
       : "--";
   }
 
@@ -1558,13 +1565,24 @@ function renderSituationMap() {
     return;
   }
 
-  const minX = Math.min(...points.map((point) => point.x));
-  const maxX = Math.max(...points.map((point) => point.x));
-  const minY = Math.min(...points.map((point) => point.y));
-  const maxY = Math.max(...points.map((point) => point.y));
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  const halfRange = Math.max(maxX - minX, maxY - minY) / 2 * 1.15 + 6;
+  let centerX;
+  let centerY;
+  let halfRange;
+  const fixedView = state.situationView;
+  if (fixedView) {
+    centerX = fixedView.centerX;
+    centerY = fixedView.centerY;
+    halfRange = fixedView.halfRange;
+  } else {
+    const minX = Math.min(...points.map((point) => point.x));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxY = Math.max(...points.map((point) => point.y));
+    centerX = (minX + maxX) / 2;
+    centerY = (minY + maxY) / 2;
+    halfRange = Math.max(maxX - minX, maxY - minY) / 2 * 1.15 + 6;
+    state.situationAutoView = { centerX, centerY, halfRange };
+  }
   const scale = Math.min(size.width, size.height) * 0.44 / halfRange;
   const toScreen = (x, y) => ({
     sx: size.width / 2 + (x - centerX) * scale,
@@ -1723,6 +1741,95 @@ function renderSituationMap() {
     }
     elements.situationLegend.replaceChildren(...items);
   }
+}
+
+function situationCanvasPoint(event) {
+  const rect = elements.situationMap.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function situationViewScale(size, halfRange) {
+  return Math.min(size.width, size.height) * 0.44 / halfRange;
+}
+
+function ensureSituationView() {
+  if (!state.situationView && state.situationAutoView) {
+    state.situationView = { ...state.situationAutoView };
+  }
+}
+
+function situationZoomAt(factor, px, py) {
+  ensureSituationView();
+  const canvas = elements.situationMap;
+  const size = situationCanvasSize();
+  if (!state.situationView || !size) return;
+  const view = state.situationView;
+  const scale = situationViewScale(size, view.halfRange);
+  const worldX = view.centerX + (px - size.width / 2) / scale;
+  const worldY = view.centerY - (py - size.height / 2) / scale;
+  view.halfRange = Math.min(200, Math.max(6, view.halfRange * factor));
+  const newScale = situationViewScale(size, view.halfRange);
+  view.centerX = worldX - (px - size.width / 2) / newScale;
+  view.centerY = worldY + (py - size.height / 2) / newScale;
+  renderSituationMap();
+}
+
+function bindSituationMapInteractions() {
+  const canvas = elements.situationMap;
+  if (!canvas) return;
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const point = situationCanvasPoint(event);
+    situationZoomAt(event.deltaY > 0 ? 1.25 : 0.8, point.x, point.y);
+  }, { passive: false });
+  canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    ensureSituationView();
+    const point = situationCanvasPoint(event);
+    state.situationDrag = {
+      x: point.x,
+      y: point.y,
+      view: state.situationView ? { ...state.situationView } : null,
+    };
+    canvas.setPointerCapture(event.pointerId);
+    canvas.classList.add("dragging");
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!state.situationDrag || !state.situationDrag.view) return;
+    const size = situationCanvasSize();
+    if (!size) return;
+    const point = situationCanvasPoint(event);
+    const view = state.situationDrag.view;
+    const scale = situationViewScale(size, view.halfRange);
+    state.situationView.centerX = view.centerX - (point.x - state.situationDrag.x) / scale;
+    state.situationView.centerY = view.centerY + (point.y - state.situationDrag.y) / scale;
+    renderSituationMap();
+  });
+  const endDrag = () => {
+    state.situationDrag = null;
+    elements.situationMap.classList.remove("dragging");
+  };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("dblclick", () => {
+    state.situationView = null;
+    renderSituationMap();
+  });
+  elements.situationZoomIn.addEventListener("click", () => {
+    const size = situationCanvasSize();
+    if (size) situationZoomAt(0.8, size.width / 2, size.height / 2);
+  });
+  elements.situationZoomOut.addEventListener("click", () => {
+    const size = situationCanvasSize();
+    if (size) situationZoomAt(1.25, size.width / 2, size.height / 2);
+  });
+  elements.situationZoomReset.addEventListener("click", () => {
+    state.situationView = null;
+    renderSituationMap();
+  });
 }
 
 async function refreshSituationMap() {
@@ -2555,6 +2662,7 @@ function bindEvents() {
   if (window.ResizeObserver && elements.situationMap) {
     new ResizeObserver(renderSituationMap).observe(elements.situationMap.parentElement);
   }
+  bindSituationMapInteractions();
 }
 
 function adjustAltitude(delta) {
