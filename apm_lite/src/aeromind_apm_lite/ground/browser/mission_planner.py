@@ -28,7 +28,7 @@ _TAKEOFF_TIMEOUT_S = 90.0
 _LAND_TIMEOUT_S = 60.0
 
 _PLAN_ACTIONS = frozenset(
-    {"arm", "disarm", "takeoff", "goto", "formation", "hold", "land"}
+    {"arm", "disarm", "takeoff", "goto", "formation", "hold", "land", "analyze"}
 )
 
 
@@ -53,6 +53,7 @@ class MissionPlanner:
         self._results: list[dict[str, Any]] = []
         self._error: str | None = None
         self._services: dict[int, FlightCommandService] = {}
+        self.analyzer: Any | None = None
 
     @property
     def busy(self) -> bool:
@@ -131,6 +132,12 @@ class MissionPlanner:
                     )
                 ):
                     raise FleetMissionError(f"第 {index} 步 GOTO 目标无效")
+            if action == "analyze":
+                if len(step.vehicle_ids) != 1:
+                    raise FleetMissionError(f"第 {index} 步 analyze 只能指定一架飞机")
+                prompt = step.params.get("prompt")
+                if prompt is not None and not isinstance(prompt, str):
+                    raise FleetMissionError(f"第 {index} 步 analyze 提示词必须是字符串")
             if action == "formation":
                 formation = step.params.get("formation")
                 if formation not in {"line", "v", "diamond"}:
@@ -248,6 +255,7 @@ class MissionPlanner:
                 lambda vid: services[vid].set_mode("GUIDED"),
                 _STEP_TIMEOUT_S,
             )
+            await self._ensure_armed(step.vehicle_ids, services)
             await for_each(
                 "takeoff",
                 lambda vid: services[vid].takeoff(altitude),
@@ -273,6 +281,31 @@ class MissionPlanner:
                 ),
                 _STEP_TIMEOUT_S,
             )
+        elif action == "analyze":
+            if self.analyzer is None:
+                raise FleetMissionError("analyze 步骤需要视觉分析服务")
+            vehicle_id = step.vehicle_ids[0]
+            prompt = str(
+                params.get("prompt")
+                or "描述当前画面中的目标、颜色、编号与风险"
+            )
+            analysis = await self.analyzer(vehicle_id, prompt)
+            result_text = str(analysis.get("result") or analysis)
+            entry.update(
+                {
+                    "state": "done",
+                    "detail": f"analyze: {result_text[:160]}",
+                }
+            )
+            self._results.append(
+                {
+                    "vehicle_id": vehicle_id,
+                    "step": "analyze",
+                    "status": "completed",
+                    "detail": result_text[:400],
+                    "at_monotonic_s": round(self._clock(), 2),
+                }
+            )
         elif action == "formation":
             results = await fly_formation(
                 services,
@@ -291,6 +324,25 @@ class MissionPlanner:
             raise FleetMissionError(f"不支持的步骤动作 {action!r}")
 
         entry.update({"state": "done", "detail": f"{action} 完成"})
+
+    async def _ensure_armed(
+        self,
+        vehicle_ids: Sequence[int],
+        services: dict[int, FlightCommandService],
+    ) -> None:
+        for vehicle_id in vehicle_ids:
+            link = self._runtime.link_for(vehicle_id)
+            if link is None:
+                raise FleetMissionError(f"飞机 {vehicle_id} 链路不可用")
+            snapshot = link.telemetry_snapshot()
+            if snapshot.armed is True:
+                continue
+            await self._await_handle(
+                services[vehicle_id].arm(),
+                vehicle_id,
+                "arm",
+                _STEP_TIMEOUT_S,
+            )
 
     async def _await_handle(
         self,

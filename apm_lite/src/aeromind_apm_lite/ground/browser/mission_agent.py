@@ -159,9 +159,10 @@ class MissionAgentService:
         "arguments、reason；takeoff arguments 只含 altitude_m，其他单动作 arguments 必须为空对象。"
         "plan 为步骤数组，每步包含 action、vehicle_id 或 vehicle_ids、arguments、reason；"
         "支持动作 "
-        "arm/disarm/takeoff/goto/formation/hold/land；goto arguments 含 "
+        "arm/disarm/takeoff/goto/formation/hold/land/analyze；goto arguments 含 "
         "target_position_ned_m（[北,东,下]）；"
-        "formation arguments 含 formation（line/v/diamond）、leader_target_map_m、spacing_m、altitude_m。"
+        "formation arguments 含 formation（line/v/diamond）、leader_target_map_m、spacing_m、altitude_m；"
+        "analyze arguments 可含 prompt，且只能指定一架飞机（到达目标后拍照识别）。"
         "不要声称动作已经执行。"
     )
 
@@ -391,6 +392,7 @@ class MissionAgentService:
                 "formation",
                 "hold",
                 "land",
+                "analyze",
             }:
                 blockers.append(f"第 {index} 步动作 {action!r} 不受支持")
                 continue
@@ -424,6 +426,8 @@ class MissionAgentService:
                 blockers.append(f"第 {index} 步飞机编号重复")
             if action == "formation" and len(ids) < 2:
                 blockers.append(f"第 {index} 步编队至少需要 2 架飞机")
+            if action == "analyze" and len(ids) != 1:
+                blockers.append(f"第 {index} 步 analyze 只能指定一架飞机")
 
             raw_args = step.get("arguments")
             if not isinstance(raw_args, dict):
@@ -448,6 +452,12 @@ class MissionAgentService:
                             arguments["target_position_ned_m"] = values
                     except (TypeError, ValueError):
                         blockers.append(f"第 {index} 步 GOTO 坐标无效")
+            elif action == "analyze":
+                prompt = raw_args.get("prompt")
+                if prompt is not None and not isinstance(prompt, str):
+                    blockers.append(f"第 {index} 步 analyze 提示词必须是字符串")
+                elif prompt:
+                    arguments["prompt"] = prompt
             elif action == "formation":
                 formation = str(raw_args.get("formation") or "").strip().lower()
                 leader = raw_args.get("leader_target_map_m")

@@ -426,7 +426,7 @@ def test_agent_plan_draft_requires_sim_and_validates_steps():
                     "reply": "非法计划",
                     "risk_level": "medium",
                     "plan": [
-                        {"action": "analyze", "vehicle_ids": [1], "arguments": {}},
+                        {"action": "search", "vehicle_ids": [1], "arguments": {}},
                     ],
                 },
                 ensure_ascii=False,
@@ -437,6 +437,16 @@ def test_agent_plan_draft_requires_sim_and_validates_steps():
         assert any("不受支持" in item for item in bad["draft"]["blockers"])
 
     asyncio.run(scenario())
+
+
+async def fake_analyzer(vehicle_id, prompt):
+    return {
+        "vehicle_id": vehicle_id,
+        "result": {
+            "message": f"识别完成（{prompt}）",
+            "target": {"found": True, "label": "red_box", "color": "red"},
+        },
+    }
 
 
 def test_agent_confirmed_plan_runs_multi_step_mission():
@@ -467,19 +477,27 @@ def test_agent_confirmed_plan_runs_multi_step_mission():
                         "vehicle_ids": [1, 2, 3, 4],
                         "arguments": {"altitude_m": 2},
                     },
-                    {"action": "formation", "vehicle_ids": [1, 2, 3, 4], "arguments": {
-                        "formation": "line",
-                        "leader_target_map_m": [8, 0, -2],
-                        "spacing_m": 3,
-                        "altitude_m": 2,
-                    }},
+                    {
+                        "action": "goto",
+                        "vehicle_id": 1,
+                        "arguments": {"target_position_ned_m": [8, 0, -2]},
+                    },
+                    {
+                        "action": "analyze",
+                        "vehicle_ids": [1],
+                        "arguments": {"prompt": "识别目标"},
+                    },
                     {"action": "land", "vehicle_ids": [1, 2, 3, 4]},
                 ],
             },
             ensure_ascii=False,
         )
     )
-    app = create_app(FleetRuntime(runtimes), semantic=semantic)
+    app = create_app(
+        FleetRuntime(runtimes),
+        semantic=semantic,
+        planner_analyzer=fake_analyzer,
+    )
     with TestClient(app) as client:
         session = client.post("/api/agent/sessions").json()
         chat = client.post(
@@ -503,9 +521,16 @@ def test_agent_confirmed_plan_runs_multi_step_mission():
             if phase in {"done", "failed", "cancelled"}:
                 break
             _time.sleep(0.2)
-        assert phase == "done", client.get("/api/planner/status").json()
+        planner = client.get("/api/planner/status").json()
+        assert phase == "done", planner
 
-        # execution feedback is available to the next model turn
+        analyze_results = [
+            item for item in planner.get("results", [])
+            if item.get("step") == "analyze"
+        ]
+        assert analyze_results
+        assert "red_box" in analyze_results[0]["detail"]
+
         session_payload = client.get(
             f"/api/agent/sessions/{session['session_id']}"
         ).json()

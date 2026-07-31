@@ -310,6 +310,7 @@ class BrowserGateway:
         vision_consensus: VisionConsensusTracker | None = None,
         vision_producer_version: str = "aeromind-apm-lite-ground",
         fleet: FleetService | None = None,
+        planner_analyzer: Any | None = None,
         telemetry_interval_s: float = 0.2,
     ) -> None:
         if telemetry_interval_s <= 0.0:
@@ -333,6 +334,15 @@ class BrowserGateway:
         self.fleet = fleet or FleetService()
         self.fleet_mission = FleetMissionRunner(runtime)
         self.mission_planner = MissionPlanner(runtime)
+
+        def _planner_analyzer(vehicle_id: int, prompt: str):
+            # The planner analyzer interface is (vehicle_id, prompt); the
+            # frame analyzer takes (prompt, vehicle_id).
+            return self.analyze_current_frame(prompt, vehicle_id)
+
+        self.mission_planner.analyzer = (
+            planner_analyzer if planner_analyzer is not None else _planner_analyzer
+        )
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
@@ -1083,6 +1093,7 @@ class BrowserGateway:
             )
         return {
             "fleet": {"vehicles": fleet_vehicles},
+            "mission_planner": self.mission_planner.status_payload(),
             "captured_at_utc": datetime.now(timezone.utc).isoformat(),
             "vehicle_id": selected,
             "vehicle_name": config.vehicle_name,
@@ -1643,6 +1654,7 @@ def create_app(
     color_detector: ColorDetector | None = None,
     vision_consensus: VisionConsensusTracker | None = None,
     fleet: FleetService | None = None,
+    planner_analyzer: Any | None = None,
     static_dir: str | Path | None = None,
 ) -> FastAPI:
     runtime = runtime or ManualRuntime()
@@ -1658,6 +1670,7 @@ def create_app(
         color_detector=color_detector,
         vision_consensus=vision_consensus,
         fleet=fleet,
+        planner_analyzer=planner_analyzer,
     )
 
     @asynccontextmanager
