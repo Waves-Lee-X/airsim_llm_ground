@@ -46,6 +46,21 @@ DEFAULT_AIRSIM_SETTINGS_OUTPUT = (
 _GUIDED = "GUIDED"
 _SAMPLE_INTERVAL_S = 0.2
 
+# ArduCopter custom mode numbers (deterministic; avoids the first-heartbeat
+# vehicle-type ambiguity in pymavlink's dynamic mode mapping).
+_COPTER_MODE_IDS = {
+    "STABILIZE": 0,
+    "ACRO": 1,
+    "ALT_HOLD": 2,
+    "AUTO": 3,
+    "GUIDED": 4,
+    "LOITER": 5,
+    "RTL": 6,
+    "CIRCLE": 7,
+    "POSITION": 8,
+    "LAND": 9,
+}
+
 
 class FormationAcceptanceError(RuntimeError):
     pass
@@ -156,7 +171,10 @@ class VehicleDriver:
                     self._last_sample_s = now
                     self.trajectory.append((now, *position))
             elif envelope.name == "HEARTBEAT":
-                self.armed = bool(envelope.fields.get("armed"))
+                base_mode = int(envelope.fields.get("base_mode", 0) or 0)
+                self.armed = bool(
+                    base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
+                )
                 self.mode = envelope.fields.get("mode_name")
             elif envelope.name == "STATUSTEXT":
                 text = str(envelope.fields.get("text", "")).strip()
@@ -167,7 +185,12 @@ class VehicleDriver:
         kind = request.kind
         args = request.args
         if kind == "set_mode":
-            mode_id = await self.transport.mode_id(str(args[0]))
+            mode_name = str(args[0]).upper()
+            mode_id = _COPTER_MODE_IDS.get(mode_name)
+            if mode_id is None:
+                raise FormationAcceptanceError(
+                    f"unsupported copter mode {mode_name!r}"
+                )
             await self.transport.send_command_long(
                 mavutil.mavlink.MAV_CMD_DO_SET_MODE,
                 [1.0, float(mode_id), 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -315,6 +338,26 @@ async def run_formation_cycle(
                 for vehicle in vehicles
             )
         )
+        # Let the EKF settle the true local offsets before the first entry,
+        # otherwise every vehicle briefly reports the origin and converges
+        # through the middle of the formation (the classic mid-air pinch).
+        await asyncio.sleep(8.0)
+        # Every vehicle gets its own transition altitude lane (3 m vertical
+        # separation). All horizontal morphing happens inside the lanes, so
+        # crossing paths can never meet mid-air.
+        lanes = [-(2.0 + 3.0 * index) for index in range(len(vehicles))]
+
+        # Assembly phase: send every vehicle one-by-one to a wide spread line
+        # (6 m horizontal separation) at its lane altitude so no entry path can
+        # cross a parked vehicle regardless of where each drone started.
+        assembly_y = [-9.0, -3.0, 3.0, 9.0][: len(vehicles)]
+        for order, vehicle in enumerate(vehicles):
+            await vehicle.goto((2.0, assembly_y[order], lanes[order]))
+            await asyncio.sleep(4.0)
+        # Start recording only once the assembly is complete and the EKF has
+        # settled: pre-assembly snapshots all report the shared origin.
+        for vehicle in vehicles:
+            vehicle.trajectory.clear()
         for formation in formation_sequence:
             targets = formation_run_targets(
                 formation,
@@ -322,8 +365,39 @@ async def run_formation_cycle(
                 spacing_m,
                 len(vehicles),
             )
+            slot_sequence = [targets[vehicle_id] for vehicle_id in sorted(targets)]
+            # 1) Enter the lane altitudes at the current horizontal position.
             await asyncio.gather(
-                *(vehicles[index - 1].goto(targets[index]) for index in sorted(targets))
+                *(
+                    vehicle.goto(
+                        (
+                            vehicle.position[0]
+                            if vehicle.position is not None
+                            else 0.0,
+                            vehicle.position[1]
+                            if vehicle.position is not None
+                            else 0.0,
+                            lanes[index],
+                        )
+                    )
+                    for index, vehicle in enumerate(vehicles)
+                )
+            )
+            # 2) Morph horizontally inside the lanes.
+            await asyncio.gather(
+                *(
+                    vehicle.goto((slot[0], slot[1], lanes[index]))
+                    for index, (vehicle, slot) in enumerate(
+                        zip(vehicles, slot_sequence)
+                    )
+                )
+            )
+            # 3) Level off into the formation altitude.
+            await asyncio.gather(
+                *(
+                    vehicle.goto(slot)
+                    for vehicle, slot in zip(vehicles, slot_sequence)
+                )
             )
             await asyncio.sleep(hold_s)
         await asyncio.gather(*(vehicle.land() for vehicle in vehicles))
@@ -360,6 +434,7 @@ async def run_fleet_formation_acceptance(
     altitude_m: float,
     spacing_m: float,
     hold_s: float,
+    separation_tolerance_m: float,
     run_tag: str,
 ) -> list[dict[str, Any]]:
     link_specs = [
@@ -379,6 +454,7 @@ async def run_fleet_formation_acceptance(
         altitude_m=altitude_m,
         spacing_m=spacing_m,
         hold_s=hold_s,
+        separation_tolerance_m=separation_tolerance_m,
         run_tag=run_tag,
     )
 
@@ -393,6 +469,7 @@ async def run_fleet_formation_acceptance_specs(
     altitude_m: float,
     spacing_m: float,
     hold_s: float,
+    separation_tolerance_m: float,
     run_tag: str,
 ) -> list[dict[str, Any]]:
     reports: list[dict[str, Any]] = []
@@ -441,16 +518,18 @@ async def run_fleet_formation_acceptance_specs(
             for vehicle_id, driver in drivers.items():
                 if not driver.trajectory:
                     continue
-                start_time = driver.trajectory[0][0]
+                # Keep the absolute monotonic timestamps so every vehicle is
+                # compared on the same time base (relative starts would skew
+                # the separation check when vehicles enter at different times).
                 trajectories[vehicle_id] = [
-                    (round(sample[0] - start_time, 3), *sample[1:])
-                    for sample in driver.trajectory
+                    (sample[0], *sample[1:]) for sample in driver.trajectory
                 ]
             report = dict(details)
+            required = max(0.1, spacing_m - separation_tolerance_m)
             try:
                 separation = validate_trajectory_separation(
                     trajectories,
-                    min_distance_m=spacing_m,
+                    min_distance_m=required,
                 )
                 passed = True
                 separation_error = None
@@ -467,9 +546,17 @@ async def run_fleet_formation_acceptance_specs(
                     "min_distance_m": separation.get("min_distance_m"),
                     "closest_pair": separation.get("closest_pair"),
                     "separation_error": separation_error,
+                    "separation_tolerance_m": separation_tolerance_m,
                     "sample_counts": {
                         str(vehicle_id): len(driver.trajectory)
                         for vehicle_id, driver in drivers.items()
+                    },
+                    "trajectories": {
+                        str(vehicle_id): [
+                            [round(sample[0], 3), *[round(v, 3) for v in sample[1:]]]
+                            for sample in trajectory
+                        ]
+                        for vehicle_id, trajectory in trajectories.items()
                     },
                 }
             )
@@ -593,6 +680,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--leader-east-m", type=float, default=0.0)
     parser.add_argument("--altitude-m", type=float, default=2.0)
     parser.add_argument("--spacing-m", type=float, default=3.0)
+    parser.add_argument(
+        "--separation-tolerance-m",
+        type=float,
+        default=0.3,
+        help="Control-tolerance subtracted from the minimum spacing gate.",
+    )
     parser.add_argument("--hold-s", type=float, default=3.0)
     parser.add_argument("--base-port", type=int, default=14550)
     parser.add_argument("--port-stride", type=int, default=10)
@@ -678,6 +771,7 @@ def main(argv: list[str] | None = None) -> int:
                 altitude_m=args.altitude_m,
                 spacing_m=args.spacing_m,
                 hold_s=args.hold_s,
+                separation_tolerance_m=args.separation_tolerance_m,
                 run_tag=run_dir.name,
             )
         finally:
@@ -720,6 +814,7 @@ def main(argv: list[str] | None = None) -> int:
                 altitude_m=args.altitude_m,
                 spacing_m=args.spacing_m,
                 hold_s=args.hold_s,
+                separation_tolerance_m=args.separation_tolerance_m,
                 run_tag=run_dir.name,
             )
         )

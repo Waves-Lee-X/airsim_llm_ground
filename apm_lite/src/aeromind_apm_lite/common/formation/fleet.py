@@ -130,8 +130,16 @@ def _segment_min_distance(
 
     velocity_a = velocity(start_a, end_a)
     velocity_b = velocity(start_b, end_b)
+    # Evaluate both positions at the shared overlap start t0 so the relative
+    # offset is measured on the same time base (segment start times differ).
     offset = tuple(
-        (start_a[k] - start_b[k]) for k in (1, 2, 3)
+        (
+            start_a[k]
+            + velocity_a[k - 1] * (t0 - start_a[0])
+            - start_b[k]
+            - velocity_b[k - 1] * (t0 - start_b[0])
+        )
+        for k in (1, 2, 3)
     )
     relative_velocity = tuple(
         velocity_a[k] - velocity_b[k] for k in range(3)
@@ -141,10 +149,10 @@ def _segment_min_distance(
         offset[k] * relative_velocity[k] for k in range(3)
     )
     constant = sum(value * value for value in offset)
-    candidates = [t0, t1]
+    candidates = [0.0, t1 - t0]
     if quadratic > 0.0:
         vertex = -linear / (2.0 * quadratic)
-        if t0 <= vertex <= t1:
+        if 0.0 <= vertex <= t1 - t0:
             candidates.append(vertex)
     squared = min(
         quadratic * t * t + linear * t + constant for t in candidates
