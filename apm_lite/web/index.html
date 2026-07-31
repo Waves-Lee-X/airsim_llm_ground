@@ -240,7 +240,21 @@
                 <span>分析摘要</span>
                 <p id="visualSummary">等待视觉分析</p>
               </div>
-            </div>
+            
+              <div class="semantic-evidence" aria-label="颜色交叉验证与视觉证据">
+                <div class="semantic-evidence-heading">
+                  <div><span>X-CHECK</span><strong id="visionCrossStatus">等待交叉验证</strong></div>
+                  <button id="visionCrosscheck" class="semantic-action semantic-action-small" type="button"><span aria-hidden="true">&#9670;</span>OpenCV 交叉验证</button>
+                </div>
+                <div class="semantic-evidence-row">
+                  <div><span>VLM 颜色</span><strong id="visionVlmColor">--</strong></div>
+                  <div><span>OpenCV 颜色</span><strong id="visionOpenCvColor">--</strong></div>
+                  <div><span>一致性</span><strong id="visionAgreement">--</strong></div>
+                  <div><span>多帧共识</span><strong id="visionConsensus">--</strong></div>
+                </div>
+                <div id="visionEvidenceList" class="vision-evidence-list"><span class="semantic-empty">尚无视觉证据</span></div>
+              </div>
+</div>
 
             <div id="missionWorkspace" class="semantic-workspace" role="tabpanel" hidden>
               <div class="agent-toolbar">

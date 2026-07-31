@@ -14,8 +14,17 @@ def test_committed_protocol_schema_contains_wire_fleet_georeference_and_trajecto
         "georeference",
         "trajectory_comparison_report",
         "trajectory_evidence",
+        "vision_analysis_evidence",
+        "color_detection",
         "wire_message",
     }
+    assert (
+        schema["schemas"]["vision_analysis_evidence"]["properties"][
+            "schema_version"
+        ]["const"]
+        == "1.0"
+    )
+    assert "color" in schema["schemas"]["color_detection"]["required"]
     reference = schema["schemas"]["georeference"]
     assert reference["properties"]["schema_version"]["const"] == "1.0"
     assert "vehicle_homes" in reference["required"]

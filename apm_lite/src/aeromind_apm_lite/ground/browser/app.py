@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import time
 from contextlib import asynccontextmanager
 from dataclasses import fields, replace
@@ -70,6 +71,16 @@ from .semantic import (
     SemanticBusy,
     SemanticService,
     SemanticUnavailable,
+)
+from .vision_evidence import (
+    ColorDetector,
+    ColorUnavailable,
+    VisionAnalysisEvidence,
+    VisionConsensusTracker,
+    VisionEvidenceError,
+    VisionEvidenceStore,
+    VisionFrameInfo,
+    cross_validate_color,
 )
 
 
@@ -205,6 +216,10 @@ class BrowserGateway:
         mission_agent: MissionAgentService | None = None,
         georeference: GeoReferenceStore | None = None,
         trajectory_evidence: TrajectoryEvidenceStore | None = None,
+        vision_evidence: VisionEvidenceStore | None = None,
+        color_detector: ColorDetector | None = None,
+        vision_consensus: VisionConsensusTracker | None = None,
+        vision_producer_version: str = "aeromind-apm-lite-ground",
         telemetry_interval_s: float = 0.2,
     ) -> None:
         if telemetry_interval_s <= 0.0:
@@ -219,6 +234,12 @@ class BrowserGateway:
         self.trajectory_evidence = trajectory_evidence or TrajectoryEvidenceStore(
             Path.home() / ".aeromind" / "trajectory-evidence"
         )
+        self.vision_evidence = vision_evidence or VisionEvidenceStore(
+            Path.home() / ".aeromind" / "visual-evidence"
+        )
+        self.color_detector = color_detector or ColorDetector()
+        self.vision_consensus = vision_consensus or VisionConsensusTracker()
+        self.vision_producer_version = vision_producer_version
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
@@ -647,6 +668,10 @@ class BrowserGateway:
             "camera": self.camera_status_payload(selected),
             "semantic": self.semantic.status_payload(),
             "mission_agent": self.mission_agent.status_payload(),
+            "vision": {
+                "consensus": self.vision_consensus.consensus_payload(),
+                "evidence_available": self.vision_evidence.root.is_dir(),
+            },
         }
 
     async def analyze_current_frame(
@@ -658,8 +683,65 @@ class BrowserGateway:
         frame = await self.camera_frame(selected)
         payload = await self.semantic.analyze_frame(frame, prompt)
         payload["vehicle_id"] = selected
+        payload["cross_validation"] = self._cross_validate_visual(payload, frame)
+        payload["consensus"] = self.vision_consensus.append(payload)
+        payload["evidence"] = await self._save_vision_evidence(payload, frame)
         await self.events.publish("visual_semantic_result", payload)
         return payload
+
+    def _cross_validate_visual(
+        self,
+        payload: dict[str, Any],
+        frame: CameraFrame,
+    ) -> dict[str, Any]:
+        detection = None
+        try:
+            detection = self.color_detector.detect(
+                frame.data,
+                sequence=frame.sequence,
+                captured_at_utc=frame.captured_at_utc,
+                media_type=frame.media_type,
+            )
+        except ColorUnavailable:
+            detection = None
+        result = payload.get("result") or {}
+        target = result.get("target") or {}
+        return cross_validate_color(target.get("color"), detection)
+
+    async def _save_vision_evidence(
+        self,
+        payload: dict[str, Any],
+        frame: CameraFrame,
+    ) -> dict[str, Any]:
+        try:
+            evidence = VisionAnalysisEvidence(
+                vehicle_id=payload["vehicle_id"],
+                frame=VisionFrameInfo(
+                    sequence=frame.sequence,
+                    captured_at_utc=frame.captured_at_utc,
+                    media_type=frame.media_type,
+                    size_bytes=len(frame.data),
+                    sha256=hashlib.sha256(frame.data).hexdigest(),
+                ),
+                vision_model=payload.get("model") or "unknown",
+                prompt=payload.get("prompt") or "",
+                result=payload.get("result") or {},
+                raw_response=payload.get("raw_response") or "",
+                cross_validation=payload.get("cross_validation") or {},
+                consensus=payload.get("consensus") or {},
+                producer_version=self.vision_producer_version,
+            )
+            saved = await asyncio.to_thread(
+                self.vision_evidence.save,
+                evidence,
+                frame.data,
+            )
+            return {
+                "evidence_id": str(saved.evidence_id),
+                "evidence_hash": saved.evidence_hash,
+            }
+        except VisionEvidenceError as exc:
+            return {"error": str(exc)}
 
     async def parse_mission(self, instruction: str) -> dict[str, Any]:
         payload = await self.semantic.parse_mission(instruction)
@@ -1177,6 +1259,10 @@ def _default_trajectory_evidence_dir() -> Path:
     return Path.home() / ".aeromind" / "trajectory-evidence"
 
 
+def _default_vision_evidence_dir() -> Path:
+    return Path.home() / ".aeromind" / "visual-evidence"
+
+
 def create_app(
     runtime: ManualRuntime | HybridRuntime | None = None,
     *,
@@ -1186,6 +1272,9 @@ def create_app(
     mission_agent: MissionAgentService | None = None,
     georeference: GeoReferenceStore | None = None,
     trajectory_evidence: TrajectoryEvidenceStore | None = None,
+    vision_evidence: VisionEvidenceStore | None = None,
+    color_detector: ColorDetector | None = None,
+    vision_consensus: VisionConsensusTracker | None = None,
     static_dir: str | Path | None = None,
 ) -> FastAPI:
     runtime = runtime or ManualRuntime()
@@ -1197,6 +1286,9 @@ def create_app(
         mission_agent=mission_agent,
         georeference=georeference,
         trajectory_evidence=trajectory_evidence,
+        vision_evidence=vision_evidence,
+        color_detector=color_detector,
+        vision_consensus=vision_consensus,
     )
 
     @asynccontextmanager
@@ -1361,6 +1453,84 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/api/vision/crosscheck")
+    async def crosscheck_current_frame(
+        request: VisualAnalysisRequest,
+    ) -> dict[str, Any]:
+        selected = gateway._vehicle_id(request.vehicle_id)
+        frame = await gateway.camera_frame(selected)
+        detection = None
+        detector_error = None
+        try:
+            detection = gateway.color_detector.detect(
+                frame.data,
+                sequence=frame.sequence,
+                captured_at_utc=frame.captured_at_utc,
+                media_type=frame.media_type,
+            )
+        except ColorUnavailable as exc:
+            detector_error = str(exc)
+        latest = gateway.semantic.latest_payload().get("visual")
+        vlm_color = None
+        if isinstance(latest, dict):
+            target = (latest.get("result") or {}).get("target") or {}
+            vlm_color = target.get("color")
+        cross = cross_validate_color(vlm_color, detection)
+        return {
+            "vehicle_id": selected,
+            "frame": {
+                "sequence": frame.sequence,
+                "captured_at_utc": frame.captured_at_utc.isoformat(),
+            },
+            "cross_validation": cross,
+            "detector_error": detector_error,
+            "consensus": gateway.vision_consensus.consensus_payload(),
+        }
+
+    @app.get("/api/vision/evidence")
+    async def vision_evidence_list() -> dict[str, Any]:
+        try:
+            evidence = await asyncio.to_thread(
+                gateway.vision_evidence.list_summaries
+            )
+        except VisionEvidenceError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"evidence": evidence}
+
+    @app.get("/api/vision/evidence/{evidence_id}")
+    async def get_vision_evidence(evidence_id: UUID) -> dict[str, Any]:
+        try:
+            evidence = await asyncio.to_thread(
+                gateway.vision_evidence.load,
+                evidence_id,
+            )
+        except VisionEvidenceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return evidence.public_payload()
+
+    @app.get("/api/vision/evidence/{evidence_id}/frame")
+    async def get_vision_evidence_frame(evidence_id: UUID) -> Response:
+        try:
+            evidence = await asyncio.to_thread(
+                gateway.vision_evidence.load,
+                evidence_id,
+            )
+            frame_data = await asyncio.to_thread(
+                gateway.vision_evidence.load_frame,
+                evidence_id,
+            )
+        except VisionEvidenceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if frame_data is None:
+            raise HTTPException(
+                status_code=404,
+                detail="frame snapshot is not stored",
+            )
+        return Response(
+            content=frame_data,
+            media_type=evidence.frame.media_type,
+        )
 
     @app.get("/api/agent/status")
     async def mission_agent_status() -> dict[str, Any]:
@@ -1574,6 +1744,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Directory for immutable planned/predicted/observed evidence.",
     )
     parser.add_argument(
+        "--vision-evidence-dir",
+        type=Path,
+        default=_default_vision_evidence_dir(),
+        help="Directory for immutable visual-analysis evidence records.",
+    )
+    parser.add_argument(
         "--airsim-host",
         help=(
             "AirSim RPC host; defaults to the Windows gateway detected from "
@@ -1710,6 +1886,7 @@ def main(argv: list[str] | None = None) -> int:
         cameras=cameras,
         georeference=georeference,
         trajectory_evidence=TrajectoryEvidenceStore(args.trajectory_evidence_dir),
+        vision_evidence=VisionEvidenceStore(args.vision_evidence_dir),
         static_dir=args.static_dir,
     )
     import uvicorn

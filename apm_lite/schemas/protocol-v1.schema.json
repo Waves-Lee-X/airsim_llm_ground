@@ -2,6 +2,98 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schema_version": "1.0",
   "schemas": {
+    "color_detection": {
+      "additionalProperties": false,
+      "description": "One deterministic OpenCV HSV detection on a single camera frame.",
+      "properties": {
+        "area_px": {
+          "minimum": 0,
+          "title": "Area Px",
+          "type": "integer"
+        },
+        "bbox": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bbox"
+        },
+        "color": {
+          "enum": [
+            "red",
+            "green",
+            "blue",
+            "yellow",
+            "orange",
+            "purple",
+            "pink",
+            "white",
+            "black",
+            "gray"
+          ],
+          "title": "Color",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "coverage_ratio": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Coverage Ratio",
+          "type": "number"
+        },
+        "detected_at_utc": {
+          "format": "date-time",
+          "title": "Detected At Utc",
+          "type": "string"
+        },
+        "frame_sequence": {
+          "minimum": 0,
+          "title": "Frame Sequence",
+          "type": "integer"
+        },
+        "note": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "color",
+        "coverage_ratio",
+        "area_px",
+        "confidence",
+        "frame_sequence"
+      ],
+      "title": "ColorDetection",
+      "type": "object"
+    },
     "fleet_config": {
       "$defs": {
         "DeploymentMode": {
@@ -1181,6 +1273,139 @@
         "samples"
       ],
       "title": "TrajectoryEvidence",
+      "type": "object"
+    },
+    "vision_analysis_evidence": {
+      "$defs": {
+        "VisionFrameInfo": {
+          "additionalProperties": false,
+          "properties": {
+            "captured_at_utc": {
+              "format": "date-time",
+              "title": "Captured At Utc",
+              "type": "string"
+            },
+            "media_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Media Type",
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 0,
+              "title": "Sequence",
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            },
+            "size_bytes": {
+              "minimum": 0,
+              "title": "Size Bytes",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sequence",
+            "captured_at_utc",
+            "media_type",
+            "size_bytes",
+            "sha256"
+          ],
+          "title": "VisionFrameInfo",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "One immutable record combining VLM output, cross-validation and consensus.",
+      "properties": {
+        "analyzed_at_utc": {
+          "format": "date-time",
+          "title": "Analyzed At Utc",
+          "type": "string"
+        },
+        "consensus": {
+          "additionalProperties": true,
+          "title": "Consensus",
+          "type": "object"
+        },
+        "cross_validation": {
+          "additionalProperties": true,
+          "title": "Cross Validation",
+          "type": "object"
+        },
+        "evidence_id": {
+          "format": "uuid",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "flight_command_generated": {
+          "default": false,
+          "title": "Flight Command Generated",
+          "type": "boolean"
+        },
+        "frame": {
+          "$ref": "#/$defs/VisionFrameInfo"
+        },
+        "preview_only": {
+          "default": true,
+          "title": "Preview Only",
+          "type": "boolean"
+        },
+        "producer_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Producer Version",
+          "type": "string"
+        },
+        "prompt": {
+          "default": "",
+          "maxLength": 4096,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "raw_response": {
+          "default": "",
+          "maxLength": 1000000,
+          "title": "Raw Response",
+          "type": "string"
+        },
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "vehicle_id": {
+          "maximum": 255,
+          "minimum": 1,
+          "title": "Vehicle Id",
+          "type": "integer"
+        },
+        "vision_model": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Vision Model",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vehicle_id",
+        "frame",
+        "vision_model",
+        "result",
+        "cross_validation",
+        "consensus",
+        "producer_version"
+      ],
+      "title": "VisionAnalysisEvidence",
       "type": "object"
     },
     "wire_message": {

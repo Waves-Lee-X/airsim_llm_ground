@@ -68,6 +68,9 @@ function cacheElements() {
     "visionWorkspace", "missionWorkspace", "visionFrameState", "visionRequestState",
     "missionRequestState", "missionSummary", "semanticResultTitle",
     "semanticConfidenceBar", "semanticRiskCell",
+    "visionCrosscheck", "visionCrossStatus",
+    "visionVlmColor", "visionOpenCvColor", "visionAgreement",
+    "visionConsensus", "visionEvidenceList",
     "agentVehicleState", "agentLinkState", "agentGpsState",
     "agentPermissionState", "resetAgentSession", "agentConversation",
     "agentDraft", "agentDraftAction", "agentDraftStatus",
@@ -499,6 +502,9 @@ function renderVisualSemantic(payload) {
     : `${Math.max(0, Math.min(100, confidence * 100))}%`;
   elements.semanticRisk.textContent = result.risk_level || "--";
   elements.semanticRiskCell.dataset.level = String(result.risk_level || "unknown").toLowerCase();
+  renderVisionCrossValidation(payload.cross_validation);
+  renderVisionConsensus(payload.consensus);
+  void refreshVisionEvidence();
   elements.visualSummary.textContent = [result.message, result.scene, result.suggestion]
     .filter(Boolean)
     .join(" · ") || "视觉分析已完成";
@@ -747,6 +753,84 @@ async function analyzeVision(event) {
   } finally {
     setSemanticBusy(false);
     await refreshSemanticStatus();
+  }
+}
+
+function renderVisionCrossValidation(cross) {
+  const value = cross || {};
+  elements.visionCrossStatus.textContent =
+    value.status === "agreed" ? "VLM 与 OpenCV 一致"
+    : value.status === "disagreed" ? "VLM 与 OpenCV 不一致"
+    : value.status === "vlm_color_missing" ? "VLM 颜色缺失"
+    : value.status === "unavailable" ? "检测不可用"
+    : "等待交叉验证";
+  elements.visionVlmColor.textContent = value.vlm_color || "--";
+  elements.visionOpenCvColor.textContent = value.opencv_color || "--";
+  elements.visionAgreement.textContent =
+    value.agreement === true ? "一致"
+    : value.agreement === false ? "不一致"
+    : "--";
+}
+
+function renderVisionConsensus(consensus) {
+  const value = consensus || {};
+  const color = value.confirmed_color || (value.best && value.best.color) || null;
+  elements.visionConsensus.textContent = value.confirmed
+    ? "已确认 · " + color + " (" + value.window_size + "/" + value.required + ")"
+    : value.window_size
+      ? "观察中 " + value.window_size + "/" + value.required
+      : "--";
+}
+
+async function runVisionCrosscheck() {
+  if (state.semanticBusy) return;
+  elements.visionCrossStatus.textContent = "交叉验证中...";
+  try {
+    const payload = await requestJson("/api/vision/crosscheck", {
+      method: "POST",
+      body: JSON.stringify({ vehicle_id: state.selectedVehicleId }),
+    });
+    renderVisionCrossValidation(payload.cross_validation);
+    renderVisionConsensus(payload.consensus);
+  } catch (error) {
+    elements.visionCrossStatus.textContent = "交叉验证失败";
+    elements.visionEvidenceList.replaceChildren();
+    const note = document.createElement("span");
+    note.className = "semantic-empty";
+    note.textContent = "交叉验证失败：" + error.message;
+    elements.visionEvidenceList.append(note);
+  }
+  await refreshVisionEvidence();
+}
+
+async function refreshVisionEvidence() {
+  try {
+    const payload = await requestJson("/api/vision/evidence");
+    const items = Array.isArray(payload.evidence) ? payload.evidence : [];
+    elements.visionEvidenceList.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement("span");
+      empty.className = "semantic-empty";
+      empty.textContent = "尚无视觉证据";
+      elements.visionEvidenceList.append(empty);
+      return;
+    }
+    const list = document.createElement("ol");
+    items.slice(-8).reverse().forEach((item) => {
+      const row = document.createElement("li");
+      const label = document.createElement("a");
+      const color = item.opencv_color || item.vlm_color || "?";
+      const status = item.agreement === true ? "一致" : item.agreement === false ? "冲突" : "无";
+      label.href = "/api/vision/evidence/" + item.evidence_id + "/frame";
+      label.target = "_blank";
+      label.rel = "noopener";
+      label.textContent = "#" + item.frame_sequence + " " + color + " " + status + (item.confirmed ? " · 已确认" : "");
+      row.append(label);
+      list.append(row);
+    });
+    elements.visionEvidenceList.append(list);
+  } catch (_error) {
+    // Evidence history is optional while the rest of the station stays usable.
   }
 }
 
@@ -1809,6 +1893,9 @@ function bindEvents() {
   elements.visionAnalysisForm.addEventListener("submit", (event) => {
     void analyzeVision(event);
   });
+  elements.visionCrosscheck.addEventListener("click", () => {
+    void runVisionCrosscheck();
+  });
   elements.missionParseForm.addEventListener("submit", (event) => {
     void parseMission(event);
   });
@@ -1879,6 +1966,7 @@ async function bootstrap() {
   window.setInterval(refreshStatus, 2000);
   window.setInterval(refreshCameraStatus, 2000);
   window.setInterval(refreshSemanticStatus, 3000);
+  void refreshVisionEvidence();
 }
 
 document.addEventListener("DOMContentLoaded", bootstrap);

@@ -20,6 +20,10 @@ from aeromind_apm_lite.common.trajectory import (  # noqa: E402
     TrajectoryComparisonReport,
     TrajectoryEvidence,
 )
+from aeromind_apm_lite.ground.browser.vision_evidence import (  # noqa: E402
+    ColorDetection,
+    VisionAnalysisEvidence,
+)
 
 
 def rendered_schema() -> str:
@@ -33,6 +37,8 @@ def rendered_schema() -> str:
                 TrajectoryComparisonReport.model_json_schema()
             ),
             "trajectory_evidence": TrajectoryEvidence.model_json_schema(),
+            "vision_analysis_evidence": VisionAnalysisEvidence.model_json_schema(),
+            "color_detection": ColorDetection.model_json_schema(),
             "wire_message": wire_message_json_schema(),
         },
     }
