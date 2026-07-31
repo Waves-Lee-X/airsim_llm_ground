@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>AeroMind APM Lite 地面站</title>
-    <link rel="stylesheet" href="/styles.css?v=20260731.11" />
+    <link rel="stylesheet" href="/styles.css?v=20260731.12" />
   </head>
   <body>
     <div class="app-shell">
@@ -351,10 +351,14 @@
                 </div>
                 <p id="missionSummary">尚无工具草案</p>
                 <div id="agentDraftBlockers" class="agent-draft-blockers"></div>
+                <div id="agentPlanSteps" class="agent-plan-steps"></div>
                 <div class="agent-draft-actions">
                   <button id="cancelAgentDraft" type="button">取消草案</button>
                   <button id="confirmAgentDraft" class="semantic-action" type="button">人工确认</button>
                 </div>
+              </div>
+              <div id="agentPlanState" class="agent-plan-state" hidden>
+                <span>计划执行</span><strong id="agentPlanStateText">--</strong>
               </div>
             </div>
 
@@ -505,6 +509,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=20260731.11" defer></script>
+    <script src="/app.js?v=20260731.12" defer></script>
   </body>
 </html>

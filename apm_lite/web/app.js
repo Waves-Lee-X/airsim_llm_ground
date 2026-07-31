@@ -87,6 +87,7 @@ function cacheElements() {
     "agentVehicleState", "agentLinkState", "agentGpsState",
     "agentPermissionState", "resetAgentSession", "agentConversation",
     "agentDraft", "agentDraftAction", "agentDraftStatus",
+    "agentPlanSteps", "agentPlanState", "agentPlanStateText",
     "agentDraftBlockers", "cancelAgentDraft", "confirmAgentDraft",
     "runtimeLabel", "linkDiagnostics", "lastUpdate",
     "p9Badge", "agentBadge",
@@ -623,6 +624,25 @@ function renderAgentDraft(draft) {
     return item;
   }));
   elements.agentDraftBlockers.hidden = blockers.length === 0;
+  const steps = draft.action === "plan" && Array.isArray(draft.arguments?.steps)
+    ? draft.arguments.steps
+    : [];
+  elements.agentPlanSteps.replaceChildren();
+  if (steps.length) {
+    const stepList = document.createElement("ol");
+    steps.forEach((step, index) => {
+      const item = document.createElement("li");
+      const marker = document.createElement("b");
+      marker.textContent = String(index + 1);
+      const detail = document.createElement("span");
+      const ids = Array.isArray(step.vehicle_ids) ? step.vehicle_ids.join(",") : "--";
+      detail.textContent = `${step.action || "--"} · UAV ${ids}`;
+      item.append(marker, detail);
+      stepList.append(item);
+    });
+    elements.agentPlanSteps.append(stepList);
+  }
+  elements.agentPlanSteps.hidden = steps.length === 0;
   elements.confirmAgentDraft.disabled = draft.executable !== true;
   elements.cancelAgentDraft.disabled = draft.status !== "pending_confirmation";
 }
@@ -1103,6 +1123,41 @@ async function cancelFleetMission() {
     elements.statusText.textContent = error.message;
   }
   void refreshFleetStatus();
+}
+
+const PLAN_LABELS = {
+  idle: "空闲",
+  starting: "启动中",
+  running: "执行中",
+  cancelling: "取消中",
+  cancelled: "已取消",
+  done: "已完成",
+  failed: "失败",
+};
+
+async function refreshPlannerStatus() {
+  try {
+    const payload = await requestJson("/api/planner/status");
+    if (!payload.busy && payload.phase === "idle") {
+      elements.agentPlanState.hidden = true;
+      return;
+    }
+    elements.agentPlanState.hidden = false;
+    const label = PLAN_LABELS[payload.phase] || payload.phase || "--";
+    const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    const active = steps.find((step) => step.state === "running");
+    const progress = steps.filter((step) => step.state === "done").length;
+    let text = `${label} · ${payload.stage || ""}`;
+    if (steps.length) text += ` · ${progress}/${steps.length}`;
+    if (active) text += ` · 第 ${active.index} 步 ${active.action}`;
+    elements.agentPlanStateText.textContent = text;
+    elements.agentPlanState.dataset.level =
+      payload.phase === "done" ? "ok"
+      : payload.phase === "failed" ? "bad"
+      : "warn";
+  } catch (_error) {
+    elements.agentPlanState.hidden = true;
+  }
 }
 
 async function refreshFleetStatus() {
@@ -2727,6 +2782,8 @@ async function bootstrap() {
   window.setInterval(refreshSemanticStatus, 3000);
   window.setInterval(refreshFleetStatus, 3000);
   window.setInterval(refreshSituationMap, 1000);
+  window.setInterval(refreshPlannerStatus, 2000);
+  void refreshPlannerStatus();
   void refreshVisionEvidence();
 }
 

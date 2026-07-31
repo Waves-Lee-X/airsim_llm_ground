@@ -56,6 +56,7 @@ from .fleet_executor import (
     FleetMissionError,
     FleetMissionRunner,
 )
+from .mission_planner import MissionPlanner, PlanStep
 from .fleet_service import (
     FleetConfigError,
     FleetService,
@@ -331,6 +332,7 @@ class BrowserGateway:
         self.vision_producer_version = vision_producer_version
         self.fleet = fleet or FleetService()
         self.fleet_mission = FleetMissionRunner(runtime)
+        self.mission_planner = MissionPlanner(runtime)
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
@@ -1051,7 +1053,36 @@ class BrowserGateway:
             else None
         )
         reference = self.georeference.value
+        fleet_vehicles: list[dict[str, Any]] = []
+        for fleet_vehicle_id in self.runtime.vehicle_ids:
+            try:
+                fleet_snapshot = self._link_snapshot_payload(fleet_vehicle_id)
+            except KeyError:
+                fleet_snapshot = None
+            if fleet_snapshot is None:
+                fleet_vehicles.append(
+                    {
+                        "vehicle_id": fleet_vehicle_id,
+                        "available": False,
+                    }
+                )
+                continue
+            fleet_vehicles.append(
+                {
+                    "vehicle_id": fleet_vehicle_id,
+                    "vehicle_name": (
+                        fleet_snapshot.get("vehicle_name")
+                        or self.runtime.config_for(fleet_vehicle_id).vehicle_name
+                    ),
+                    "available": True,
+                    "fcu_link_ok": bool(fleet_snapshot.get("fcu_link_ok")),
+                    "mode": fleet_snapshot.get("mode"),
+                    "armed": bool(fleet_snapshot.get("armed")),
+                    "position_m": fleet_snapshot.get("position_m"),
+                }
+            )
         return {
+            "fleet": {"vehicles": fleet_vehicles},
             "captured_at_utc": datetime.now(timezone.utc).isoformat(),
             "vehicle_id": selected,
             "vehicle_name": config.vehicle_name,
@@ -1111,7 +1142,33 @@ class BrowserGateway:
         reason = (
             f"operator-confirmed Mission Agent: {claim['reason']}"
         )[:256]
-        if action == "goto":
+        if action == "plan":
+            steps = [
+                PlanStep(
+                    action=str(step["action"]).lower(),
+                    vehicle_ids=tuple(int(value) for value in step["vehicle_ids"]),
+                    params=dict(step.get("arguments") or {}),
+                )
+                for step in arguments.get("steps", [])
+            ]
+            try:
+                command = await self.mission_planner.start(steps)
+            except FleetMissionError as exc:
+                self.mission_agent.record_execution(
+                    draft_id,
+                    succeeded=False,
+                    result={"detail": str(exc)},
+                )
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except Exception as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                self.mission_agent.record_execution(
+                    draft_id,
+                    succeeded=False,
+                    result={"detail": str(detail)},
+                )
+                raise
+        elif action == "goto":
             request = CommandRequest(
                 target_position_ned_m=tuple(arguments["target_position_ned_m"]),
                 reason=reason,
@@ -1870,6 +1927,14 @@ def create_app(
     @app.post("/api/fleet/execute/cancel")
     async def fleet_execute_cancel() -> dict[str, Any]:
         return await gateway.fleet_mission.cancel()
+
+    @app.get("/api/planner/status")
+    async def planner_status() -> dict[str, Any]:
+        return gateway.mission_planner.status_payload()
+
+    @app.post("/api/planner/cancel")
+    async def planner_cancel() -> dict[str, Any]:
+        return await gateway.mission_planner.cancel()
 
     @app.post("/api/fleet/formation")
     async def set_fleet_formation(

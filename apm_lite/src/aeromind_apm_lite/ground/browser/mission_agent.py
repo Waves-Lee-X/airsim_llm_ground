@@ -84,6 +84,7 @@ class _AgentSession:
     updated_at_utc: datetime
     turns: list[_AgentTurn] = field(default_factory=list)
     latest_draft_id: UUID | None = None
+    execution_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -126,6 +127,10 @@ def normalize_agent_result(content: str) -> dict[str, Any]:
     proposal = parsed.get("proposed_action")
     if not isinstance(proposal, dict):
         proposal = None
+    raw_plan = parsed.get("plan")
+    plan = [item for item in (raw_plan or []) if isinstance(item, dict)]
+    if not plan:
+        plan = None
     questions = parsed.get("questions")
     if not isinstance(questions, list):
         questions = []
@@ -135,6 +140,7 @@ def normalize_agent_result(content: str) -> dict[str, Any]:
         "risk_level": risk_level,
         "questions": [str(item).strip() for item in questions if str(item).strip()],
         "proposed_action": proposal,
+        "plan": plan,
         "format_warning": warning,
     }
 
@@ -143,14 +149,20 @@ class MissionAgentService:
     """Own bounded chat history and deterministic one-shot action drafts."""
 
     _SYSTEM_PROMPT = (
-        "你是 AeroMind APM Lite 的 Mission Agent。你可以解释当前飞机状态、回答问题并"
-        "生成供操作员确认的单个原子动作草案，但你从不直接控制无人机。所有事实必须来自"
-        "提供的状态 JSON，不得编造坐标、传感器、链路或执行结果。仅允许建议 arm、"
-        "disarm、takeoff、hold、land、rtl；GOTO与编队只允许在仿真（SIM/DEMO）模式下建议草案；搜索、路径规划和只能"
-        "文字说明，不得放入 proposed_action。只返回合法 JSON，不输出 Markdown。字段为"
-        " reply、state_summary、risk_level、questions、proposed_action。proposed_action"
-        " 为 null 或包含 action、vehicle_id、arguments、reason；takeoff arguments 只含"
-        " altitude_m，其他动作 arguments 必须为空对象。不要声称动作已经执行。"
+        "你是 AeroMind APM Lite 的 Mission Agent。你可以解释当前飞机状态、回答问题并生成供操作员确认的草案，"
+        "但你从不直接控制无人机。所有事实必须来自提供的状态 JSON，不得编造坐标、传感器、链路或执行结果。"
+        "允许建议的单动作：arm、disarm、takeoff、hold、land、rtl；GOTO 与编队（formation）只允许在仿真"
+        "（SIM/SITL/DEMO）模式下建议草案。复合任务（需要多个动作才能完成，例如“起飞→飞往→编队→降落”）"
+        "应返回 plan 步骤数组，仅仿真模式可执行。搜索、路径规划和 analyze 只能文字说明，不得放入 "
+        "proposed_action 或 plan。只返回合法 JSON，不输出 Markdown。字段为 reply、state_summary、"
+        "risk_level、questions、proposed_action、plan。proposed_action 为 null 或包含 action、vehicle_id、"
+        "arguments、reason；takeoff arguments 只含 altitude_m，其他单动作 arguments 必须为空对象。"
+        "plan 为步骤数组，每步包含 action、vehicle_id 或 vehicle_ids、arguments、reason；"
+        "支持动作 "
+        "arm/disarm/takeoff/goto/formation/hold/land；goto arguments 含 "
+        "target_position_ned_m（[北,东,下]）；"
+        "formation arguments 含 formation（line/v/diamond）、leader_target_map_m、spacing_m、altitude_m。"
+        "不要声称动作已经执行。"
     )
 
     def __init__(
@@ -226,9 +238,18 @@ class MissionAgentService:
             result = normalize_agent_result(completion["content"])
             now = datetime.now(timezone.utc)
             session.turns.append(_AgentTurn("user", message, now))
+            proposal = result.get("proposed_action")
+            if proposal is None and result.get("plan"):
+                proposal = {
+                    "action": "plan",
+                    "plan": result["plan"],
+                    "reason": (
+                        str(result["reply"] or "Mission Agent 计划")[:128]
+                    ),
+                }
             draft = self._create_draft(
                 session,
-                result.get("proposed_action"),
+                proposal,
                 vehicle_context,
             )
             assistant_payload = {
@@ -277,13 +298,16 @@ class MissionAgentService:
         if self._clock() >= draft.expires_monotonic_s:
             draft.status = "expired"
             raise AgentDraftExpired("任务草案确认票据已过期")
+        recheck_proposal = {
+            "action": draft.action,
+            "vehicle_id": draft.vehicle_id,
+            "arguments": draft.arguments,
+            "reason": draft.reason,
+        }
+        if draft.action == "plan":
+            recheck_proposal["plan"] = draft.arguments.get("steps")
         blockers, arguments, vehicle_id = self._action_gate(
-            {
-                "action": draft.action,
-                "vehicle_id": draft.vehicle_id,
-                "arguments": draft.arguments,
-                "reason": draft.reason,
-            },
+            recheck_proposal,
             vehicle_context,
         )
         if blockers:
@@ -322,7 +346,143 @@ class MissionAgentService:
             raise AgentDraftConflict(f"草案状态为 {draft.status}，不能记录执行结果")
         draft.status = "completed" if succeeded else "failed"
         draft.execution_result = result
+        session = self._require_session(draft.session_id)
+        summary = {
+            "action": draft.action,
+            "vehicle_id": draft.vehicle_id,
+            "arguments": draft.arguments,
+            "succeeded": succeeded,
+            "result": {
+                key: result.get(key)
+                for key in ("phase", "stage", "status", "detail", "error")
+            },
+            "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        session.execution_history.append(summary)
+        session.execution_history = session.execution_history[-8:]
         return self._draft_payload(draft)
+
+    def _validate_plan_steps(
+        self,
+        steps: list[dict[str, Any]],
+        context: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Validate and normalize a multi-step plan (simulation only)."""
+        deployment_mode = str(context.get("deployment_mode") or "").lower()
+        simulated = deployment_mode != "real"
+        blockers: list[str] = []
+        if not simulated:
+            blockers.append("计划执行仅仿真（SIM/SITL）模式可用")
+            return [], blockers
+        if len(steps) > 20:
+            blockers.append("计划步骤数不能超过 20")
+            return [], blockers
+        current_vehicle_id = _integer(context.get("vehicle_id"))
+        normalized: list[dict[str, Any]] = []
+        for index, step in enumerate(steps, start=1):
+            action = str(step.get("action") or "").strip().lower()
+            if action == "return_home":
+                action = "rtl"
+            if action not in {
+                "arm",
+                "disarm",
+                "takeoff",
+                "goto",
+                "formation",
+                "hold",
+                "land",
+            }:
+                blockers.append(f"第 {index} 步动作 {action!r} 不受支持")
+                continue
+            raw_ids = step.get("vehicle_ids")
+            if raw_ids is None:
+                single = _integer(step.get("vehicle_id"))
+                raw_ids = (
+                    [single]
+                    if single is not None
+                    else (
+                        [current_vehicle_id]
+                        if current_vehicle_id is not None
+                        else []
+                    )
+                )
+            ids: list[int] = []
+            if isinstance(raw_ids, (list, tuple)):
+                for item in raw_ids:
+                    value = _integer(item)
+                    if value is None or not 1 <= value <= 255:
+                        blockers.append(f"第 {index} 步飞机编号无效")
+                        break
+                    ids.append(value)
+            else:
+                value = _integer(raw_ids)
+                if value is None or not 1 <= value <= 255:
+                    blockers.append(f"第 {index} 步飞机编号无效")
+                else:
+                    ids.append(value)
+            if len(ids) != len(set(ids)):
+                blockers.append(f"第 {index} 步飞机编号重复")
+            if action == "formation" and len(ids) < 2:
+                blockers.append(f"第 {index} 步编队至少需要 2 架飞机")
+
+            raw_args = step.get("arguments")
+            if not isinstance(raw_args, dict):
+                raw_args = {}
+            arguments: dict[str, Any] = {}
+            if action == "takeoff":
+                altitude = _finite_float(raw_args.get("altitude_m"))
+                if altitude is None or not 0.5 <= altitude <= 20.0:
+                    blockers.append(f"第 {index} 步起飞高度必须在 0.5-20 米")
+                else:
+                    arguments["altitude_m"] = altitude
+            elif action == "goto":
+                position = raw_args.get("target_position_ned_m")
+                if not isinstance(position, (list, tuple)) or len(position) != 3:
+                    blockers.append(f"第 {index} 步 GOTO 需要目标坐标")
+                else:
+                    try:
+                        values = [float(value) for value in position]
+                        if not all(math.isfinite(value) for value in values):
+                            blockers.append(f"第 {index} 步 GOTO 坐标无效")
+                        else:
+                            arguments["target_position_ned_m"] = values
+                    except (TypeError, ValueError):
+                        blockers.append(f"第 {index} 步 GOTO 坐标无效")
+            elif action == "formation":
+                formation = str(raw_args.get("formation") or "").strip().lower()
+                leader = raw_args.get("leader_target_map_m")
+                spacing = _finite_float(raw_args.get("spacing_m"))
+                altitude = _finite_float(raw_args.get("altitude_m"))
+                if formation not in {"line", "v", "diamond"}:
+                    blockers.append(f"第 {index} 步队形必须是 line/v/diamond")
+                else:
+                    arguments["formation"] = formation
+                if not isinstance(leader, (list, tuple)) or len(leader) != 3:
+                    blockers.append(f"第 {index} 步需要领机目标坐标")
+                else:
+                    try:
+                        arguments["leader_target_map_m"] = [
+                            float(value) for value in leader
+                        ]
+                    except (TypeError, ValueError):
+                        blockers.append(f"第 {index} 步领机目标无效")
+                if spacing is None or not 0.5 <= spacing <= 50.0:
+                    blockers.append(f"第 {index} 步间距必须在 0.5-50 米")
+                else:
+                    arguments["spacing_m"] = spacing
+                if altitude is None or not 0.5 <= altitude <= 20.0:
+                    blockers.append(f"第 {index} 步编队高度必须在 0.5-20 米")
+                else:
+                    arguments["altitude_m"] = altitude
+            if ids:
+                normalized.append(
+                    {
+                        "action": action,
+                        "vehicle_ids": ids,
+                        "arguments": arguments,
+                    }
+                )
+        return normalized, blockers
 
     def _create_draft(
         self,
@@ -365,7 +525,17 @@ class MissionAgentService:
         action = str(proposal.get("action") or "").strip().lower()
         if action == "return_home":
             action = "rtl"
-        if action not in ATOMIC_AGENT_ACTIONS:
+        if not action and isinstance(proposal.get("plan"), list):
+            action = "plan"
+        plan_steps: list[dict[str, Any]] | None = None
+        if action == "plan":
+            raw_plan = proposal.get("plan")
+            if not isinstance(raw_plan, list):
+                raw_plan = None
+            plan_steps = [item for item in (raw_plan or []) if isinstance(item, dict)]
+            if not plan_steps:
+                blockers.append("计划草案缺少 plan 步骤列表")
+        elif action not in ATOMIC_AGENT_ACTIONS:
             blockers.append("Agent 只允许建议受支持的原子动作（arm/disarm/takeoff/hold/land/rtl/goto/formation）")
 
         current_vehicle_id = _integer(context.get("vehicle_id"))
@@ -451,6 +621,14 @@ class MissionAgentService:
                 arguments["altitude_m"] = altitude
             if hold is not None:
                 arguments["hold_s"] = hold
+        elif action == "plan":
+            steps, step_blockers = self._validate_plan_steps(
+                plan_steps or [],
+                context,
+            )
+            blockers.extend(step_blockers)
+            if steps:
+                arguments["steps"] = steps
         elif raw_arguments:
             blockers.append("该原子动作不接受参数")
 
@@ -544,6 +722,23 @@ class MissionAgentService:
                 "content": f"当前地面站状态 JSON：{context_text}",
             },
         ]
+        if session.execution_history:
+            history_text = json.dumps(
+                session.execution_history,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "最近已执行的命令/计划结果 JSON（供你总结与决策，"
+                        f"不得虚构）：{history_text}"
+                    ),
+                }
+            )
         for turn in session.turns[-self.config.max_turns_per_session :]:
             messages.append({"role": turn.role, "content": turn.content})
         messages.append({"role": "user", "content": message})

@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 
 from aeromind_apm_lite.common.formation import FormationType, formation_offsets
 from aeromind_apm_lite.ground.browser.runtime import ManualRuntimeMode
@@ -38,6 +38,141 @@ class FleetMissionConfig:
     vehicle_ids: tuple[int, ...] = (1, 2, 3, 4)
     land_after: bool = True
     formations: tuple[FormationType, ...] | None = None
+
+
+async def fly_formation(
+    services: dict[int, FlightCommandService],
+    runtime: Any,
+    vehicle_ids: Sequence[int],
+    formation: FormationType,
+    leader_target_map_m: tuple[float, float, float],
+    spacing_m: float,
+    altitude_m: float,
+    *,
+    clock: Any = time.monotonic,
+    step_timeout_s: float = _STEP_TIMEOUT_S,
+    on_step: Any = None,
+) -> list[dict[str, Any]]:
+    """Fly ``vehicle_ids`` into ``formation`` with vertical-lane transitions.
+
+    Every vehicle first climbs into its own altitude lane (1.5 m apart), then
+    morphs horizontally inside the lane, then levels off at the formation
+    altitude, so crossing paths stay vertically separated. Returns per-step
+    command results for evidence.
+    """
+    results: list[dict[str, Any]] = []
+    ids = tuple(int(vehicle_id) for vehicle_id in vehicle_ids)
+    offsets = formation_offsets(formation, len(ids), spacing_m)
+    slots: dict[int, tuple[float, float, float]] = {}
+    for index, vehicle_id in enumerate(ids):
+        offset = offsets[index]
+        slots[vehicle_id] = (
+            leader_target_map_m[0] + offset[0],
+            leader_target_map_m[1] + offset[1],
+            -altitude_m,
+        )
+    lanes = {
+        vehicle_id: -(altitude_m + 1.5 * (index + 1))
+        for index, vehicle_id in enumerate(ids)
+    }
+
+    async def current_position(vehicle_id: int) -> tuple[float, float, float]:
+        link = runtime.link_for(vehicle_id)
+        if link is None:
+            raise FleetMissionError(f"飞机 {vehicle_id} 链路不可用")
+        snapshot = link.telemetry_snapshot()
+        position = snapshot.local_position_ned_m
+        if position is None:
+            raise FleetMissionError(f"飞机 {vehicle_id} 当前位置不可用")
+        return (float(position[0]), float(position[1]), float(position[2]))
+
+    async def await_handle(handle: Any, vehicle_id: int, step: str) -> Any:
+        try:
+            result = await asyncio.wait_for(handle.result, timeout=step_timeout_s)
+        except asyncio.TimeoutError as exc:
+            raise FleetMissionError(f"飞机 {vehicle_id} 步骤 {step} 超时") from exc
+        if result.status not in {
+            CommandStatus.COMPLETED,
+            CommandStatus.PREEMPTED,
+        }:
+            raise FleetMissionError(
+                f"飞机 {vehicle_id} 步骤 {step} 失败: {result.detail}"
+            )
+        results.append(
+            {
+                "vehicle_id": vehicle_id,
+                "step": step,
+                "status": result.status.value,
+                "detail": str(result.detail),
+                "at_monotonic_s": round(clock(), 2),
+            }
+        )
+        return result
+
+    def step(vehicle_id: int, name: str, detail: str = "") -> None:
+        if on_step is not None:
+            on_step(vehicle_id, name, detail)
+
+    # 1) climb into the lane altitudes (horizontal hold)
+    positions: dict[int, tuple[float, float, float]] = {}
+    for vehicle_id in ids:
+        positions[vehicle_id] = await current_position(vehicle_id)
+        step(vehicle_id, "lane", f"进入高度层 {abs(lanes[vehicle_id]):.1f} m")
+    await asyncio.gather(
+        *(
+            await_handle(
+                services[vehicle_id].goto_local_ned(
+                    positions[vehicle_id][0],
+                    positions[vehicle_id][1],
+                    lanes[vehicle_id],
+                    expires_monotonic_s=clock() + step_timeout_s,
+                ),
+                vehicle_id,
+                "lane",
+            )
+            for vehicle_id in ids
+        )
+    )
+
+    # 2) morph horizontally inside the lanes
+    for vehicle_id in ids:
+        target = slots[vehicle_id]
+        step(vehicle_id, "goto", f"飞往槽位 ({target[0]:.1f}, {target[1]:.1f})")
+    await asyncio.gather(
+        *(
+            await_handle(
+                services[vehicle_id].goto_local_ned(
+                    slots[vehicle_id][0],
+                    slots[vehicle_id][1],
+                    lanes[vehicle_id],
+                    expires_monotonic_s=clock() + step_timeout_s,
+                ),
+                vehicle_id,
+                "goto",
+            )
+            for vehicle_id in ids
+        )
+    )
+
+    # 3) level off into the formation altitude
+    for vehicle_id in ids:
+        step(vehicle_id, "level", "统一高度")
+    await asyncio.gather(
+        *(
+            await_handle(
+                services[vehicle_id].goto_local_ned(
+                    slots[vehicle_id][0],
+                    slots[vehicle_id][1],
+                    slots[vehicle_id][2],
+                    expires_monotonic_s=clock() + step_timeout_s,
+                ),
+                vehicle_id,
+                "level",
+            )
+            for vehicle_id in ids
+        )
+    )
+    return results
 
 
 class FleetMissionRunner:
@@ -305,111 +440,18 @@ class FleetMissionRunner:
         config: FleetMissionConfig,
         formation: FormationType,
     ) -> None:
-        """Fly one formation with vertical-lane transitions.
-
-        Every vehicle first climbs into its own altitude lane (1.5 m apart),
-        then morphs horizontally inside the lane, then levels off at the
-        formation altitude. Crossing paths therefore stay vertically
-        separated, mirroring the acceptance-script anti-collision design.
-        """
-        offsets = formation_offsets(
+        """Fly one formation (shared lane-transition logic)."""
+        await fly_formation(
+            services,
+            self._runtime,
+            config.vehicle_ids,
             formation,
-            len(config.vehicle_ids),
+            config.leader_target_map_m,
             config.spacing_m,
-        )
-        leader = config.leader_target_map_m
-        slots: dict[int, tuple[float, float, float]] = {}
-        for index, vehicle_id in enumerate(config.vehicle_ids):
-            offset = offsets[index]
-            slots[vehicle_id] = (
-                leader[0] + offset[0],
-                leader[1] + offset[1],
-                -config.altitude_m,
-            )
-        lanes = {
-            vehicle_id: -(config.altitude_m + 1.5 * (index + 1))
-            for index, vehicle_id in enumerate(config.vehicle_ids)
-        }
-
-        async def current_position(vehicle_id: int) -> tuple[float, float, float]:
-            link = self._runtime.link_for(vehicle_id)
-            if link is None:
-                raise FleetMissionError(f"飞机 {vehicle_id} 链路不可用")
-            snapshot = link.telemetry_snapshot()
-            position = snapshot.local_position_ned_m
-            if position is None:
-                raise FleetMissionError(f"飞机 {vehicle_id} 当前位置不可用")
-            return (float(position[0]), float(position[1]), float(position[2]))
-
-        # 1) climb into the lane altitudes (horizontal hold)
-        positions: dict[int, tuple[float, float, float]] = {}
-        for vehicle_id in config.vehicle_ids:
-            positions[vehicle_id] = await current_position(vehicle_id)
-            self._set_step(
-                vehicle_id,
-                "lane",
-                f"进入高度层 {abs(lanes[vehicle_id]):.1f} m",
-            )
-        await asyncio.gather(
-            *(
-                self._await_handle(
-                    services[vehicle_id].goto_local_ned(
-                        positions[vehicle_id][0],
-                        positions[vehicle_id][1],
-                        lanes[vehicle_id],
-                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
-                    ),
-                    vehicle_id,
-                    "lane",
-                    _STEP_TIMEOUT_S,
-                )
-                for vehicle_id in config.vehicle_ids
-            )
-        )
-
-        # 2) morph horizontally inside the lanes
-        for vehicle_id in config.vehicle_ids:
-            target = slots[vehicle_id]
-            self._set_step(
-                vehicle_id,
-                "goto",
-                f"飞往槽位 ({target[0]:.1f}, {target[1]:.1f})",
-            )
-        await asyncio.gather(
-            *(
-                self._await_handle(
-                    services[vehicle_id].goto_local_ned(
-                        slots[vehicle_id][0],
-                        slots[vehicle_id][1],
-                        lanes[vehicle_id],
-                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
-                    ),
-                    vehicle_id,
-                    "goto",
-                    _STEP_TIMEOUT_S,
-                )
-                for vehicle_id in config.vehicle_ids
-            )
-        )
-
-        # 3) level off into the formation altitude
-        for vehicle_id in config.vehicle_ids:
-            self._set_step(vehicle_id, "level", "统一高度")
-        await asyncio.gather(
-            *(
-                self._await_handle(
-                    services[vehicle_id].goto_local_ned(
-                        slots[vehicle_id][0],
-                        slots[vehicle_id][1],
-                        slots[vehicle_id][2],
-                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
-                    ),
-                    vehicle_id,
-                    "level",
-                    _STEP_TIMEOUT_S,
-                )
-                for vehicle_id in config.vehicle_ids
-            )
+            config.altitude_m,
+            clock=self._clock,
+            step_timeout_s=_STEP_TIMEOUT_S,
+            on_step=self._set_step,
         )
         for vehicle_id in config.vehicle_ids:
             self._finish_step(vehicle_id, "已到位")

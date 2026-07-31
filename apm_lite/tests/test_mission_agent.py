@@ -370,3 +370,143 @@ def test_agent_confirmed_formation_draft_starts_fleet_mission():
                 break
             _time.sleep(0.2)
         assert phase == "done", client.get("/api/fleet/execute").json()
+
+
+def test_agent_plan_draft_requires_sim_and_validates_steps():
+    async def scenario():
+        semantic = configured_semantic(
+            json.dumps(
+                {
+                    "reply": "已生成四步计划",
+                    "risk_level": "medium",
+                    "plan": [
+                        {
+                            "action": "takeoff",
+                            "vehicle_ids": [1, 2, 3, 4],
+                            "arguments": {"altitude_m": 2},
+                        },
+                        {
+                            "action": "goto",
+                            "vehicle_id": 1,
+                            "arguments": {"target_position_ned_m": [8, 0, -2]},
+                        },
+                        {"action": "formation", "vehicle_ids": [1, 2, 3, 4], "arguments": {
+                            "formation": "v",
+                            "leader_target_map_m": [8, 0, -2],
+                            "spacing_m": 3,
+                            "altitude_m": 2,
+                        }},
+                        {"action": "land", "vehicle_ids": [1, 2, 3, 4]},
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        agent = MissionAgentService(semantic)
+        session_id = agent.create_session()["session_id"]
+
+        real = await agent.chat(session_id, "完整任务", healthy_context())
+        assert real["draft"]["status"] == "blocked"
+        assert any("仿真" in item for item in real["draft"]["blockers"])
+
+        sim_context = healthy_context(
+            deployment_mode="demo",
+            vehicle_id=1,
+            allowed_commands=["arm", "disarm", "takeoff", "hold", "land", "rtl"],
+        )
+        pending = await agent.chat(session_id, "完整任务", sim_context)
+        assert pending["draft"]["status"] == "pending_confirmation"
+        assert pending["draft"]["action"] == "plan"
+        assert len(pending["draft"]["arguments"]["steps"]) == 4
+        assert pending["draft"]["arguments"]["steps"][2]["action"] == "formation"
+
+        semantic._call_api = lambda _model, _messages: (
+            json.dumps(
+                {
+                    "reply": "非法计划",
+                    "risk_level": "medium",
+                    "plan": [
+                        {"action": "analyze", "vehicle_ids": [1], "arguments": {}},
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        bad = await agent.chat(session_id, "非法计划", sim_context)
+        assert bad["draft"]["status"] == "blocked"
+        assert any("不受支持" in item for item in bad["draft"]["blockers"])
+
+    asyncio.run(scenario())
+
+
+def test_agent_confirmed_plan_runs_multi_step_mission():
+    import time as _time
+
+    runtimes = [
+        ManualRuntime(
+            ManualRuntimeConfig(
+                mode=ManualRuntimeMode.SITL,
+                vehicle_id=vehicle_id,
+                vehicle_name=f"SITL UAV {vehicle_id}",
+                startup_timeout_s=2.0,
+            ),
+            link_factory=lambda _config: DemoApmLink(),
+        )
+        for vehicle_id in (1, 2, 3, 4)
+    ]
+    semantic = configured_semantic(
+        json.dumps(
+            {
+                "reply": "已生成闭环计划",
+                "state_summary": "仿真就绪",
+                "risk_level": "medium",
+                "questions": [],
+                "plan": [
+                    {
+                        "action": "takeoff",
+                        "vehicle_ids": [1, 2, 3, 4],
+                        "arguments": {"altitude_m": 2},
+                    },
+                    {"action": "formation", "vehicle_ids": [1, 2, 3, 4], "arguments": {
+                        "formation": "line",
+                        "leader_target_map_m": [8, 0, -2],
+                        "spacing_m": 3,
+                        "altitude_m": 2,
+                    }},
+                    {"action": "land", "vehicle_ids": [1, 2, 3, 4]},
+                ],
+            },
+            ensure_ascii=False,
+        )
+    )
+    app = create_app(FleetRuntime(runtimes), semantic=semantic)
+    with TestClient(app) as client:
+        session = client.post("/api/agent/sessions").json()
+        chat = client.post(
+            f"/api/agent/sessions/{session['session_id']}/messages",
+            json={"message": "执行闭环任务"},
+        ).json()
+        draft = chat["draft"]
+        assert draft["action"] == "plan"
+        assert draft["status"] == "pending_confirmation"
+
+        confirmed = client.post(
+            f"/api/agent/drafts/{draft['draft_id']}/confirm",
+            json={"confirmed": True},
+        )
+        assert confirmed.status_code == 200
+
+        deadline = _time.time() + 30.0
+        phase = None
+        while _time.time() < deadline:
+            phase = client.get("/api/planner/status").json()["phase"]
+            if phase in {"done", "failed", "cancelled"}:
+                break
+            _time.sleep(0.2)
+        assert phase == "done", client.get("/api/planner/status").json()
+
+        # execution feedback is available to the next model turn
+        session_payload = client.get(
+            f"/api/agent/sessions/{session['session_id']}"
+        ).json()
+        assert session_payload["latest_draft"]["status"] == "completed"

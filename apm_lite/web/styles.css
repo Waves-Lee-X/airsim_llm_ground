@@ -2745,3 +2745,65 @@ button:disabled {
   min-height: 0;
   flex: 1;
 }
+
+/* ---- agent plan steps & execution state ---- */
+.agent-plan-steps {
+  padding: 6px 12px 2px;
+}
+
+.agent-plan-steps ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-plan-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.agent-plan-steps li b {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--surface-soft);
+  color: var(--cyan);
+  font-size: 10px;
+}
+
+.agent-plan-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.agent-plan-state strong {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.agent-plan-state[data-level="ok"] strong {
+  color: var(--green);
+}
+
+.agent-plan-state[data-level="bad"] strong {
+  color: var(--red);
+}
+
+.agent-plan-state[data-level="warn"] strong {
+  color: var(--amber);
+}
