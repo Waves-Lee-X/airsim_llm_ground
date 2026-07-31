@@ -34,6 +34,7 @@
 
 html,
 body {
+  height: 100%;
   min-height: 100%;
   margin: 0;
   background: var(--bg);
@@ -81,7 +82,9 @@ button:disabled {
 }
 
 .app-shell {
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   display: grid;
   grid-template-rows: 66px minmax(0, 1fr) 30px;
 }
@@ -518,8 +521,8 @@ button:disabled {
 }
 
 .nav-panel {
-  min-height: 310px;
-  flex: 1 1 56%;
+  min-height: 230px;
+  flex: 1 1 40%;
   display: flex;
   flex-direction: column;
 }
@@ -548,7 +551,7 @@ button:disabled {
 }
 
 .nav-canvas-wrap {
-  min-height: 300px;
+  min-height: 210px;
   flex: 1;
   position: relative;
   overflow: hidden;
@@ -983,7 +986,7 @@ button:disabled {
 }
 
 .right-column .nav-panel {
-  min-height: 300px;
+  min-height: 210px;
 }
 
 .right-column .evidence-panel {
@@ -2566,7 +2569,7 @@ button:disabled {
 }
 
 .situation-canvas-wrap {
-  min-height: 380px;
+  min-height: 470px;
   flex: 1;
   position: relative;
   overflow: hidden;
@@ -2706,4 +2709,30 @@ button:disabled {
 
 .fleet-mission .fleet-slots {
   padding: 6px 0 0;
+}
+
+.situation-panel:fullscreen {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.situation-panel:fullscreen .situation-canvas-wrap {
+  min-height: 0;
+  flex: 1;
+}
+
+.situation-panel.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  border-radius: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.situation-panel.fullscreen .situation-canvas-wrap {
+  min-height: 0;
+  flex: 1;
 }

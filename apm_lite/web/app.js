@@ -83,7 +83,7 @@ function cacheElements() {
     "fleetMissionPhase", "fleetMissionVehicles",
     "gotoX", "gotoY", "gotoZ", "gotoFly",
     "situationMap", "situationEmpty", "situationLegend", "situationStamp",
-    "situationZoomIn", "situationZoomOut", "situationZoomReset",
+    "situationZoomIn", "situationZoomOut", "situationZoomReset", "situationFullscreen",
     "agentVehicleState", "agentLinkState", "agentGpsState",
     "agentPermissionState", "resetAgentSession", "agentConversation",
     "agentDraft", "agentDraftAction", "agentDraftStatus",
@@ -1830,6 +1830,28 @@ function bindSituationMapInteractions() {
     state.situationView = null;
     renderSituationMap();
   });
+  elements.situationFullscreen.addEventListener("click", () => {
+    toggleSituationFullscreen();
+  });
+  document.addEventListener("fullscreenchange", () => {
+    elements.situationFullscreen.textContent = document.fullscreenElement ? "✕" : "⛶";
+    elements.situationFullscreen.title = document.fullscreenElement ? "退出全屏" : "全屏";
+  });
+}
+
+function toggleSituationFullscreen() {
+  const panel = elements.situationMap.closest(".situation-panel");
+  if (!panel) return;
+  if (document.fullscreenElement) {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    panel.classList.remove("fullscreen");
+  } else if (panel.requestFullscreen) {
+    panel.requestFullscreen().catch(() => {
+      panel.classList.add("fullscreen");
+    });
+  } else {
+    panel.classList.toggle("fullscreen");
+  }
 }
 
 async function refreshSituationMap() {
