@@ -267,8 +267,14 @@ class ColorDetector:
 def cross_validate_color(
     vlm_color: Any,
     detection: ColorDetection | None,
+    *,
+    vlm_analyzed: bool = True,
 ) -> dict[str, Any]:
-    """Compare the VLM color claim with the deterministic detector result."""
+    """Compare the VLM color claim with the deterministic detector result.
+
+    ``vlm_analyzed`` distinguishes "the model has not run yet" from "the
+    model ran but returned no usable color", so the browser can explain both.
+    """
     normalized = normalize_color(vlm_color)
     if detection is None:
         return {
@@ -281,8 +287,12 @@ def cross_validate_color(
         }
     if normalized is None:
         agreement = None
-        status = "vlm_color_missing"
-        note = "VLM 未给出可归一化的颜色，无法交叉验证"
+        if vlm_analyzed:
+            status = "vlm_color_missing"
+            note = "VLM 已识别但未给出可归一化的颜色，无法交叉验证"
+        else:
+            status = "vlm_not_analyzed"
+            note = "尚未进行 VLM 识别，请先点击“识别当前帧”"
     elif normalized == detection.color:
         agreement = True
         status = "agreed"
@@ -300,7 +310,6 @@ def cross_validate_color(
         "note": note,
         "detection": detection.public_payload(),
     }
-
 
 # ---------------------------------------------------------------------------
 # Multi-frame consensus

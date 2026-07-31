@@ -1473,10 +1473,15 @@ def create_app(
             detector_error = str(exc)
         latest = gateway.semantic.latest_payload().get("visual")
         vlm_color = None
-        if isinstance(latest, dict):
+        vlm_analyzed = isinstance(latest, dict)
+        if vlm_analyzed:
             target = (latest.get("result") or {}).get("target") or {}
             vlm_color = target.get("color")
-        cross = cross_validate_color(vlm_color, detection)
+        cross = cross_validate_color(
+            vlm_color,
+            detection,
+            vlm_analyzed=vlm_analyzed,
+        )
         return {
             "vehicle_id": selected,
             "frame": {

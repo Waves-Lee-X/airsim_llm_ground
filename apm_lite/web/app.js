@@ -762,12 +762,14 @@ function renderVisionCrossValidation(cross) {
     value.status === "agreed" ? "VLM 与 OpenCV 一致"
     : value.status === "disagreed" ? "VLM 与 OpenCV 不一致"
     : value.status === "vlm_color_missing" ? "VLM 颜色缺失"
+    : value.status === "vlm_not_analyzed" ? "尚未识别"
     : value.status === "unavailable" ? "检测不可用"
     : "等待交叉验证";
+  elements.visionCrossStatus.title = value.note || "";
   elements.visionCrossStatus.dataset.level =
     value.status === "agreed" ? "ok"
     : value.status === "disagreed" ? "bad"
-    : value.status === "vlm_color_missing" || value.status === "unavailable" ? "warn"
+    : value.status === "vlm_color_missing" || value.status === "vlm_not_analyzed" || value.status === "unavailable" ? "warn"
     : "none";
   setColorSwatch(elements.visionVlmColor, value.vlm_color);
   setColorSwatch(elements.visionOpenCvColor, value.opencv_color);
@@ -780,7 +782,6 @@ function renderVisionCrossValidation(cross) {
     : value.agreement === false ? "不一致"
     : "--";
 }
-
 function setColorSwatch(host, color) {
   const swatch = host.querySelector("i");
   const label = host.querySelector("b");

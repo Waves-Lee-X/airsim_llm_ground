@@ -127,6 +127,10 @@ def test_cross_validate_color_agreement_matrix():
     assert missing["agreement"] is None
     assert missing["status"] == "vlm_color_missing"
 
+    not_analyzed = cross_validate_color(None, detection, vlm_analyzed=False)
+    assert not_analyzed["agreement"] is None
+    assert not_analyzed["status"] == "vlm_not_analyzed"
+
     unavailable = cross_validate_color("red", None)
     assert unavailable["agreement"] is None
     assert unavailable["status"] == "unavailable"
@@ -259,6 +263,7 @@ def test_browser_crosscheck_runs_without_model(tmp_path):
         assert body["vehicle_id"] == 1
         assert body["cross_validation"]["opencv_color"] == "red"
         assert body["cross_validation"]["vlm_color"] is None
+        assert body["cross_validation"]["status"] == "vlm_not_analyzed"
         assert body["consensus"]["window_size"] == 0
 
 
