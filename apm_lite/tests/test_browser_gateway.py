@@ -1,11 +1,14 @@
 import asyncio
 import time
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
 from aeromind_apm_lite.ground.browser.app import create_app
+from aeromind_apm_lite.ground.browser.camera import CameraFrame
 from aeromind_apm_lite.ground.browser.runtime import (
     DemoApmLink,
+    HybridRuntime,
     ManualRuntime,
     ManualRuntimeConfig,
     ManualRuntimeMode,
@@ -37,6 +40,37 @@ class IdleSerialStream:
         if not self.closed:
             self.closed = True
             await self.incoming.put(None)
+
+
+class StaticCameraBridge:
+    def __init__(self, name, data):
+        self.name = name
+        self.data = data
+        self.running = False
+
+    async def start(self):
+        self.running = True
+
+    async def stop(self):
+        self.running = False
+
+    def status_payload(self):
+        return {
+            "name": self.name,
+            "kind": "test_rgb",
+            "state": "online",
+            "stream_available": self.running,
+            "stream_url": "/api/camera/frame",
+        }
+
+    async def get_frame(self):
+        return CameraFrame(
+            data=self.data,
+            media_type="image/jpeg",
+            sequence=1,
+            captured_at_utc=datetime.now(timezone.utc),
+            captured_monotonic_s=time.monotonic(),
+        )
 
 
 def demo_app(*, static_dir=None, georeference=None):
@@ -335,6 +369,127 @@ def test_real_serial_open_failure_keeps_web_settings_available():
         assert status["runtime_started"] is False
         assert "test port is unavailable" in status["runtime_error"]
         assert client.get("/api/serial/ports").status_code == 200
+
+
+def test_hybrid_mode_routes_simulation_and_real_vehicle_independently():
+    opened_streams = []
+
+    async def open_serial():
+        stream = IdleSerialStream()
+        opened_streams.append(stream)
+        return stream
+
+    simulation_link = DemoApmLink()
+    simulation = ManualRuntime(
+        ManualRuntimeConfig(
+            mode=ManualRuntimeMode.SITL,
+            vehicle_id=1,
+            vehicle_name="SITL UAV 1",
+            startup_timeout_s=2.0,
+        ),
+        link_factory=lambda _config: simulation_link,
+    )
+    real = ManualRuntime(
+        ManualRuntimeConfig(
+            mode=ManualRuntimeMode.REAL_SERIAL,
+            vehicle_id=3,
+            vehicle_name="实机 UAV 3",
+            frame_calibration_id="venue-v1",
+            ground_serial_port="COM3",
+        ),
+        shared_secret=REAL_SECRET,
+        serial_stream_factory=open_serial,
+    )
+    runtime = HybridRuntime(simulation, real)
+    app = create_app(
+        runtime,
+        cameras={
+            1: StaticCameraBridge("AirSim RGB", b"simulation-frame"),
+            3: StaticCameraBridge("D435i RGB", b"real-frame"),
+        },
+    )
+
+    with TestClient(app) as client:
+        config = client.get("/api/config").json()
+        assert config["runtime_mode"] == "hybrid"
+        assert config["deployment_mode"] == "hybrid"
+        assert [vehicle["vehicle_id"] for vehicle in config["vehicles"]] == [1, 3]
+        assert [
+            vehicle["deployment_mode"] for vehicle in config["vehicles"]
+        ] == ["sim", "real"]
+
+        simulation_status = client.get("/api/status?vehicle_id=1").json()
+        real_status = client.get("/api/status?vehicle_id=3").json()
+        assert simulation_status["vehicle_connected"]
+        assert simulation_status["ground_link"]["transport"] == "loopback_websocket"
+        assert real_status["runtime_started"]
+        assert real_status["ground_link"]["transport"] == "serial"
+        assert client.get("/api/status?vehicle_id=2").status_code == 404
+
+        telemetry = client.get("/api/vehicles/1/telemetry").json()
+        assert telemetry["available"]
+        assert telemetry["vehicle_id"] == 1
+        assert client.get("/api/vehicles/2/telemetry").status_code == 404
+
+        assert client.get("/api/camera/status?vehicle_id=1").json()["name"] == "AirSim RGB"
+        assert client.get("/api/camera/status?vehicle_id=3").json()["name"] == "D435i RGB"
+        assert client.get("/api/camera/frame?vehicle_id=1").content == b"simulation-frame"
+        assert client.get("/api/camera/frame?vehicle_id=3").content == b"real-frame"
+
+        command = client.post(
+            "/api/vehicles/1/commands/arm",
+            json={"completion_timeout_s": 2.0},
+        )
+        assert command.status_code == 200
+        assert command.json()["vehicle_id"] == 1
+        assert simulation_link.telemetry_snapshot().armed is True
+
+        heartbeat_type = type("HeartbeatStub", (), {})
+        heartbeat = heartbeat_type()
+        heartbeat.command_output_enabled = True
+        heartbeat.allowed_commands = (
+            VehicleCommandType.ARM,
+            VehicleCommandType.DISARM,
+        )
+        real.server.last_heartbeat = lambda _vehicle_id: heartbeat
+        blocked = client.post(
+            "/api/vehicles/3/commands/takeoff",
+            json={"altitude_m": 2.0},
+        )
+        assert blocked.status_code == 403
+
+        simulation_session = simulation.server.session_info(1).session_id
+        reconfigured = client.put(
+            "/api/serial/config",
+            json={"port": "COM7", "baudrate": 115_200},
+        )
+        assert reconfigured.status_code == 200
+        assert reconfigured.json()["vehicle_id"] == 3
+        assert simulation.server.session_info(1).session_id == simulation_session
+        assert simulation_link.ready
+        assert len(opened_streams) == 2
+        assert opened_streams[0].closed
+
+
+def test_hybrid_mode_rejects_vehicle_id_collision():
+    simulation = ManualRuntime(
+        ManualRuntimeConfig(mode=ManualRuntimeMode.SITL, vehicle_id=3)
+    )
+    real = ManualRuntime(
+        ManualRuntimeConfig(
+            mode=ManualRuntimeMode.REAL_SERIAL,
+            vehicle_id=3,
+            frame_calibration_id="venue-v1",
+            ground_serial_port="COM3",
+        ),
+        shared_secret=REAL_SECRET,
+    )
+    try:
+        HybridRuntime(simulation, real)
+    except ValueError as exc:
+        assert "vehicle IDs must be different" in str(exc)
+    else:
+        raise AssertionError("hybrid runtime accepted duplicate vehicle IDs")
 
 
 def test_serial_reconfiguration_is_rejected_outside_real_mode():

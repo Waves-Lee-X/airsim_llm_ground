@@ -219,34 +219,30 @@ function vectorTuple(value) {
   return null;
 }
 
-function renderConfig(configPayload) {
-  const config = unwrapPayload(configPayload);
-  state.config = config;
-  state.selectedVehicleId = Number(config.vehicle_id || config.vehicles?.[0]?.vehicle_id || 1);
-  const deploymentMode = String(config.deployment_mode || "sim").toLowerCase();
+function configuredVehicles() {
+  if (Array.isArray(state.config?.vehicles) && state.config.vehicles.length) {
+    return state.config.vehicles;
+  }
+  return state.config ? [state.config] : [];
+}
+
+function selectedVehicleConfig() {
+  return configuredVehicles().find(
+    (vehicle) => Number(vehicle.vehicle_id) === Number(state.selectedVehicleId),
+  ) || state.config || {};
+}
+
+function selectedDeploymentMode() {
+  return String(selectedVehicleConfig().deployment_mode || "sim").toLowerCase();
+}
+
+function renderSelectedVehicleConfig() {
+  const config = selectedVehicleConfig();
+  const deploymentMode = selectedDeploymentMode();
   elements.simMode.classList.toggle("active", deploymentMode === "sim");
   elements.realMode.classList.toggle("active", deploymentMode === "real");
-  elements.serialSettingsButton.hidden = config.serial_runtime_configurable !== true;
   elements.p9Badge.hidden = deploymentMode !== "real";
   elements.agentBadge.hidden = deploymentMode !== "real";
-  if (config.ground_serial_port) elements.serialPort.value = config.ground_serial_port;
-  if (config.ground_serial_baudrate) {
-    elements.serialBaudrate.value = String(config.ground_serial_baudrate);
-  }
-
-  const vehicles = Array.isArray(config.vehicles)
-    ? config.vehicles
-    : [{ vehicle_id: state.selectedVehicleId, vehicle_name: config.vehicle_name || "UAV 01" }];
-  elements.vehicleSelect.replaceChildren();
-  vehicles.forEach((vehicle) => {
-    const option = document.createElement("option");
-    option.value = String(vehicle.vehicle_id);
-    option.textContent = vehicle.vehicle_name || vehicle.name || `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
-    elements.vehicleSelect.append(option);
-  });
-  elements.vehicleSelect.value = String(state.selectedVehicleId);
-  elements.vehicleName.textContent = elements.vehicleSelect.selectedOptions[0]?.textContent || "UAV 01";
-
   const mode = String(config.runtime_mode || "manual").toUpperCase();
   const endpoint = deploymentMode === "real"
     ? `${config.ground_serial_port || "--"} @ ${config.ground_serial_baudrate || "--"}`
@@ -258,6 +254,39 @@ function renderConfig(configPayload) {
       : "进程托管";
   elements.runtimeLabel.textContent = `${mode} · ${endpoint} · ${ownership}`;
   renderCameraConfig(config.camera || {});
+}
+
+function renderConfig(configPayload) {
+  const config = unwrapPayload(configPayload);
+  const previousVehicleId = state.selectedVehicleId;
+  state.config = config;
+  elements.serialSettingsButton.hidden = config.serial_runtime_configurable !== true;
+  if (config.ground_serial_port) elements.serialPort.value = config.ground_serial_port;
+  if (config.ground_serial_baudrate) {
+    elements.serialBaudrate.value = String(config.ground_serial_baudrate);
+  }
+
+  const vehicles = Array.isArray(config.vehicles)
+    ? config.vehicles
+    : [{ ...config, vehicle_id: config.vehicle_id || 1 }];
+  const configuredIds = vehicles.map((vehicle) => Number(vehicle.vehicle_id));
+  state.selectedVehicleId = configuredIds.includes(Number(previousVehicleId))
+    ? Number(previousVehicleId)
+    : Number(config.vehicle_id || vehicles[0]?.vehicle_id || 1);
+  elements.vehicleSelect.replaceChildren();
+  vehicles.forEach((vehicle) => {
+    const option = document.createElement("option");
+    option.value = String(vehicle.vehicle_id);
+    const deploymentMode = String(vehicle.deployment_mode || "sim").toLowerCase();
+    const typeLabel = deploymentMode === "real" ? "实机" : "仿真";
+    const name = vehicle.vehicle_name || vehicle.name
+      || `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
+    option.textContent = `[${typeLabel}] ${name}`;
+    elements.vehicleSelect.append(option);
+  });
+  elements.vehicleSelect.value = String(state.selectedVehicleId);
+  elements.vehicleName.textContent = elements.vehicleSelect.selectedOptions[0]?.textContent || "UAV 01";
+  renderSelectedVehicleConfig();
   renderSemanticStatus(config.semantic || {});
   updateControlState();
 }
@@ -338,7 +367,7 @@ function renderSemanticStatus(payload) {
     ? busy ? "分析中" : semantic.vision_model || semantic.mission_model || "已配置"
     : "未配置";
   const cameraAvailable = state.status?.camera?.stream_available
-    ?? state.config?.camera?.stream_available
+    ?? selectedVehicleConfig().camera?.stream_available
     ?? false;
   elements.analyzeVision.disabled = busy || !visionAvailable || !cameraAvailable;
   elements.parseMission.disabled = busy || !missionAvailable;
@@ -507,15 +536,16 @@ function renderAgentContext() {
     ?? status.agent_connected
     ?? status.vehicle_connected
     ?? false;
+  const linkLabel = selectedDeploymentMode() === "real" ? "P9 / FCU" : "SITL / FCU";
   elements.agentLinkState.textContent = agentOnline && telemetry.fcu_link_ok === true
-    ? "P9 / FCU 正常"
+    ? `${linkLabel} 正常`
     : agentOnline ? "FCU 等待" : "Agent 离线";
   const fix = finiteNumber(telemetry.gps_fix_type ?? health.gps_fix_type);
   const hdop = finiteNumber(telemetry.gps_hdop ?? health.gps_hdop);
   elements.agentGpsState.textContent = fix === null
     ? "未知"
     : `FIX ${fix}${hdop === null ? "" : ` · ${hdop.toFixed(2)}`}`;
-  const simulated = state.config?.commands_are_simulated === true;
+  const simulated = selectedVehicleConfig().commands_are_simulated === true;
   const allowed = Array.isArray(status.allowed_commands) ? status.allowed_commands : [];
   elements.agentPermissionState.textContent = simulated
     ? "DEMO"
@@ -705,7 +735,10 @@ async function analyzeVision(event) {
   try {
     const payload = await requestJson("/api/semantic/vision/analyze", {
       method: "POST",
-      body: JSON.stringify({ prompt: elements.visionPrompt.value.trim() }),
+      body: JSON.stringify({
+        prompt: elements.visionPrompt.value.trim(),
+        vehicle_id: state.selectedVehicleId,
+      }),
     });
     renderVisualSemantic(payload);
   } catch (error) {
@@ -731,7 +764,10 @@ async function parseMission(event) {
     const sessionId = state.agentSessionId || await createAgentSession();
     const payload = await requestJson(`/api/agent/sessions/${sessionId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ message: instruction }),
+      body: JSON.stringify({
+        message: instruction,
+        vehicle_id: state.selectedVehicleId,
+      }),
     });
     renderAgentReply(payload);
     elements.missionInstruction.value = "";
@@ -756,7 +792,7 @@ function showAgentDraftConfirmation() {
     ? `${draft.reason}。确认后将提交到现有飞行命令证据链。`
     : `${draft.reason}。目标高度 ${altitude.toFixed(1)} m。`;
   elements.confirmVehicle.textContent = `UAV ${draft.vehicle_id}`;
-  elements.confirmMode.textContent = String(state.config?.deployment_mode || "SIM").toUpperCase();
+  elements.confirmMode.textContent = selectedDeploymentMode().toUpperCase();
   elements.confirmSubmit.textContent = "确认执行";
   if (typeof elements.confirmDialog.showModal === "function") {
     elements.confirmDialog.showModal();
@@ -775,7 +811,10 @@ async function executeAgentDraft(draft) {
   try {
     const payload = await requestJson(`/api/agent/drafts/${draft.draft_id}/confirm`, {
       method: "POST",
-      body: JSON.stringify({ confirmed: true }),
+      body: JSON.stringify({
+        confirmed: true,
+        vehicle_id: draft.vehicle_id,
+      }),
     });
     renderAgentDraft(payload.draft);
     const command = payload.command_result || {};
@@ -827,6 +866,7 @@ async function cancelAgentDraft() {
 
 function renderStatus(payload) {
   const status = unwrapPayload(payload);
+  if (status.vehicle_id && Number(status.vehicle_id) !== state.selectedVehicleId) return;
   state.status = status;
   renderSemanticStatus(status.semantic || state.config?.semantic || {});
   const runtimeStarted = status.runtime_started ?? status.started ?? true;
@@ -845,7 +885,7 @@ function renderStatus(payload) {
     runtimeError ? "offline" : runtimeStarted ? "online" : "pending",
     runtimeError ? "串口连接失败" : runtimeStarted ? "地面站在线" : "地面站启动中",
   );
-  const isReal = String(state.config?.deployment_mode || "").toLowerCase() === "real";
+  const isReal = selectedDeploymentMode() === "real";
   const p9Open = isReal && runtimeStarted && !runtimeError && !status.ground_link?.reconnecting;
   setBadge(
     elements.p9Badge,
@@ -875,7 +915,9 @@ function renderLinkDiagnostics(status) {
   const retries = Number(stats.retries || 0);
   const fps = Number(camera.source_fps);
   const video = Number.isFinite(fps) && fps > 0 ? `${fps.toFixed(1)} FPS` : "视频等待中";
-  elements.linkDiagnostics.textContent = `Lite v1 · P9 RX ${received} · 重复 ${duplicates} · CRC ${crcErrors} · 重传 ${retries} · ${video}`;
+  elements.linkDiagnostics.textContent = selectedDeploymentMode() === "real"
+    ? `Lite v1 · P9 RX ${received} · 重复 ${duplicates} · CRC ${crcErrors} · 重传 ${retries} · ${video}`
+    : `SITL UDP · FCU ${status?.fcu_link_ok ? "在线" : "离线"} · ${video}`;
 }
 
 function renderTelemetry(telemetry) {
@@ -883,7 +925,7 @@ function renderTelemetry(telemetry) {
   state.telemetry = telemetry;
   state.lastTelemetryAt = new Date();
   const linkOk = telemetry.fcu_link_ok === true;
-  const isDemo = state.config?.commands_are_simulated === true;
+  const isDemo = selectedVehicleConfig().commands_are_simulated === true;
   setBadge(elements.fcuBadge, linkOk ? "online" : isDemo ? "pending" : "offline", linkOk ? "FCU 在线" : isDemo ? "DEMO 无输出" : "FCU 离线");
   setBadge(elements.armedBadge, telemetry.armed ? "armed" : "neutral", telemetry.armed ? "已解锁" : "未解锁");
   elements.modeValue.textContent = String(valueOr(telemetry.mode, "UNKNOWN")).toUpperCase();
@@ -1039,15 +1081,16 @@ function drawTrack() {
 }
 
 function updateControlState() {
-  const simulated = state.config?.commands_are_simulated === true;
-  const deploymentMode = String(state.config?.deployment_mode || "sim").toLowerCase();
+  const selectedConfig = selectedVehicleConfig();
+  const simulated = selectedConfig.commands_are_simulated === true;
+  const deploymentMode = selectedDeploymentMode();
   const onboardOutputEnabled = state.status?.command_output_enabled === true;
   const allowedCommands = new Set(
     Array.isArray(state.status?.allowed_commands)
       ? state.status.allowed_commands.map((command) => String(command).toLowerCase())
       : [],
   );
-  const outputEnabled = state.config?.flight_output_enabled === true
+  const outputEnabled = selectedConfig.flight_output_enabled === true
     && (deploymentMode !== "real" || onboardOutputEnabled);
   const agentConnected = state.status?.onboard_agent_connected
     ?? state.status?.agent_connected
@@ -1083,7 +1126,7 @@ function updateControlState() {
     const labels = [...allowedCommands].map((command) => COMMAND_LABELS[command] || command);
     elements.controlHint.textContent = `实机白名单：${labels.join("、")}`;
   } else if (!agentConnected || !fcuReady) {
-    elements.controlHint.textContent = state.config?.deployment_mode === "real"
+    elements.controlHint.textContent = deploymentMode === "real"
       ? "等待 P9 链路、机载代理和飞控连接"
       : "等待手动启动的 SITL 连接 14550";
   } else {
@@ -1105,7 +1148,7 @@ function showCommandConfirmation(command) {
     ? `${COMMAND_CONFIRMATIONS[command]} 当前设定：${altitude.toFixed(1)} m。`
     : COMMAND_CONFIRMATIONS[command];
   elements.confirmVehicle.textContent = elements.vehicleName.textContent;
-  elements.confirmMode.textContent = String(state.config?.deployment_mode || "SIM").toUpperCase();
+  elements.confirmMode.textContent = selectedDeploymentMode().toUpperCase();
   elements.confirmSubmit.textContent = "确认发送";
   if (typeof elements.confirmDialog.showModal === "function") {
     elements.confirmDialog.showModal();
@@ -1245,6 +1288,9 @@ function handleWebsocketMessage(event) {
     payload.event_type || payload.type || payload.event || payload.message_type || "",
   ).toLowerCase();
   const body = unwrapPayload(payload);
+  const eventVehicleId = Number(body.vehicle_id);
+  const isVehicleEvent = Number.isFinite(eventVehicleId) && eventVehicleId > 0;
+  if (isVehicleEvent && eventVehicleId !== state.selectedVehicleId) return;
   if (type === "snapshot") {
     renderStatus(body.status || body);
     if (body.telemetry?.available && body.telemetry.telemetry) {
@@ -1333,15 +1379,13 @@ function connectWebsocket() {
 
 async function refreshStatus() {
   try {
-    const payload = await requestJson("/api/status");
+    const payload = await requestJson(`/api/status?vehicle_id=${state.selectedVehicleId}`);
     renderStatus(payload);
-    if (!state.telemetry) {
-      try {
-        const telemetry = await requestJson(`/api/vehicles/${state.selectedVehicleId}/telemetry`);
-        renderTelemetry(normalizeTelemetry(telemetry));
-      } catch (_error) {
-        // Status remains authoritative while telemetry is not available.
-      }
+    try {
+      const telemetry = await requestJson(`/api/vehicles/${state.selectedVehicleId}/telemetry`);
+      if (telemetry.available) renderTelemetry(normalizeTelemetry(telemetry));
+    } catch (_error) {
+      // Status remains authoritative while telemetry is not available.
     }
   } catch (error) {
     state.apiOnline = false;
@@ -1353,7 +1397,9 @@ async function refreshStatus() {
 
 async function refreshCameraStatus() {
   try {
-    const camera = await requestJson("/api/camera/status");
+    const camera = await requestJson(
+      `/api/camera/status?vehicle_id=${state.selectedVehicleId}`,
+    );
     renderCameraConfig(camera);
     if (state.status) {
       state.status.camera = camera;
@@ -1448,7 +1494,7 @@ async function applySerialSettings(event) {
     });
     const [config, status] = await Promise.all([
       requestJson("/api/config"),
-      requestJson("/api/status"),
+      requestJson(`/api/status?vehicle_id=${state.selectedVehicleId}`),
     ]);
     renderConfig(config);
     renderStatus(status);
@@ -1723,8 +1769,14 @@ function bindEvents() {
   elements.vehicleSelect.addEventListener("change", () => {
     state.selectedVehicleId = Number(elements.vehicleSelect.value);
     elements.vehicleName.textContent = elements.vehicleSelect.selectedOptions[0]?.textContent || `UAV ${state.selectedVehicleId}`;
+    state.status = null;
+    state.telemetry = null;
     state.track = [];
+    renderSelectedVehicleConfig();
+    elements.statusText.textContent = "正在切换车辆链路...";
+    updateControlState();
     void refreshStatus();
+    void refreshCameraStatus();
   });
   elements.serialSettingsButton.addEventListener("click", () => {
     void openSerialSettings();

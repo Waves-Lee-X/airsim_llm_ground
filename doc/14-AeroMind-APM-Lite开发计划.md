@@ -739,7 +739,8 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 20. [x] 增加场地 `GeoReference` 配置、Web 标定表单、版本哈希和坐标往返报告；草稿可用于仿真预览，正式版本同 ID 禁止改写，当前全量基线为 `209 passed`。
 21. [x] 在 SITL/AirSim 中回归统一 `GUIDED -> TAKEOFF -> GOTO -> HOLD -> LAND` 状态机及 GPS/EKF 故障注入。2026-07-30 已用 AirSim 1.8.1、UE 4.27 和 ArduCopter 4.7.0 完成一份基线及 `gps_loss`、`hdop_exceeded`、`ekf_failure`、`mission_expired`、`ground_link_loss` 五份故障报告，五类故障均完成 `safety_hold -> recovery_land`。最终证据绑定提交 `e844420`，保存在 `D:\AirSim\aeromind-apm-lite-m3\run-20260730-r3`；planned/predicted 终点三维误差为 `0.777 m`，但场地标定仍为 `draft/preview_only`。该项完成时全量基线为 `237 passed`；该项不替代第 22 项外场验收。
 22. [ ] 外场条件具备后，完成静态 GPS、场地标定、单机低空、RC/failsafe 和安全间距验收。
-23. [x] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent。2026-07-30 已完成内存多轮会话、遥测/P9/FCU/白名单/视觉/场地标定上下文注入、六种原子动作草案、120 秒单次确认票据、确认时二次门禁，以及接入原有 ACK/物理完成证据链；GOTO、编队、搜索和路径规划继续被确定性阻断，实机白名单仍只有 ARM/DISARM。Web 已提供对话、阻断原因、人工确认和取消操作，说明见 `apm_lite/docs/10-Mission-Agent设计与调试.md`，当前全量基线为 `245 passed`。
+23. [x] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent。2026-07-30 已完成内存多轮会话、遥测/P9/FCU/白名单/视觉/场地标定上下文注入、六种原子动作草案、120 秒单次确认票据、确认时二次门禁，以及接入原有 ACK/物理完成证据链；GOTO、编队、搜索和路径规划继续被确定性阻断，实机白名单仍只有 ARM/DISARM。Web 已提供对话、阻断原因、人工确认和取消操作，说明见 `apm_lite/docs/10-Mission-Agent设计与调试.md`，该项完成时全量基线为 `245 passed`。
+24. [x] 实现仿真与 UAV3 实机同时接入一个 Web 地面站。2026-07-30 已新增 `hybrid` 组合运行时，以独立机号路由 SITL UDP 和 P9 串口链路；状态、遥测、相机、Mission Agent 上下文、命令和证据均绑定所选 `vehicle_id`。新增 Windows 混合启动脚本及 SITL `--ground-on-windows` 生成选项，实机串口重连不重启 SITL，仿真权限不会扩展实机白名单。当前全量基线为 `247 passed`；该项只完成同站监控与隔离，不授权实机 TAKEOFF/GOTO/LAND/RTL。
 
 ## 18. 后续里程碑必须确认的外部条件
 

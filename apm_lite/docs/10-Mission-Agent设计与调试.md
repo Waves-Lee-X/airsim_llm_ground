@@ -118,7 +118,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src \
 python3 -m pytest -q tests/test_mission_agent.py tests/test_web_assets.py
 ```
 
-当前完整自动测试基线为 `245 passed`。仍待完成：
+当前完整自动测试基线为 `247 passed`。仍待完成：
 
 1. 使用真实模型进行多轮状态问答质量测试和异常返回统计；
 2. 外场条件具备后，只按现有白名单做人工监督测试；

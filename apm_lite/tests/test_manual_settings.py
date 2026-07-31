@@ -120,6 +120,15 @@ def test_manual_sitl_command_uses_discovered_host_without_executing_it():
     assert argv[argv.index("--sim-address") + 1] == "172.24.80.1"
     assert argv[argv.index("--serial0") + 1] == "udpclient:127.0.0.1:14550"
 
+    windows_ground = build_manual_sitl_argv(
+        manual_config(),
+        ground_host_ip="172.24.80.1",
+    )
+    assert (
+        windows_ground[windows_ground.index("--serial0") + 1]
+        == "udpclient:172.24.80.1:14550"
+    )
+
 
 def test_cli_writes_settings_and_reports_that_it_started_no_process(
     tmp_path,
@@ -139,6 +148,7 @@ def test_cli_writes_settings_and_reports_that_it_started_no_process(
             "640",
             "--camera-height",
             "480",
+            "--ground-on-windows",
         ]
     ) == 0
 
@@ -150,7 +160,9 @@ def test_cli_writes_settings_and_reports_that_it_started_no_process(
     assert result["settings_path"] == str(target)
     assert result["processes_started"] is False
     assert result["windows_host_ip"] == "172.24.80.1"
+    assert result["ground_host_ip"] == "172.24.80.1"
     assert "--sim-address 172.24.80.1" in result["sitl_command"]
+    assert "--serial0 udpclient:172.24.80.1:14550" in result["sitl_command"]
     assert captures[0]["Width"] == 640
     assert captures[0]["Height"] == 480
 

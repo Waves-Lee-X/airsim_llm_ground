@@ -18,6 +18,7 @@ from .config import (
     DEFAULT_ARDUPILOT_ROOT,
     DEFAULT_M1_PARAMETER_FILE,
     ArduPilotBuild,
+    MavlinkUdpEndpoint,
     SimulationConfigError,
     SitlInstanceConfig,
     airsim_control_port,
@@ -268,6 +269,7 @@ def build_manual_sitl_argv(
     *,
     ardupilot_root: Path = DEFAULT_ARDUPILOT_ROOT,
     parameter_file: Path = DEFAULT_M1_PARAMETER_FILE,
+    ground_host_ip: str = "127.0.0.1",
 ) -> tuple[str, ...]:
     """Return, but never execute, the matching single-vehicle SITL command."""
 
@@ -280,6 +282,10 @@ def build_manual_sitl_argv(
         instance=_MANUAL_INSTANCE,
         build=build,
         simulator_address=config.windows_host_ip,
+        mavlink=MavlinkUdpEndpoint.for_instance(
+            _MANUAL_INSTANCE,
+            host=ground_host_ip,
+        ),
         parameter_file=Path(parameter_file).expanduser(),
     )
     return sitl_argv(instance)
@@ -303,6 +309,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--windows-host-ip",
         help="Override automatic Windows host/default-gateway IPv4 discovery.",
+    )
+    parser.add_argument(
+        "--ground-on-windows",
+        action="store_true",
+        help="Send SITL MAVLink to the detected Windows host for hybrid mode.",
     )
     parser.add_argument("--camera-width", type=int, default=1280)
     parser.add_argument("--camera-height", type=int, default=720)
@@ -352,6 +363,9 @@ def main(argv: list[str] | None = None) -> int:
             config,
             ardupilot_root=args.ardupilot_root.expanduser().resolve(),
             parameter_file=args.parameter_file.expanduser().resolve(),
+            ground_host_ip=(
+                config.windows_host_ip if args.ground_on_windows else "127.0.0.1"
+            ),
         )
     except (OSError, SimulationConfigError) as exc:
         parser.error(str(exc))
@@ -360,6 +374,9 @@ def main(argv: list[str] | None = None) -> int:
         "settings_path": str(settings_path),
         "wsl_ip": config.wsl_ip,
         "windows_host_ip": config.windows_host_ip,
+        "ground_host_ip": (
+            config.windows_host_ip if args.ground_on_windows else "127.0.0.1"
+        ),
         "camera": "front monocular Scene RGB (AirSim ImageType 0)",
         "sitl_argv": list(argv_result),
         "sitl_command": shlex.join(argv_result),

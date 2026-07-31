@@ -22,7 +22,7 @@ ROS 2、MAVROS、`px4_msgs` 或 PX4 Offboard。
 
 2026-07-30 的 UAV3 在线状态为：
 
-- 树莓派 `colony3`，当前网络地址 `192.168.1.109`；
+- 树莓派 `colony3`，当前网络地址 `192.168.1.110`；
 - FCU `/dev/ttyAMA0 @ 921600`，固件标识 `4.4.1-255`；
 - 机载 P9 `/dev/ttyAMA1 @ 57600`，地面 P9 `COM3 @ 57600`；
 - D435i RGB 经 RTSP 到达 Web，Depth、双 IR 和 IMU 尚未接入 Lite；
@@ -91,6 +91,31 @@ PYTHONPATH=src python3 -m aeromind_apm_lite.ground.browser.app \
 打开 `http://127.0.0.1:8000/`。仅检查 UI 时使用 `--mode demo`，DEMO 命令不会
 进入 MAVLink。
 
+## 仿真与 UAV3 同站
+
+虚实同站时地面站运行在 Windows，以便同时访问 `COM3` 和 WSL 发来的 UDP。先在
+WSL 生成面向 Windows 的 SITL 命令：
+
+```bash
+cd ~/aeromind_ws/apm_lite
+PYTHONPATH=src python3 -m \
+  aeromind_apm_lite.ground.simulation.manual_settings \
+  --output /mnt/c/Users/16401/Documents/AirSim/settings.json \
+  --ground-on-windows
+```
+
+启动 UE Play，并执行生成器输出的 `sitl_command`。然后在 Windows PowerShell：
+
+```powershell
+Set-Location "\\wsl.localhost\Ubuntu-22.04\home\waves\aeromind_ws\apm_lite"
+powershell -ExecutionPolicy Bypass `
+  -File .\deploy\windows\start-ground-hybrid-uav3.ps1
+```
+
+Web 车辆选择器会同时列出仿真 UAV1 和实机 UAV3。两条链按不同机号隔离；仿真命令
+权限不会扩展实机白名单。完整流程见
+[`docs/07-仿真环境启动与调试.md`](docs/07-仿真环境启动与调试.md)。
+
 顶部“场地标定”用于维护 WGS84/map/LOCAL_NED/AirSim 的统一坐标配置、版本哈希
 和往返报告。无室外测量数据时必须保持草稿状态，详见
 [`docs/11-场地标定与坐标转换.md`](docs/11-场地标定与坐标转换.md)。
@@ -114,7 +139,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\windows\start-ground-uav3.ps1
 ```
 
 打开 `http://127.0.0.1:8000/`。启动脚本默认使用 `COM3 @ 57600` 和
-`rtsp://192.168.1.109:15544/cam`；网络或串口变化时使用 `-SerialPort`、
+`rtsp://192.168.1.110:15544/cam`；网络或串口变化时使用 `-SerialPort`、
 `-SerialBaud`、`-RtspUrl` 覆盖。Web 顶部的串口设置只影响当前地面站进程。
 
 停止当前地面站：
@@ -170,7 +195,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `245 passed`。提交前还应运行 JavaScript 语法检查和
+当前完整测试基线为 `247 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 ## 安全边界

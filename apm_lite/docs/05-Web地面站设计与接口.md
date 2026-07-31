@@ -9,7 +9,7 @@ P9 通过 USB 枚举为 Windows `COM3`；仿真模式可以运行在 WSL。
 
 ```text
 src/aeromind_apm_lite/ground/browser/app.py       FastAPI 和 BrowserGateway
-src/aeromind_apm_lite/ground/browser/runtime.py   demo/sitl/real_serial 运行时
+src/aeromind_apm_lite/ground/browser/runtime.py   单链路与 hybrid 组合运行时
 src/aeromind_apm_lite/ground/browser/camera.py    AirSim/RTSP 相机桥
 src/aeromind_apm_lite/ground/browser/semantic.py  VLM 和只读任务解析
 src/aeromind_apm_lite/ground/browser/mission_agent.py  对话与工具草案
@@ -51,6 +51,10 @@ FastAPI 代码侧门禁。
 顶部显示地面站、P9、机载 Agent、FCU 和 ARM 状态。实机模式还可在“串口设置”中
 枚举端口并临时重连；修改只影响当前进程，下次启动仍使用 PowerShell 参数。
 
+混合模式的飞机选择器同时列出 `[仿真] SITL UAV 1` 和 `[实机] real-uav3`。切换时
+页面先锁定按钮，再按所选 `vehicle_id` 重新读取状态、遥测和相机。WebSocket 中属于
+其他机号的遥测不会覆盖当前页面。
+
 ## 4. REST API 分组
 
 ### 4.1 服务和状态
@@ -58,7 +62,7 @@ FastAPI 代码侧门禁。
 ```text
 GET /api/health
 GET /api/config
-GET /api/status
+GET /api/status?vehicle_id={vehicle_id}
 GET /api/vehicles/{vehicle_id}/telemetry
 GET /api/vehicle/telemetry
 ```
@@ -73,22 +77,23 @@ GET /api/serial/ports
 PUT /api/serial/config
 ```
 
-只在 `real_serial` 模式有效。重配时后端先停止旧串口服务器，再按新端口启动；串口
-打开失败时飞行写控件保持锁定。
+只在包含 `real_serial` 链路的模式有效。重配时后端只停止旧串口服务器，再按新端口
+启动；`hybrid` 模式下不会停止 SITL。串口打开失败时实机写控件保持锁定。
 
 ### 4.3 相机和视觉语义
 
 ```text
-GET  /api/camera/status
-GET  /api/camera/frame
+GET  /api/camera/status?vehicle_id={vehicle_id}
+GET  /api/camera/frame?vehicle_id={vehicle_id}
 GET  /api/semantic/status
 GET  /api/semantic/latest
 POST /api/semantic/vision/analyze
 POST /api/semantic/mission/parse
 ```
 
-`/api/camera/frame` 返回最新 JPEG，并设置 `Cache-Control: no-store`、帧序号和采集
-时间头。旧任务解析接口固定 `preview_only`，不会生成飞控命令。
+`/api/camera/frame` 返回所选机号的最新 JPEG，并设置 `Cache-Control: no-store`、帧
+序号和采集时间头。混合模式下 UAV1 对应 AirSim RGB、UAV3 对应 RTSP RGB。旧任务
+解析接口固定 `preview_only`，不会生成飞控命令。
 
 ### 4.4 Mission Agent
 
@@ -103,6 +108,8 @@ POST   /api/agent/drafts/{draft_id}/cancel
 ```
 
 对话接口只产生回复和草案。确认是独立请求，且确认时重新读取飞机状态执行全部门禁。
+页面会把当前 `vehicle_id` 连同消息传给 Agent，使模型上下文对应当前选择的仿真机或
+实机；确认草案时再次使用草案机号检查，不能借切换页面改变目标。
 
 ### 4.5 场地和轨迹证据
 
@@ -212,6 +219,16 @@ Stop-Process -Id <PID>
 ```powershell
 .\deploy\windows\start-ground-uav3.ps1 -WebPort 8010
 ```
+
+虚实同站启动：
+
+```powershell
+.\deploy\windows\start-ground-hybrid-uav3.ps1 `
+  -SerialPort COM3 -SerialBaud 57600 -WebPort 8000
+```
+
+该脚本要求 SITL 已按 07 的说明把 UDP 发往 Windows 14550。不能同时再启动单独的
+`start-ground-uav3.ps1`，否则 COM3 和 Web 端口会发生独占冲突。
 
 ## 9. 修改前端后的验证
 

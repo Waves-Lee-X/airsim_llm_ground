@@ -38,6 +38,7 @@ class ManualRuntimeMode(str, Enum):
     SITL = "sitl"
     DEMO = "demo"
     REAL_SERIAL = "real_serial"
+    HYBRID = "hybrid"
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,8 @@ class ManualRuntimeConfig:
             raise ValueError("frame_calibration_id must not be empty")
         if self.mode == ManualRuntimeMode.REAL_SERIAL and not self.ground_serial_port:
             raise ValueError("real_serial mode requires ground_serial_port")
+        if self.mode == ManualRuntimeMode.HYBRID:
+            raise ValueError("hybrid mode must be constructed from separate runtimes")
         if self.ground_serial_baudrate <= 0:
             raise ValueError("ground_serial_baudrate must be positive")
         if not 100 <= self.command_ttl_ms <= 300_000:
@@ -322,6 +325,14 @@ class ManualRuntime:
         return self._started
 
     @property
+    def vehicle_ids(self) -> tuple[int, ...]:
+        return (self.config.vehicle_id,)
+
+    @property
+    def default_vehicle_id(self) -> int:
+        return self.config.vehicle_id
+
+    @property
     def server(self) -> GroundServer:
         if self._server is None:
             raise RuntimeError("manual runtime is not started")
@@ -391,7 +402,44 @@ class ManualRuntime:
         await self._cleanup()
 
     def public_config(self) -> dict[str, Any]:
-        return self.config.public_payload()
+        payload = self.config.public_payload()
+        payload["vehicles"] = [dict(payload)]
+        return payload
+
+    def config_for(self, vehicle_id: int) -> ManualRuntimeConfig:
+        if vehicle_id != self.config.vehicle_id:
+            raise KeyError(f"vehicle {vehicle_id} is not registered")
+        return self.config
+
+    def runtime_for(self, vehicle_id: int) -> ManualRuntime:
+        self.config_for(vehicle_id)
+        return self
+
+    def server_for(self, vehicle_id: int) -> GroundServer:
+        self.config_for(vehicle_id)
+        return self.server
+
+    def link_for(self, vehicle_id: int) -> Any | None:
+        self.config_for(vehicle_id)
+        return self.link
+
+    def started_for(self, vehicle_id: int) -> bool:
+        self.config_for(vehicle_id)
+        return self.started
+
+    def agent_connected_for(self, vehicle_id: int) -> bool:
+        self.config_for(vehicle_id)
+        return self.agent_connected
+
+    def error_for(self, vehicle_id: int) -> str | None:
+        self.config_for(vehicle_id)
+        return None
+
+    @property
+    def serial_runtime(self) -> ManualRuntime | None:
+        if self.config.mode == ManualRuntimeMode.REAL_SERIAL:
+            return self
+        return None
 
     def _create_link(self) -> Any:
         if self._link_factory is not None:
@@ -438,3 +486,123 @@ class ManualRuntime:
             await server.stop()
         if link is not None:
             await link.stop()
+
+
+class HybridRuntime:
+    """Run one local SITL bridge and one real P9 bridge behind one Web API."""
+
+    def __init__(
+        self,
+        simulation: ManualRuntime,
+        real: ManualRuntime,
+    ) -> None:
+        if simulation.config.mode != ManualRuntimeMode.SITL:
+            raise ValueError("hybrid simulation runtime must use sitl mode")
+        if real.config.mode != ManualRuntimeMode.REAL_SERIAL:
+            raise ValueError("hybrid real runtime must use real_serial mode")
+        if simulation.config.vehicle_id == real.config.vehicle_id:
+            raise ValueError("hybrid simulation and real vehicle IDs must be different")
+        self._runtimes = {
+            simulation.config.vehicle_id: simulation,
+            real.config.vehicle_id: real,
+        }
+        self.config = simulation.config
+        self._real_vehicle_id = real.config.vehicle_id
+        self._errors: dict[int, str] = {}
+        self._initialized = False
+
+    @property
+    def started(self) -> bool:
+        return self._initialized
+
+    @property
+    def vehicle_ids(self) -> tuple[int, ...]:
+        return tuple(self._runtimes)
+
+    @property
+    def default_vehicle_id(self) -> int:
+        return self.config.vehicle_id
+
+    @property
+    def agent_connected(self) -> bool:
+        return self.agent_connected_for(self.default_vehicle_id)
+
+    @property
+    def link(self) -> Any | None:
+        return self.link_for(self.default_vehicle_id)
+
+    @property
+    def server(self) -> GroundServer:
+        return self.server_for(self.default_vehicle_id)
+
+    @property
+    def serial_runtime(self) -> ManualRuntime:
+        return self._runtimes[self._real_vehicle_id]
+
+    def config_for(self, vehicle_id: int) -> ManualRuntimeConfig:
+        return self.runtime_for(vehicle_id).config
+
+    def runtime_for(self, vehicle_id: int) -> ManualRuntime:
+        try:
+            return self._runtimes[vehicle_id]
+        except KeyError as exc:
+            raise KeyError(f"vehicle {vehicle_id} is not registered") from exc
+
+    def server_for(self, vehicle_id: int) -> GroundServer:
+        return self.runtime_for(vehicle_id).server
+
+    def link_for(self, vehicle_id: int) -> Any | None:
+        return self.runtime_for(vehicle_id).link
+
+    def started_for(self, vehicle_id: int) -> bool:
+        return self.runtime_for(vehicle_id).started
+
+    def agent_connected_for(self, vehicle_id: int) -> bool:
+        return self.runtime_for(vehicle_id).agent_connected
+
+    def error_for(self, vehicle_id: int) -> str | None:
+        self.runtime_for(vehicle_id)
+        return self._errors.get(vehicle_id)
+
+    def clear_error(self, vehicle_id: int) -> None:
+        self.runtime_for(vehicle_id)
+        self._errors.pop(vehicle_id, None)
+
+    def set_error(self, vehicle_id: int, error: str) -> None:
+        self.runtime_for(vehicle_id)
+        self._errors[vehicle_id] = error
+
+    def public_config(self) -> dict[str, Any]:
+        simulation = self.config.public_payload()
+        real = self.serial_runtime.config.public_payload()
+        vehicles = [dict(simulation), dict(real)]
+        return {
+            **simulation,
+            "runtime_mode": ManualRuntimeMode.HYBRID.value,
+            "deployment_mode": "hybrid",
+            "ground_transport": "mixed",
+            "serial_runtime_configurable": True,
+            "ground_serial_port": real["ground_serial_port"],
+            "ground_serial_baudrate": real["ground_serial_baudrate"],
+            "vehicles": vehicles,
+        }
+
+    async def start(self) -> None:
+        if self._initialized:
+            raise RuntimeError("hybrid runtime is already started")
+        self._errors.clear()
+        results = await asyncio.gather(
+            *(runtime.start() for runtime in self._runtimes.values()),
+            return_exceptions=True,
+        )
+        for vehicle_id, result in zip(self.vehicle_ids, results):
+            if isinstance(result, BaseException):
+                self._errors[vehicle_id] = str(result)
+        self._initialized = True
+
+    async def stop(self) -> None:
+        await asyncio.gather(
+            *(runtime.stop() for runtime in self._runtimes.values()),
+            return_exceptions=True,
+        )
+        self._initialized = False

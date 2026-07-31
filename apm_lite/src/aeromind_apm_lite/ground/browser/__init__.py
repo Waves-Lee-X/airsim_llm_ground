@@ -1,6 +1,6 @@
 """Browser-facing gateway for the manually managed SITL workflow."""
 
-from .runtime import ManualRuntime, ManualRuntimeConfig, ManualRuntimeMode
+from .runtime import HybridRuntime, ManualRuntime, ManualRuntimeConfig, ManualRuntimeMode
 
 __all__ = [
     "AirSimCameraBridge",
@@ -8,6 +8,7 @@ __all__ = [
     "RtspCameraBridge",
     "RtspCameraConfig",
     "BrowserGateway",
+    "HybridRuntime",
     "ManualRuntime",
     "ManualRuntimeConfig",
     "ManualRuntimeMode",

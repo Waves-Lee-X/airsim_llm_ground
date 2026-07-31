@@ -52,7 +52,12 @@ from .camera import (
     RtspCameraBridge,
     RtspCameraConfig,
 )
-from .runtime import ManualRuntime, ManualRuntimeConfig, ManualRuntimeMode
+from .runtime import (
+    HybridRuntime,
+    ManualRuntime,
+    ManualRuntimeConfig,
+    ManualRuntimeMode,
+)
 from .mission_agent import (
     AgentDraftBlocked,
     AgentDraftConflict,
@@ -106,6 +111,7 @@ class VisualAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prompt: str = Field(default="", max_length=2_000)
+    vehicle_id: int | None = Field(default=None, ge=1, le=255)
 
 
 class MissionParseRequest(BaseModel):
@@ -118,12 +124,14 @@ class AgentMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1, max_length=4_000)
+    vehicle_id: int | None = Field(default=None, ge=1, le=255)
 
 
 class AgentConfirmationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     confirmed: bool
+    vehicle_id: int | None = Field(default=None, ge=1, le=255)
 
 
 class TrajectoryReportRequest(BaseModel):
@@ -189,9 +197,10 @@ class BrowserGateway:
 
     def __init__(
         self,
-        runtime: ManualRuntime,
+        runtime: ManualRuntime | HybridRuntime,
         *,
         camera: CameraBridge | None = None,
+        cameras: Mapping[int, CameraBridge] | None = None,
         semantic: SemanticService | None = None,
         mission_agent: MissionAgentService | None = None,
         georeference: GeoReferenceStore | None = None,
@@ -201,7 +210,9 @@ class BrowserGateway:
         if telemetry_interval_s <= 0.0:
             raise ValueError("telemetry_interval_s must be positive")
         self.runtime = runtime
-        self.camera = camera
+        self.cameras = dict(cameras or {})
+        if camera is not None:
+            self.cameras.setdefault(runtime.default_vehicle_id, camera)
         self.semantic = semantic or SemanticService()
         self.mission_agent = mission_agent or MissionAgentService(self.semantic)
         self.georeference = georeference or GeoReferenceStore()
@@ -214,23 +225,26 @@ class BrowserGateway:
         self._command_tasks: set[asyncio.Task[dict[str, Any]]] = set()
         self._runtime_lock = asyncio.Lock()
         self._georeference_lock = asyncio.Lock()
-        self._runtime_error: str | None = None
+        self._runtime_errors: dict[int, str] = {}
         self._serial_reconnecting = False
 
     async def start(self) -> None:
-        if self.camera is not None:
-            await self.camera.start()
+        await asyncio.gather(*(camera.start() for camera in self.cameras.values()))
         try:
             await self.runtime.start()
         except Exception as exc:
             if self.runtime.config.mode != ManualRuntimeMode.REAL_SERIAL:
-                if self.camera is not None:
-                    await self.camera.stop()
+                await asyncio.gather(
+                    *(camera.stop() for camera in self.cameras.values()),
+                    return_exceptions=True,
+                )
                 raise
-            self._runtime_error = str(exc)
+            self._runtime_errors[self.runtime.default_vehicle_id] = str(exc)
         except BaseException:
-            if self.camera is not None:
-                await self.camera.stop()
+            await asyncio.gather(
+                *(camera.stop() for camera in self.cameras.values()),
+                return_exceptions=True,
+            )
             raise
         self._telemetry_task = asyncio.create_task(
             self._telemetry_loop(),
@@ -251,17 +265,31 @@ class BrowserGateway:
         try:
             await self.runtime.stop()
         finally:
-            if self.camera is not None:
-                await self.camera.stop()
+            await asyncio.gather(
+                *(camera.stop() for camera in self.cameras.values()),
+                return_exceptions=True,
+            )
+
+    def _vehicle_id(self, vehicle_id: int | None = None) -> int:
+        selected = self.runtime.default_vehicle_id if vehicle_id is None else vehicle_id
+        try:
+            self.runtime.config_for(selected)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="vehicle is not registered") from exc
+        return selected
+
+    def _runtime_error(self, vehicle_id: int) -> str | None:
+        return self._runtime_errors.get(vehicle_id) or self.runtime.error_for(vehicle_id)
 
     def public_config(self) -> dict[str, Any]:
         payload = self.runtime.public_config()
-        payload["camera"] = self.camera_status_payload()
+        payload["camera"] = self.camera_status_payload(self.runtime.default_vehicle_id)
+        for vehicle in payload.get("vehicles", []):
+            vehicle_id = int(vehicle["vehicle_id"])
+            vehicle["camera"] = self.camera_status_payload(vehicle_id)
         payload["semantic"] = self.semantic.status_payload()
         payload["mission_agent"] = self.mission_agent.status_payload()
-        payload["serial_runtime_configurable"] = (
-            self.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL
-        )
+        payload["serial_runtime_configurable"] = self.runtime.serial_runtime is not None
         reference = self.georeference.value
         payload["georeference"] = {
             "calibration_id": reference.calibration_id,
@@ -383,11 +411,12 @@ class BrowserGateway:
         port: str,
         baudrate: int,
     ) -> dict[str, Any]:
-        if self.runtime.config.mode != ManualRuntimeMode.REAL_SERIAL:
+        serial_runtime = self.runtime.serial_runtime
+        if serial_runtime is None:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "serial settings are only available in real_serial mode"
+                    "serial settings require a real_serial vehicle"
                 ),
             )
         if any(not task.done() for task in self._command_tasks):
@@ -405,106 +434,146 @@ class BrowserGateway:
             )
 
         async with self._runtime_lock:
-            old_config = self.runtime.config
+            vehicle_id = serial_runtime.config.vehicle_id
+            old_config = serial_runtime.config
             new_config = replace(
                 old_config,
                 ground_serial_port=normalized_port,
                 ground_serial_baudrate=baudrate,
             )
             self._serial_reconnecting = True
-            self._runtime_error = None
-            await self.events.publish("service_status", self.status_payload())
+            self._runtime_errors.pop(vehicle_id, None)
+            if isinstance(self.runtime, HybridRuntime):
+                self.runtime.clear_error(vehicle_id)
+            await self.events.publish(
+                "service_status", self.status_payload(vehicle_id)
+            )
             try:
-                await self.runtime.stop()
-                self.runtime.config = new_config
+                await serial_runtime.stop()
+                serial_runtime.config = new_config
                 try:
-                    await self.runtime.start()
+                    await serial_runtime.start()
                 except Exception as connect_error:
-                    self.runtime.config = old_config
+                    serial_runtime.config = old_config
                     try:
-                        await self.runtime.start()
+                        await serial_runtime.start()
                     except Exception as rollback_error:
-                        self._runtime_error = (
+                        error = (
                             f"failed to open {normalized_port} at {baudrate}: "
                             f"{connect_error}; rollback failed: "
                             f"{rollback_error}"
                         )
                     else:
-                        self._runtime_error = (
+                        error = (
                             f"failed to open {normalized_port} at {baudrate}: "
                             f"{connect_error}; restored "
                             f"{old_config.ground_serial_port} at "
                             f"{old_config.ground_serial_baudrate}"
                         )
+                    self._runtime_errors[vehicle_id] = error
+                    if isinstance(self.runtime, HybridRuntime):
+                        self.runtime.set_error(vehicle_id, error)
                     raise HTTPException(
                         status_code=503,
-                        detail=self._runtime_error,
+                        detail=error,
                     ) from connect_error
-                self._runtime_error = None
+                self._runtime_errors.pop(vehicle_id, None)
+                if isinstance(self.runtime, HybridRuntime):
+                    self.runtime.clear_error(vehicle_id)
             finally:
                 self._serial_reconnecting = False
 
         payload = {
-            "port": self.runtime.config.ground_serial_port,
-            "baudrate": self.runtime.config.ground_serial_baudrate,
-            "connected": self.runtime.started,
+            "vehicle_id": vehicle_id,
+            "port": serial_runtime.config.ground_serial_port,
+            "baudrate": serial_runtime.config.ground_serial_baudrate,
+            "connected": serial_runtime.started,
             "detail": "serial link opened; waiting for the onboard agent",
         }
-        await self.events.publish("service_status", self.status_payload())
+        await self.events.publish(
+            "service_status", self.status_payload(vehicle_id)
+        )
         return payload
 
-    def camera_status_payload(self) -> dict[str, Any]:
-        if self.camera is not None:
-            return self.camera.status_payload()
-        payload = dict(self.runtime.public_config()["camera"])
+    def camera_status_payload(self, vehicle_id: int | None = None) -> dict[str, Any]:
+        selected = self._vehicle_id(vehicle_id)
+        camera = self.cameras.get(selected)
+        if camera is not None:
+            payload = camera.status_payload()
+            payload["vehicle_id"] = selected
+            return payload
+        payload = dict(self.runtime.config_for(selected).public_payload()["camera"])
+        payload["vehicle_id"] = selected
         payload.setdefault("state", "disabled")
         payload.setdefault("stream_url", "/api/camera/frame")
         return payload
 
-    async def camera_frame(self) -> CameraFrame:
-        if self.camera is None:
+    async def camera_frame(self, vehicle_id: int | None = None) -> CameraFrame:
+        selected = self._vehicle_id(vehicle_id)
+        camera = self.cameras.get(selected)
+        if camera is None:
             raise CameraUnavailable("camera bridge is disabled")
-        return await self.camera.get_frame()
+        return await camera.get_frame()
 
     def health_payload(self) -> dict[str, Any]:
-        status = self.status_payload()
-        return {
+        selected = self.runtime.default_vehicle_id
+        status = self.status_payload(selected)
+        payload = {
             "status": "ok" if self.runtime.started else "starting",
             "ready": status["vehicle_connected"],
-            "runtime_mode": self.runtime.config.mode.value,
-            "vehicle_id": self.runtime.config.vehicle_id,
+            "runtime_mode": (
+                ManualRuntimeMode.HYBRID.value
+                if isinstance(self.runtime, HybridRuntime)
+                else self.runtime.config.mode.value
+            ),
+            "vehicle_id": selected,
             "fcu_link_ok": status["fcu_link_ok"],
         }
+        if isinstance(self.runtime, HybridRuntime):
+            payload["vehicle_count"] = len(self.runtime.vehicle_ids)
+        return payload
 
-    def status_payload(self) -> dict[str, Any]:
+    def status_payload(self, vehicle_id: int | None = None) -> dict[str, Any]:
+        selected = self._vehicle_id(vehicle_id)
+        config = self.runtime.config_for(selected)
+        runtime_started = self.runtime.started_for(selected)
         vehicle_connected = False
-        telemetry = self._link_snapshot_payload()
+        telemetry = self._link_snapshot_payload(selected)
         heartbeat = None
         session_info = None
-        if self.runtime.started:
-            session_info = self.runtime.server.session_info(
-                self.runtime.config.vehicle_id
-            )
+        server = None
+        if runtime_started:
+            server = self.runtime.server_for(selected)
+            session_info = server.session_info(selected)
             vehicle_connected = session_info is not None
             if vehicle_connected:
                 try:
-                    heartbeat = self.runtime.server.last_heartbeat(
-                        self.runtime.config.vehicle_id
-                    )
+                    heartbeat = server.last_heartbeat(selected)
                 except VehicleNotConnected:
                     heartbeat = None
         serial_stats = (
-            getattr(self.runtime.server, "serial_stats", {})
-            if self.runtime.started
+            getattr(server, "serial_stats", {})
+            if server is not None and config.mode == ManualRuntimeMode.REAL_SERIAL
             else {}
         )
         return {
-            "runtime_started": self.runtime.started,
-            "runtime_error": self._runtime_error,
-            "runtime_mode": self.runtime.config.mode.value,
-            "vehicle_id": self.runtime.config.vehicle_id,
+            "runtime_started": runtime_started,
+            "runtime_error": self._runtime_error(selected),
+            "runtime_mode": config.mode.value,
+            "station_mode": (
+                ManualRuntimeMode.HYBRID.value
+                if isinstance(self.runtime, HybridRuntime)
+                else config.mode.value
+            ),
+            "deployment_mode": (
+                "real" if config.mode == ManualRuntimeMode.REAL_SERIAL else "sim"
+            ),
+            "vehicle_id": selected,
+            "vehicle_name": config.vehicle_name,
             "vehicle_connected": vehicle_connected,
-            "onboard_agent_connected": self.runtime.agent_connected,
+            "onboard_agent_connected": (
+                self.runtime.agent_connected_for(selected) if runtime_started else False
+            ),
             "onboard_agent": {
                 "connected": vehicle_connected,
                 "session_id": (
@@ -527,24 +596,24 @@ class BrowserGateway:
             "command_output_enabled": (
                 heartbeat.command_output_enabled
                 if heartbeat is not None
-                else self.runtime.config.mode != ManualRuntimeMode.REAL_SERIAL
+                else config.mode != ManualRuntimeMode.REAL_SERIAL
             ),
             "allowed_commands": (
                 [command.value for command in heartbeat.allowed_commands]
                 if heartbeat is not None
                 else (
                     [command.value for command in VehicleCommandType]
-                    if self.runtime.config.mode != ManualRuntimeMode.REAL_SERIAL
+                    if config.mode != ManualRuntimeMode.REAL_SERIAL
                     else []
                 )
             ),
             "fcu_ready": bool(
                 (
-                    getattr(self.runtime.link, "ready", False)
-                    and self.runtime.config.mode == ManualRuntimeMode.SITL
+                    getattr(self.runtime.link_for(selected), "ready", False)
+                    and config.mode == ManualRuntimeMode.SITL
                 )
                 or (
-                    self.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL
+                    config.mode == ManualRuntimeMode.REAL_SERIAL
                     and telemetry is not None
                     and telemetry["fcu_link_ok"]
                 )
@@ -557,30 +626,38 @@ class BrowserGateway:
             "coordinate_frame": "local_ned",
             "telemetry": telemetry,
             "commands_are_simulated": (
-                self.runtime.config.mode == ManualRuntimeMode.DEMO
+                config.mode == ManualRuntimeMode.DEMO
             ),
             "external_processes_managed": False,
             "ground_link": {
                 "transport": (
                     "serial"
-                    if self.runtime.config.mode
-                    == ManualRuntimeMode.REAL_SERIAL
+                    if config.mode == ManualRuntimeMode.REAL_SERIAL
                     else "loopback_websocket"
                 ),
                 "stats": serial_stats,
-                "port": self.runtime.config.ground_serial_port,
-                "baudrate": self.runtime.config.ground_serial_baudrate,
-                "reconnecting": self._serial_reconnecting,
-                "error": self._runtime_error,
+                "port": config.ground_serial_port,
+                "baudrate": config.ground_serial_baudrate,
+                "reconnecting": (
+                    self._serial_reconnecting
+                    and config.mode == ManualRuntimeMode.REAL_SERIAL
+                ),
+                "error": self._runtime_error(selected),
             },
-            "camera": self.camera_status_payload(),
+            "camera": self.camera_status_payload(selected),
             "semantic": self.semantic.status_payload(),
             "mission_agent": self.mission_agent.status_payload(),
         }
 
-    async def analyze_current_frame(self, prompt: str) -> dict[str, Any]:
-        frame = await self.camera_frame()
+    async def analyze_current_frame(
+        self,
+        prompt: str,
+        vehicle_id: int | None = None,
+    ) -> dict[str, Any]:
+        selected = self._vehicle_id(vehicle_id)
+        frame = await self.camera_frame(selected)
         payload = await self.semantic.analyze_frame(frame, prompt)
+        payload["vehicle_id"] = selected
         await self.events.publish("visual_semantic_result", payload)
         return payload
 
@@ -589,8 +666,13 @@ class BrowserGateway:
         await self.events.publish("mission_parse_result", payload)
         return payload
 
-    def mission_agent_context(self) -> dict[str, Any]:
-        status = self.status_payload()
+    def mission_agent_context(
+        self,
+        vehicle_id: int | None = None,
+    ) -> dict[str, Any]:
+        selected = self._vehicle_id(vehicle_id)
+        config = self.runtime.config_for(selected)
+        status = self.status_payload(selected)
         telemetry = status.get("telemetry")
         if not isinstance(telemetry, dict):
             telemetry = {}
@@ -632,12 +714,12 @@ class BrowserGateway:
         reference = self.georeference.value
         return {
             "captured_at_utc": datetime.now(timezone.utc).isoformat(),
-            "vehicle_id": self.runtime.config.vehicle_id,
-            "vehicle_name": self.runtime.config.vehicle_name,
+            "vehicle_id": selected,
+            "vehicle_name": config.vehicle_name,
             "deployment_mode": (
                 "real"
-                if self.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL
-                else self.runtime.config.mode.value
+                if config.mode == ManualRuntimeMode.REAL_SERIAL
+                else config.mode.value
             ),
             "agent_connected": bool(
                 status.get("onboard_agent_connected")
@@ -652,7 +734,7 @@ class BrowserGateway:
                 "reconnecting": status.get("ground_link", {}).get("reconnecting"),
                 "error": status.get("ground_link", {}).get("error"),
             },
-            "camera": self.camera_status_payload(),
+            "camera": self.camera_status_payload(selected),
             "latest_visual_result": visual_result,
             "georeference": {
                 "calibration_id": reference.calibration_id,
@@ -666,11 +748,12 @@ class BrowserGateway:
         self,
         session_id: UUID,
         message: str,
+        vehicle_id: int | None = None,
     ) -> dict[str, Any]:
         payload = await self.mission_agent.chat(
             session_id,
             message,
-            self.mission_agent_context(),
+            self.mission_agent_context(vehicle_id),
         )
         await self.events.publish("mission_agent_reply", payload)
         return payload
@@ -678,10 +761,11 @@ class BrowserGateway:
     async def confirm_agent_draft(
         self,
         draft_id: UUID,
+        vehicle_id: int | None = None,
     ) -> dict[str, Any]:
         claim = self.mission_agent.claim_draft(
             draft_id,
-            self.mission_agent_context(),
+            self.mission_agent_context(vehicle_id),
         )
         request = CommandRequest(
             altitude_m=claim["arguments"].get("altitude_m"),
@@ -721,26 +805,28 @@ class BrowserGateway:
         await self.events.publish("mission_agent_draft_updated", payload)
         return payload
 
-    def telemetry_payload(self) -> dict[str, Any]:
-        telemetry = self._link_snapshot_payload()
+    def telemetry_payload(self, vehicle_id: int | None = None) -> dict[str, Any]:
+        selected = self._vehicle_id(vehicle_id)
+        telemetry = self._link_snapshot_payload(selected)
         return {
             "available": telemetry is not None,
-            "vehicle_id": self.runtime.config.vehicle_id,
+            "vehicle_id": selected,
             "coordinate_frame": "local_ned",
             "telemetry": telemetry,
         }
 
-    def _link_snapshot_payload(self) -> dict[str, Any] | None:
-        link = self.runtime.link
+    def _link_snapshot_payload(self, vehicle_id: int) -> dict[str, Any] | None:
+        config = self.runtime.config_for(vehicle_id)
+        link = self.runtime.link_for(vehicle_id)
         if link is None:
             if (
-                not self.runtime.started
-                or self.runtime.config.mode != ManualRuntimeMode.REAL_SERIAL
+                not self.runtime.started_for(vehicle_id)
+                or config.mode != ManualRuntimeMode.REAL_SERIAL
             ):
                 return None
             try:
-                telemetry = self.runtime.server.latest_telemetry(
-                    self.runtime.config.vehicle_id
+                telemetry = self.runtime.server_for(vehicle_id).latest_telemetry(
+                    vehicle_id
                 )
             except VehicleNotConnected:
                 return None
@@ -802,11 +888,8 @@ class BrowserGateway:
         action: BrowserAction,
         request: CommandRequest,
     ) -> dict[str, Any]:
-        if vehicle_id != self.runtime.config.vehicle_id:
-            raise HTTPException(
-                status_code=404,
-                detail="vehicle is not registered",
-            )
+        selected = self._vehicle_id(vehicle_id)
+        config = self.runtime.config_for(selected)
         if action == BrowserAction.TAKEOFF and request.altitude_m is None:
             raise HTTPException(
                 status_code=422,
@@ -817,13 +900,14 @@ class BrowserGateway:
                 status_code=422,
                 detail="altitude_m is only valid for takeoff",
             )
-        if not self.runtime.started:
+        if not self.runtime.started_for(selected):
             raise HTTPException(status_code=503, detail="runtime is not ready")
 
         command_type = VehicleCommandType(action.value)
-        if self.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL:
+        server = self.runtime.server_for(selected)
+        if config.mode == ManualRuntimeMode.REAL_SERIAL:
             try:
-                heartbeat = self.runtime.server.last_heartbeat(vehicle_id)
+                heartbeat = server.last_heartbeat(selected)
             except VehicleNotConnected as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             allowed_commands = (
@@ -839,12 +923,12 @@ class BrowserGateway:
                     ),
                 )
         try:
-            command = await self.runtime.server.send_command(
-                vehicle_id,
+            command = await server.send_command(
+                selected,
                 command_type,
                 target_altitude_m=request.altitude_m,
                 reason=request.reason,
-                ttl_ms=request.ttl_ms or self.runtime.config.command_ttl_ms,
+                ttl_ms=request.ttl_ms or config.command_ttl_ms,
             )
         except VehicleNotConnected as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -857,7 +941,7 @@ class BrowserGateway:
                 "command": action.value,
                 "stage": "sent",
                 "simulated": (
-                    self.runtime.config.mode == ManualRuntimeMode.DEMO
+                    config.mode == ManualRuntimeMode.DEMO
                 ),
             },
         )
@@ -874,8 +958,9 @@ class BrowserGateway:
         command: VehicleCommand,
         timeout_s: float,
     ) -> dict[str, Any]:
+        server = self.runtime.server_for(command.vehicle_id)
         try:
-            accepted = await self.runtime.server.wait_for_ack(
+            accepted = await server.wait_for_ack(
                 command.vehicle_id,
                 command.message_id,
                 AckStatus.ACCEPTED,
@@ -946,7 +1031,7 @@ class BrowserGateway:
         status: AckStatus,
         timeout_s: float,
     ) -> MissionAck:
-        ack = await self.runtime.server.wait_for_ack(
+        ack = await self.runtime.server_for(command.vehicle_id).wait_for_ack(
             command.vehicle_id,
             command.message_id,
             status,
@@ -973,7 +1058,8 @@ class BrowserGateway:
                     ack.physical_completion_confirmed
                 ),
                 "simulated": (
-                    self.runtime.config.mode == ManualRuntimeMode.DEMO
+                    self.runtime.config_for(command.vehicle_id).mode
+                    == ManualRuntimeMode.DEMO
                 ),
             },
         )
@@ -1005,6 +1091,7 @@ class BrowserGateway:
         terminal: MissionAck | None,
         timeout_detail: str = "",
     ) -> dict[str, Any]:
+        config = self.runtime.config_for(command.vehicle_id)
         fcu_evidence = running or terminal
         terminal_status = (
             terminal.status.value if terminal else "gateway_timeout"
@@ -1016,7 +1103,7 @@ class BrowserGateway:
             terminal is not None and terminal.physical_completion_confirmed
         )
         fcu_ack_payload = {
-            "applicable": self.runtime.config.mode != ManualRuntimeMode.DEMO,
+            "applicable": config.mode != ManualRuntimeMode.DEMO,
             "received": bool(
                 fcu_evidence is not None
                 and fcu_evidence.apm_command_result is not None
@@ -1038,7 +1125,7 @@ class BrowserGateway:
             "request_id": str(command.message_id),
             "vehicle_id": command.vehicle_id,
             "command": command.command.value,
-            "simulated": self.runtime.config.mode == ManualRuntimeMode.DEMO,
+            "simulated": config.mode == ManualRuntimeMode.DEMO,
             "application": {
                 "accepted": accepted is not None,
                 "status": (
@@ -1068,9 +1155,10 @@ class BrowserGateway:
 
     async def _telemetry_loop(self) -> None:
         while True:
-            payload = self.telemetry_payload()
-            if payload["available"]:
-                await self.events.publish("vehicle_telemetry", payload)
+            for vehicle_id in self.runtime.vehicle_ids:
+                payload = self.telemetry_payload(vehicle_id)
+                if payload["available"]:
+                    await self.events.publish("vehicle_telemetry", payload)
             await asyncio.sleep(self._telemetry_interval_s)
 
 
@@ -1090,9 +1178,10 @@ def _default_trajectory_evidence_dir() -> Path:
 
 
 def create_app(
-    runtime: ManualRuntime | None = None,
+    runtime: ManualRuntime | HybridRuntime | None = None,
     *,
     camera: CameraBridge | None = None,
+    cameras: Mapping[int, CameraBridge] | None = None,
     semantic: SemanticService | None = None,
     mission_agent: MissionAgentService | None = None,
     georeference: GeoReferenceStore | None = None,
@@ -1103,6 +1192,7 @@ def create_app(
     gateway = BrowserGateway(
         runtime,
         camera=camera,
+        cameras=cameras,
         semantic=semantic,
         mission_agent=mission_agent,
         georeference=georeference,
@@ -1133,8 +1223,8 @@ def create_app(
         return gateway.public_config()
 
     @app.get("/api/status")
-    async def status() -> dict[str, Any]:
-        return gateway.status_payload()
+    async def status(vehicle_id: int | None = None) -> dict[str, Any]:
+        return gateway.status_payload(vehicle_id)
 
     @app.get("/api/georeference")
     async def georeference_config() -> dict[str, Any]:
@@ -1174,14 +1264,22 @@ def create_app(
 
     @app.get("/api/serial/ports")
     async def serial_ports() -> dict[str, Any]:
+        serial_runtime = gateway.runtime.serial_runtime
         return {
-            "available": (
-                gateway.runtime.config.mode == ManualRuntimeMode.REAL_SERIAL
-            ),
+            "available": serial_runtime is not None,
             "ports": await gateway.available_serial_ports(),
-            "selected_port": gateway.runtime.config.ground_serial_port,
+            "vehicle_id": (
+                serial_runtime.config.vehicle_id if serial_runtime is not None else None
+            ),
+            "selected_port": (
+                serial_runtime.config.ground_serial_port
+                if serial_runtime is not None
+                else None
+            ),
             "selected_baudrate": (
-                gateway.runtime.config.ground_serial_baudrate
+                serial_runtime.config.ground_serial_baudrate
+                if serial_runtime is not None
+                else None
             ),
         }
 
@@ -1196,25 +1294,20 @@ def create_app(
 
     @app.get("/api/vehicles/{vehicle_id}/telemetry")
     async def vehicle_telemetry(vehicle_id: int) -> dict[str, Any]:
-        if vehicle_id != gateway.runtime.config.vehicle_id:
-            raise HTTPException(
-                status_code=404,
-                detail="vehicle is not registered",
-            )
-        return gateway.telemetry_payload()
+        return gateway.telemetry_payload(vehicle_id)
 
     @app.get("/api/vehicle/telemetry")
     async def default_vehicle_telemetry() -> dict[str, Any]:
-        return gateway.telemetry_payload()
+        return gateway.telemetry_payload(gateway.runtime.default_vehicle_id)
 
     @app.get("/api/camera/status")
-    async def camera_status() -> dict[str, Any]:
-        return gateway.camera_status_payload()
+    async def camera_status(vehicle_id: int | None = None) -> dict[str, Any]:
+        return gateway.camera_status_payload(vehicle_id)
 
     @app.get("/api/camera/frame")
-    async def camera_frame() -> Response:
+    async def camera_frame(vehicle_id: int | None = None) -> Response:
         try:
-            frame = await gateway.camera_frame()
+            frame = await gateway.camera_frame(vehicle_id)
         except CameraUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         return Response(
@@ -1241,9 +1334,11 @@ def create_app(
     async def analyze_visual_semantics(
         payload: VisualAnalysisRequest | None = Body(default=None),
     ) -> dict[str, Any]:
+        request = payload or VisualAnalysisRequest()
         try:
             return await gateway.analyze_current_frame(
-                (payload or VisualAnalysisRequest()).prompt
+                request.prompt,
+                request.vehicle_id,
             )
         except CameraUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -1298,6 +1393,7 @@ def create_app(
             return await gateway.chat_with_mission_agent(
                 session_id,
                 payload.message,
+                payload.vehicle_id,
             )
         except AgentSessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1316,7 +1412,7 @@ def create_app(
         if payload.confirmed is not True:
             raise HTTPException(status_code=422, detail="必须明确确认任务草案")
         try:
-            return await gateway.confirm_agent_draft(draft_id)
+            return await gateway.confirm_agent_draft(draft_id, payload.vehicle_id)
         except AgentDraftNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except AgentDraftExpired as exc:
@@ -1367,7 +1463,7 @@ def create_app(
                 detail="unknown control action",
             )
         return await gateway.issue_command(
-            gateway.runtime.config.vehicle_id,
+            gateway.runtime.default_vehicle_id,
             action,
             payload or CommandRequest(),
         )
@@ -1376,8 +1472,9 @@ def create_app(
     async def event_stream(websocket: WebSocket) -> None:
         await websocket.accept()
         try:
-            status_payload = gateway.status_payload()
-            telemetry_payload = gateway.telemetry_payload()
+            selected = gateway.runtime.default_vehicle_id
+            status_payload = gateway.status_payload(selected)
+            telemetry_payload = gateway.telemetry_payload(selected)
             await websocket.send_json(
                 {
                     "event_id": 0,
@@ -1429,16 +1526,26 @@ def create_app(
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run against a user-managed SITL/AirSim session"
+        description="Run the Lite Web ground station in simulation, real, or hybrid mode"
     )
     parser.add_argument(
-        "--mode", choices=("sitl", "demo", "real_serial"), default="sitl"
+        "--mode",
+        choices=("sitl", "demo", "real_serial", "hybrid"),
+        default="sitl",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--fcu-endpoint", default="udpin:0.0.0.0:14550")
     parser.add_argument("--vehicle-id", type=int, default=1)
     parser.add_argument("--vehicle-name")
+    parser.add_argument("--sim-vehicle-id", type=int, default=1)
+    parser.add_argument("--sim-vehicle-name", default="SITL UAV 1")
+    parser.add_argument("--real-vehicle-id", type=int, default=3)
+    parser.add_argument("--real-vehicle-name", default="实机 UAV 3")
+    parser.add_argument(
+        "--sim-frame-calibration-id",
+        default="manual-sim-local-ned-v1",
+    )
     parser.add_argument("--frame-calibration-id")
     parser.add_argument(
         "--serial-port",
@@ -1480,7 +1587,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--camera-timeout", type=float, default=2.0)
     parser.add_argument(
         "--rtsp-url",
-        help="Onboard RGB RTSP stream, for example rtsp://192.168.1.109:15544/cam.",
+        help="Onboard RGB RTSP stream, for example rtsp://192.168.1.110:15544/cam.",
     )
     parser.add_argument(
         "--disable-camera",
@@ -1504,43 +1611,73 @@ def _default_airsim_host() -> str:
 def main(argv: list[str] | None = None) -> int:
     args = build_argument_parser().parse_args(argv)
     mode = ManualRuntimeMode(args.mode)
-    if mode == ManualRuntimeMode.REAL_SERIAL and not args.secret_env:
-        raise SystemExit("--secret-env is required in real_serial mode")
-    if mode == ManualRuntimeMode.REAL_SERIAL and not args.frame_calibration_id:
+    if mode in {ManualRuntimeMode.REAL_SERIAL, ManualRuntimeMode.HYBRID} and not args.secret_env:
+        raise SystemExit("--secret-env is required in real_serial and hybrid modes")
+    if (
+        mode in {ManualRuntimeMode.REAL_SERIAL, ManualRuntimeMode.HYBRID}
+        and not args.frame_calibration_id
+    ):
         raise SystemExit(
-            "--frame-calibration-id is required in real_serial mode"
+            "--frame-calibration-id is required in real_serial and hybrid modes"
         )
     shared_secret = (
         load_shared_secret(args.secret_env)
         if args.secret_env is not None
         else None
     )
-    runtime = ManualRuntime(
-        ManualRuntimeConfig(
-            mode=mode,
-            vehicle_id=args.vehicle_id,
-            vehicle_name=args.vehicle_name or f"uav{args.vehicle_id}",
-            fcu_endpoint=args.fcu_endpoint,
-            frame_calibration_id=(
-                args.frame_calibration_id or "manual-sim-local-ned-v1"
-            ),
-            ground_serial_port=args.serial_port,
-            ground_serial_baudrate=args.serial_baud,
-        ),
-        shared_secret=shared_secret,
-    )
-    camera = None
-    if not args.disable_camera and args.rtsp_url:
-        camera = RtspCameraBridge(
-            RtspCameraConfig(
-                stream_url=args.rtsp_url,
-                capture_fps=args.camera_fps,
-                open_timeout_ms=max(1, int(args.camera_timeout * 1_000)),
-                read_timeout_ms=max(1, int(args.camera_timeout * 1_000)),
+    if mode == ManualRuntimeMode.HYBRID:
+        try:
+            runtime: ManualRuntime | HybridRuntime = HybridRuntime(
+                ManualRuntime(
+                    ManualRuntimeConfig(
+                        mode=ManualRuntimeMode.SITL,
+                        vehicle_id=args.sim_vehicle_id,
+                        vehicle_name=args.sim_vehicle_name,
+                        fcu_endpoint=args.fcu_endpoint,
+                        frame_calibration_id=args.sim_frame_calibration_id,
+                    )
+                ),
+                ManualRuntime(
+                    ManualRuntimeConfig(
+                        mode=ManualRuntimeMode.REAL_SERIAL,
+                        vehicle_id=args.real_vehicle_id,
+                        vehicle_name=args.real_vehicle_name,
+                        frame_calibration_id=args.frame_calibration_id,
+                        ground_serial_port=args.serial_port,
+                        ground_serial_baudrate=args.serial_baud,
+                    ),
+                    shared_secret=shared_secret,
+                ),
             )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    else:
+        runtime = ManualRuntime(
+            ManualRuntimeConfig(
+                mode=mode,
+                vehicle_id=args.vehicle_id,
+                vehicle_name=args.vehicle_name or f"uav{args.vehicle_id}",
+                fcu_endpoint=args.fcu_endpoint,
+                frame_calibration_id=(
+                    args.frame_calibration_id or "manual-sim-local-ned-v1"
+                ),
+                ground_serial_port=args.serial_port,
+                ground_serial_baudrate=args.serial_baud,
+            ),
+            shared_secret=shared_secret,
         )
-    elif not args.disable_camera and mode != ManualRuntimeMode.REAL_SERIAL:
-        camera = AirSimCameraBridge(
+    cameras: dict[int, CameraBridge] = {}
+    if not args.disable_camera and mode in {
+        ManualRuntimeMode.SITL,
+        ManualRuntimeMode.DEMO,
+        ManualRuntimeMode.HYBRID,
+    }:
+        simulation_vehicle_id = (
+            args.sim_vehicle_id
+            if mode == ManualRuntimeMode.HYBRID
+            else args.vehicle_id
+        )
+        cameras[simulation_vehicle_id] = AirSimCameraBridge(
             AirSimCameraConfig(
                 rpc_host=args.airsim_host or _default_airsim_host(),
                 rpc_port=args.airsim_port,
@@ -1550,13 +1687,27 @@ def main(argv: list[str] | None = None) -> int:
                 request_timeout_s=args.camera_timeout,
             )
         )
+    if not args.disable_camera and args.rtsp_url:
+        real_vehicle_id = (
+            args.real_vehicle_id
+            if mode == ManualRuntimeMode.HYBRID
+            else args.vehicle_id
+        )
+        cameras[real_vehicle_id] = RtspCameraBridge(
+            RtspCameraConfig(
+                stream_url=args.rtsp_url,
+                capture_fps=args.camera_fps,
+                open_timeout_ms=max(1, int(args.camera_timeout * 1_000)),
+                read_timeout_ms=max(1, int(args.camera_timeout * 1_000)),
+            )
+        )
     try:
         georeference = GeoReferenceStore(args.georeference_config)
     except GeoReferenceError as exc:
         raise SystemExit(str(exc)) from exc
     app = create_app(
         runtime,
-        camera=camera,
+        cameras=cameras,
         georeference=georeference,
         trajectory_evidence=TrajectoryEvidenceStore(args.trajectory_evidence_dir),
         static_dir=args.static_dir,
