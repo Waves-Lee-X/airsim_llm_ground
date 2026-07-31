@@ -24,6 +24,8 @@ const state = {
   websocketRetry: null,
   selectedVehicleId: 1,
   track: [],
+  situationTrails: {},
+  situationPayload: null,
   commandRows: [],
   pendingCommand: null,
   pendingAgentDraft: null,
@@ -73,6 +75,7 @@ function cacheElements() {
     "visionConsensus", "visionEvidenceList",
     "fleetPhase", "fleetApply", "fleetLeaderX",
     "fleetLeaderY", "fleetLeaderZ", "fleetSlots",
+    "situationMap", "situationEmpty", "situationLegend", "situationStamp",
     "agentVehicleState", "agentLinkState", "agentGpsState",
     "agentPermissionState", "resetAgentSession", "agentConversation",
     "agentDraft", "agentDraftAction", "agentDraftStatus",
@@ -1207,6 +1210,7 @@ function appendTrackPoint(telemetry) {
   }
   elements.navEmpty.hidden = true;
   drawTrack();
+  void refreshSituationMap();
 }
 
 function canvasSize() {
@@ -1291,6 +1295,265 @@ function drawTrack() {
   context.closePath();
   context.fill();
   context.restore();
+}
+
+const SITUATION_COLORS = {
+  1: "#ff5d5d",
+  2: "#4da3ff",
+  3: "#3ddc84",
+  4: "#c58aff",
+  5: "#ffb84d",
+};
+
+function situationColor(vehicleId) {
+  return SITUATION_COLORS[vehicleId] || "#9ad1ff";
+}
+
+function situationCanvasSize() {
+  const canvas = elements.situationMap;
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(1, Math.round(rect.width * ratio));
+  const height = Math.max(1, Math.round(rect.height * ratio));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  return { width, height, ratio };
+}
+
+function drawSituationStar(context, x, y, radius, color) {
+  context.save();
+  context.translate(x, y);
+  context.fillStyle = color;
+  context.beginPath();
+  for (let i = 0; i < 10; i += 1) {
+    const angle = -Math.PI / 2 + i * Math.PI / 5;
+    const arm = i % 2 === 0 ? radius : radius * 0.45;
+    const px = Math.cos(angle) * arm;
+    const py = Math.sin(angle) * arm;
+    if (i === 0) context.moveTo(px, py);
+    else context.lineTo(px, py);
+  }
+  context.closePath();
+  context.fill();
+  context.restore();
+}
+
+function renderSituationMap() {
+  const canvas = elements.situationMap;
+  if (!canvas) return;
+  const size = situationCanvasSize();
+  if (!size) return;
+  const context = canvas.getContext("2d");
+  const payload = state.situationPayload;
+  const vehicles = (payload?.vehicles || []).filter(
+    (vehicle) => vehicle.available && vehicle.position_m,
+  );
+  const leader = payload?.formation?.leader_target_map_m;
+  const hasLeader = Array.isArray(leader)
+    && leader.length >= 2
+    && Number.isFinite(leader[0])
+    && Number.isFinite(leader[1]);
+
+  if (elements.situationEmpty) elements.situationEmpty.hidden = vehicles.length > 0;
+  if (elements.situationStamp) {
+    elements.situationStamp.textContent = vehicles.length > 0
+      ? `${vehicles.length} 机在线`
+      : "--";
+  }
+
+  context.clearRect(0, 0, size.width, size.height);
+  context.fillStyle = "#0a0e11";
+  context.fillRect(0, 0, size.width, size.height);
+
+  const points = vehicles.map((vehicle) => ({
+    x: vehicle.position_m.x,
+    y: vehicle.position_m.y,
+  }));
+  if (hasLeader) points.push({ x: leader[0], y: leader[1] });
+  if (!points.length) {
+    if (elements.situationLegend) {
+      elements.situationLegend.replaceChildren(
+        Object.assign(document.createElement("span"), {
+          className: "semantic-empty",
+          textContent: "暂无在线无人机",
+        }),
+      );
+    }
+    return;
+  }
+
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const halfRange = Math.max(maxX - minX, maxY - minY) / 2 * 1.15 + 6;
+  const scale = Math.min(size.width, size.height) * 0.44 / halfRange;
+  const toScreen = (x, y) => ({
+    sx: size.width / 2 + (x - centerX) * scale,
+    sy: size.height / 2 - (y - centerY) * scale,
+  });
+
+  context.lineWidth = size.ratio;
+  context.strokeStyle = "#222a30";
+  const gridStep = halfRange <= 20 ? 5 : halfRange <= 50 ? 10 : 25;
+  context.beginPath();
+  for (let value = Math.floor((centerX - halfRange) / gridStep) * gridStep;
+    value <= centerX + halfRange;
+    value += gridStep) {
+    const line = toScreen(value, centerY);
+    context.moveTo(line.sx, 0);
+    context.lineTo(line.sx, size.height);
+  }
+  for (let value = Math.floor((centerY - halfRange) / gridStep) * gridStep;
+    value <= centerY + halfRange;
+    value += gridStep) {
+    const line = toScreen(centerX, value);
+    context.moveTo(0, line.sy);
+    context.lineTo(size.width, line.sy);
+  }
+  context.stroke();
+
+  context.strokeStyle = "#52606a";
+  context.beginPath();
+  const northAxis = toScreen(0, centerY);
+  const eastAxis = toScreen(centerX, 0);
+  context.moveTo(northAxis.sx, 0);
+  context.lineTo(northAxis.sx, size.height);
+  context.moveTo(0, eastAxis.sy);
+  context.lineTo(size.width, eastAxis.sy);
+  context.stroke();
+
+  const home = toScreen(0, 0);
+  context.strokeStyle = "#62cf82";
+  context.beginPath();
+  context.arc(home.sx, home.sy, 5 * size.ratio, 0, Math.PI * 2);
+  context.stroke();
+
+  if (hasLeader) {
+    const leaderPoint = toScreen(leader[0], leader[1]);
+    drawSituationStar(context, leaderPoint.sx, leaderPoint.sy, 9 * size.ratio, "#f5d76e");
+  }
+
+  for (const vehicle of vehicles) {
+    const trail = state.situationTrails[vehicle.vehicle_id] || [];
+    if (trail.length < 2) continue;
+    context.strokeStyle = situationColor(vehicle.vehicle_id);
+    context.lineWidth = 1.5 * size.ratio;
+    context.globalAlpha = 0.55;
+    context.beginPath();
+    trail.forEach((point, index) => {
+      const projected = toScreen(point.x, point.y);
+      if (index === 0) context.moveTo(projected.sx, projected.sy);
+      else context.lineTo(projected.sx, projected.sy);
+    });
+    context.stroke();
+    context.globalAlpha = 1;
+  }
+
+  for (const vehicle of vehicles) {
+    const point = toScreen(vehicle.position_m.x, vehicle.position_m.y);
+    const color = situationColor(vehicle.vehicle_id);
+    if (Number.isFinite(vehicle.heading_deg)) {
+      context.save();
+      context.translate(point.sx, point.sy);
+      context.rotate((vehicle.heading_deg || 0) * Math.PI / 180);
+      context.fillStyle = color;
+      context.beginPath();
+      context.moveTo(0, -9 * size.ratio);
+      context.lineTo(5.5 * size.ratio, 6 * size.ratio);
+      context.lineTo(0, 3.2 * size.ratio);
+      context.lineTo(-5.5 * size.ratio, 6 * size.ratio);
+      context.closePath();
+      context.fill();
+      context.restore();
+    } else {
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(point.sx, point.sy, 5 * size.ratio, 0, Math.PI * 2);
+      context.fill();
+    }
+    if (vehicle.vehicle_id === state.selectedVehicleId) {
+      context.strokeStyle = "#ffffff";
+      context.lineWidth = 1.6 * size.ratio;
+      context.beginPath();
+      context.arc(point.sx, point.sy, 11 * size.ratio, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.fillStyle = "#f2f5f7";
+    context.font = `bold ${Math.max(10, 11 * size.ratio)}px "Cascadia Mono", monospace`;
+    context.fillText(`v${vehicle.vehicle_id}`, point.sx + 9 * size.ratio, point.sy - 8 * size.ratio);
+  }
+
+  if (elements.situationLegend) {
+    const items = [];
+    for (const vehicle of vehicles) {
+      const item = document.createElement("span");
+      item.className = "situation-legend-item";
+      const swatch = document.createElement("i");
+      swatch.style.background = situationColor(vehicle.vehicle_id);
+      const label = document.createElement("b");
+      label.textContent = `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
+      const detail = document.createElement("span");
+      detail.textContent = `${vehicle.mode || "--"} · ${vehicle.armed ? "ARM" : "SAFE"} · ${vehicle.fcu_link_ok ? "在线" : "离线"}`;
+      item.append(swatch, label, detail);
+      items.push(item);
+    }
+    for (const vehicle of payload?.vehicles || []) {
+      if (vehicle.available && vehicle.position_m) continue;
+      const item = document.createElement("span");
+      item.className = "situation-legend-item offline";
+      const swatch = document.createElement("i");
+      const label = document.createElement("b");
+      label.textContent = `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
+      const detail = document.createElement("span");
+      detail.textContent = "离线";
+      item.append(swatch, label, detail);
+      items.push(item);
+    }
+    if (!items.length) {
+      items.push(Object.assign(document.createElement("span"), {
+        className: "semantic-empty",
+        textContent: "暂无在线无人机",
+      }));
+    }
+    elements.situationLegend.replaceChildren(...items);
+  }
+}
+
+async function refreshSituationMap() {
+  let payload;
+  try {
+    payload = await requestJson("/api/fleet/map");
+  } catch (_error) {
+    return;
+  }
+  state.situationPayload = payload;
+  const seen = new Set();
+  for (const vehicle of payload.vehicles || []) {
+    if (!vehicle.available || !vehicle.position_m) continue;
+    seen.add(vehicle.vehicle_id);
+    if (!state.situationTrails[vehicle.vehicle_id]) {
+      state.situationTrails[vehicle.vehicle_id] = [];
+    }
+    const trail = state.situationTrails[vehicle.vehicle_id];
+    const previous = trail[trail.length - 1];
+    const point = { x: vehicle.position_m.x, y: vehicle.position_m.y };
+    if (!previous
+      || Math.abs(previous.x - point.x) > 0.05
+      || Math.abs(previous.y - point.y) > 0.05) {
+      trail.push(point);
+      if (trail.length > 240) trail.splice(0, trail.length - 240);
+    }
+  }
+  for (const vehicleId of Object.keys(state.situationTrails)) {
+    if (!seen.has(Number(vehicleId))) state.situationTrails[vehicleId] = [];
+  }
+  renderSituationMap();
 }
 
 function updateControlState() {
@@ -2074,6 +2337,10 @@ function bindEvents() {
   if (window.ResizeObserver) {
     new ResizeObserver(drawTrack).observe(elements.nedCanvas.parentElement);
   }
+  window.addEventListener("resize", renderSituationMap);
+  if (window.ResizeObserver && elements.situationMap) {
+    new ResizeObserver(renderSituationMap).observe(elements.situationMap.parentElement);
+  }
 }
 
 function adjustAltitude(delta) {
@@ -2115,6 +2382,7 @@ async function bootstrap() {
   window.setInterval(refreshCameraStatus, 2000);
   window.setInterval(refreshSemanticStatus, 3000);
   window.setInterval(refreshFleetStatus, 3000);
+  window.setInterval(refreshSituationMap, 1000);
   void refreshVisionEvidence();
 }
 

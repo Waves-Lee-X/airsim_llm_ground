@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import math
 import time
 from contextlib import asynccontextmanager
 from dataclasses import fields, replace
@@ -795,6 +796,91 @@ class BrowserGateway:
 
     def fleet_status_payload(self) -> dict[str, Any]:
         return self.fleet.status_payload(self._fleet_states())
+
+    def fleet_map_payload(self) -> dict[str, Any]:
+        """Aggregate the real local-NED positions of every known vehicle.
+
+        One shared situation map for the whole fleet: the browser draws every
+        available vehicle on a single north-up local-NED canvas.
+        """
+        vehicles: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for vehicle_id in (*self.runtime.vehicle_ids, *self.fleet.vehicle_ids):
+            if vehicle_id in seen:
+                continue
+            seen.add(vehicle_id)
+            try:
+                snapshot = self._link_snapshot_payload(vehicle_id)
+            except KeyError:
+                snapshot = None
+            if snapshot is None:
+                vehicles.append(
+                    {"vehicle_id": vehicle_id, "available": False}
+                )
+                continue
+            position = snapshot.get("position_m")
+            velocity = snapshot.get("velocity_m_s")
+            yaw_rad = None
+            attitude = snapshot.get("attitude_rpy_rad")
+            if (
+                isinstance(attitude, (list, tuple))
+                and len(attitude) >= 3
+                and all(isinstance(value, (int, float)) for value in attitude[:3])
+            ):
+                yaw_rad = float(attitude[2])
+            field_ages = snapshot.get("field_ages_s")
+            vehicles.append(
+                {
+                    "vehicle_id": vehicle_id,
+                    "available": True,
+                    "fcu_link_ok": bool(snapshot.get("fcu_link_ok")),
+                    "mode": snapshot.get("mode"),
+                    "armed": bool(snapshot.get("armed")),
+                    "position_m": (
+                        {
+                            "x": float(position["x"]),
+                            "y": float(position["y"]),
+                            "z": float(position["z"]),
+                        }
+                        if isinstance(position, dict)
+                        else None
+                    ),
+                    "velocity_m_s": (
+                        {
+                            "x": float(velocity["x"]),
+                            "y": float(velocity["y"]),
+                            "z": float(velocity["z"]),
+                        }
+                        if isinstance(velocity, dict)
+                        else None
+                    ),
+                    "relative_altitude_m": snapshot.get("relative_altitude_m"),
+                    "landed_state": snapshot.get("landed_state"),
+                    "heading_deg": (
+                        round(math.degrees(yaw_rad), 1)
+                        if yaw_rad is not None
+                        else None
+                    ),
+                    "gps_fix_type": snapshot.get("gps_fix_type"),
+                    "satellites_visible": snapshot.get("satellites_visible"),
+                    "heartbeat_age_s": (
+                        field_ages.get("heartbeat")
+                        if isinstance(field_ages, Mapping)
+                        else None
+                    ),
+                }
+            )
+        return {
+            "coordinate_frame": "local_ned",
+            "generated_monotonic_s": time.monotonic(),
+            "vehicles": vehicles,
+            "formation": {
+                "formation": self.fleet.formation.value,
+                "leader_target_map_m": list(self.fleet.leader_target_map_m),
+                "spacing_m": self.fleet.spacing_m,
+                "vehicle_ids": list(self.fleet.vehicle_ids),
+            },
+        }
 
     def set_fleet_formation(
         self,
@@ -1607,6 +1693,10 @@ def create_app(
     @app.get("/api/fleet/status")
     async def fleet_status() -> dict[str, Any]:
         return gateway.fleet_status_payload()
+
+    @app.get("/api/fleet/map")
+    async def fleet_map() -> dict[str, Any]:
+        return gateway.fleet_map_payload()
 
     @app.post("/api/fleet/formation")
     async def set_fleet_formation(

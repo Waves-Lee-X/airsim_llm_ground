@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>AeroMind APM Lite 地面站</title>
-    <link rel="stylesheet" href="/styles.css?v=20260731.4" />
+    <link rel="stylesheet" href="/styles.css?v=20260731.5" />
   </head>
   <body>
     <div class="app-shell">
@@ -161,6 +161,22 @@
       <button id="fleetApply" class="semantic-action semantic-action-small" type="button">应用</button>
     </div>
     <div id="fleetSlots" class="fleet-slots"><span class="semantic-empty">尚无编队数据</span></div>
+  </section>
+  <section class="panel situation-panel">
+    <div class="panel-heading compact">
+      <div>
+        <span class="eyebrow">SITUATION MAP</span>
+        <h2>态势地图</h2>
+      </div>
+      <span id="situationStamp" class="count-chip">--</span>
+    </div>
+    <div class="situation-canvas-wrap">
+      <canvas id="situationMap" aria-label="全机共享态势地图（俯视）"></canvas>
+      <div class="north-label">N</div>
+      <div class="east-label">E</div>
+      <div id="situationEmpty" class="canvas-empty">等待无人机位置</div>
+    </div>
+    <div id="situationLegend" class="situation-legend"><span class="semantic-empty">暂无在线无人机</span></div>
   </section>
   <section class="panel nav-panel">
             <div class="panel-heading compact nav-heading">
@@ -461,6 +477,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=20260731.4" defer></script>
+    <script src="/app.js?v=20260731.5" defer></script>
   </body>
 </html>

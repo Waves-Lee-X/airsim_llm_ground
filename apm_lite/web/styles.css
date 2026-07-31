@@ -2554,3 +2554,58 @@ button:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- situation map (fleet-wide shared top-down map) ---- */
+.situation-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.situation-canvas-wrap {
+  min-height: 260px;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #0a0e11;
+}
+
+#situationMap {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.situation-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 11px;
+  border-top: 1px solid var(--border);
+}
+
+.situation-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.situation-legend-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #444c52;
+}
+
+.situation-legend-item b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.situation-legend-item.offline {
+  opacity: 0.55;
+}

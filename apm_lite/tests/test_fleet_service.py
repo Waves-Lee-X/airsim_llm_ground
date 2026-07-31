@@ -122,6 +122,45 @@ def test_browser_fleet_formation_switch_and_validation():
         assert bad_spacing.status_code == 422
 
 
+def test_browser_fleet_map_aggregates_all_known_vehicles():
+    runtime = ManualRuntime(
+        ManualRuntimeConfig(mode=ManualRuntimeMode.DEMO, startup_timeout_s=2.0)
+    )
+    app = create_app(runtime)
+    with TestClient(app) as client:
+        body = client.get("/api/fleet/map")
+        assert body.status_code == 200
+        payload = body.json()
+        assert payload["coordinate_frame"] == "local_ned"
+        assert payload["formation"]["formation"] == "line"
+        assert payload["formation"]["leader_target_map_m"] == [0.0, 0.0, -3.0]
+        ids = {item["vehicle_id"] for item in payload["vehicles"]}
+        assert ids == {1, 2, 3, 4}
+        for vehicle in payload["vehicles"]:
+            if vehicle["available"]:
+                assert set(vehicle) >= {
+                    "vehicle_id",
+                    "available",
+                    "fcu_link_ok",
+                    "mode",
+                    "armed",
+                    "position_m",
+                }
+            else:
+                assert set(vehicle) == {"vehicle_id", "available"}
+        switched = client.post(
+            "/api/fleet/formation",
+            json={
+                "formation": "v",
+                "leader_target_map_m": [8.0, 0.0, -2.0],
+            },
+        )
+        assert switched.status_code == 200
+        refreshed = client.get("/api/fleet/map").json()
+        assert refreshed["formation"]["formation"] == "v"
+        assert refreshed["formation"]["leader_target_map_m"] == [8.0, 0.0, -2.0]
+
+
 def test_fleet_status_is_included_in_station_status():
     runtime = ManualRuntime(
         ManualRuntimeConfig(mode=ManualRuntimeMode.DEMO, startup_timeout_s=2.0)
