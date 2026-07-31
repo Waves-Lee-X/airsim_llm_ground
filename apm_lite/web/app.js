@@ -764,24 +764,39 @@ function renderVisionCrossValidation(cross) {
     : value.status === "vlm_color_missing" ? "VLM 颜色缺失"
     : value.status === "unavailable" ? "检测不可用"
     : "等待交叉验证";
-  elements.visionVlmColor.textContent = value.vlm_color || "--";
-  elements.visionOpenCvColor.textContent = value.opencv_color || "--";
+  elements.visionCrossStatus.dataset.level =
+    value.status === "agreed" ? "ok"
+    : value.status === "disagreed" ? "bad"
+    : value.status === "vlm_color_missing" || value.status === "unavailable" ? "warn"
+    : "none";
+  setColorSwatch(elements.visionVlmColor, value.vlm_color);
+  setColorSwatch(elements.visionOpenCvColor, value.opencv_color);
+  elements.visionAgreement.dataset.level =
+    value.agreement === true ? "ok"
+    : value.agreement === false ? "bad"
+    : "none";
   elements.visionAgreement.textContent =
     value.agreement === true ? "一致"
     : value.agreement === false ? "不一致"
     : "--";
 }
 
+function setColorSwatch(host, color) {
+  const swatch = host.querySelector("i");
+  const label = host.querySelector("b");
+  if (swatch) swatch.dataset.color = color || "none";
+  if (label) label.textContent = color || "--";
+}
 function renderVisionConsensus(consensus) {
   const value = consensus || {};
   const color = value.confirmed_color || (value.best && value.best.color) || null;
+  elements.visionConsensus.dataset.level = value.confirmed ? "ok" : value.window_size ? "warn" : "none";
   elements.visionConsensus.textContent = value.confirmed
     ? "已确认 · " + color + " (" + value.window_size + "/" + value.required + ")"
     : value.window_size
       ? "观察中 " + value.window_size + "/" + value.required
       : "--";
 }
-
 async function runVisionCrosscheck() {
   if (state.semanticBusy) return;
   elements.visionCrossStatus.textContent = "交叉验证中...";
@@ -818,6 +833,9 @@ async function refreshVisionEvidence() {
     const list = document.createElement("ol");
     items.slice(-8).reverse().forEach((item) => {
       const row = document.createElement("li");
+      const swatch = document.createElement("i");
+      swatch.className = "color-swatch";
+      swatch.dataset.color = item.opencv_color || item.vlm_color || "none";
       const label = document.createElement("a");
       const color = item.opencv_color || item.vlm_color || "?";
       const status = item.agreement === true ? "一致" : item.agreement === false ? "冲突" : "无";
@@ -825,7 +843,7 @@ async function refreshVisionEvidence() {
       label.target = "_blank";
       label.rel = "noopener";
       label.textContent = "#" + item.frame_sequence + " " + color + " " + status + (item.confirmed ? " · 已确认" : "");
-      row.append(label);
+      row.append(swatch, label);
       list.append(row);
     });
     elements.visionEvidenceList.append(list);

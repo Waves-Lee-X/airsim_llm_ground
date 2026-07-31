@@ -955,7 +955,8 @@ button:disabled {
   grid-template-columns: minmax(300px, 1.2fr) minmax(250px, 0.8fr);
   grid-template-areas:
     "compose metrics"
-    "compose summary";
+    "compose summary"
+    "evidence evidence";
 }
 
 .center-column #visionWorkspace .semantic-compose {
@@ -1443,6 +1444,194 @@ button:disabled {
   font-size: 10px;
   line-height: 1.55;
   overflow-wrap: anywhere;
+}
+
+.semantic-evidence {
+  grid-area: evidence;
+  border-top: 1px solid var(--border);
+  background: #101418;
+}
+
+.semantic-evidence-heading {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 7px 12px;
+}
+
+.semantic-evidence-heading > div {
+  min-width: 0;
+}
+
+.semantic-evidence-heading > div > span,
+.semantic-evidence-heading > div > strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-evidence-heading > div > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.semantic-evidence-heading > div > strong {
+  margin-top: 2px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.semantic-action-small {
+  min-width: 0;
+  min-height: 26px;
+  padding: 4px 9px;
+  font-size: 9px;
+}
+
+.semantic-action-small > span {
+  font-size: 11px;
+}
+
+.semantic-evidence-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+
+.semantic-evidence-row > div {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  padding: 8px 11px;
+  background: #13171b;
+}
+
+.semantic-evidence-row > div:last-child {
+  border-right: 0;
+}
+
+.semantic-evidence-row span,
+.semantic-evidence-row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-evidence-row span {
+  color: var(--dim);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.semantic-evidence-row strong {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.semantic-evidence-row strong > b {
+  font-weight: 400;
+}
+
+.semantic-evidence-row strong[data-level="ok"] {
+  color: var(--green);
+}
+
+.semantic-evidence-row strong[data-level="bad"] {
+  color: var(--red);
+}
+
+.semantic-evidence-row strong[data-level="none"] {
+  color: var(--muted);
+}
+
+#visionCrossStatus[data-level="ok"] {
+  color: var(--green);
+}
+
+#visionCrossStatus[data-level="bad"] {
+  color: var(--red);
+}
+
+#visionCrossStatus[data-level="warn"] {
+  color: var(--amber);
+}
+
+.color-swatch {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: #262d34;
+  vertical-align: 1px;
+}
+
+.color-swatch[data-color="red"] { background: #e5484d; }
+.color-swatch[data-color="green"] { background: #46a758; }
+.color-swatch[data-color="blue"] { background: #3e63dd; }
+.color-swatch[data-color="yellow"] { background: #f5d90a; }
+.color-swatch[data-color="orange"] { background: #f76b15; }
+.color-swatch[data-color="purple"] { background: #8e4ec6; }
+.color-swatch[data-color="pink"] { background: #d6409f; }
+.color-swatch[data-color="white"] { background: #e8e8e8; }
+.color-swatch[data-color="black"] { background: #16191d; }
+.color-swatch[data-color="gray"] { background: #7d8590; }
+
+.vision-evidence-list {
+  max-height: 96px;
+  overflow: auto;
+  padding: 8px 12px 9px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.vision-evidence-list ol {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 3px;
+}
+
+.vision-evidence-list li {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vision-evidence-list li .color-swatch {
+  flex: 0 0 auto;
+  margin-right: 0;
+}
+
+.vision-evidence-list a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+.vision-evidence-list a:hover {
+  text-decoration: underline;
+}
+
+.vision-evidence-list .semantic-empty {
+  min-height: 0;
+  display: block;
+  place-items: unset;
+  padding: 2px 0;
+  text-align: left;
 }
 
 .mission-summary {
@@ -2190,6 +2379,18 @@ button:disabled {
 
   .command-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .semantic-evidence-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .semantic-evidence-row > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .semantic-evidence-row > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
   }
 
   .semantic-state {
