@@ -37,6 +37,7 @@ class FleetMissionConfig:
     hold_s: float = 3.0
     vehicle_ids: tuple[int, ...] = (1, 2, 3, 4)
     land_after: bool = True
+    formations: tuple[FormationType, ...] | None = None
 
 
 class FleetMissionRunner:
@@ -77,6 +78,11 @@ class FleetMissionRunner:
                     "altitude_m": self._config.altitude_m,
                     "hold_s": self._config.hold_s,
                     "vehicle_ids": list(self._config.vehicle_ids),
+                    "formations": (
+                        [formation.value for formation in self._config.formations]
+                        if self._config.formations is not None
+                        else None
+                    ),
                 }
                 if self._config is not None
                 else None
@@ -146,6 +152,8 @@ class FleetMissionRunner:
             isinstance(value, (int, float)) for value in leader
         ):
             raise FleetMissionError("领机目标必须是 (北, 东, 下) 三个数值")
+        if config.formations is not None and not 1 <= len(config.formations) <= 8:
+            raise FleetMissionError("队形序列长度必须在 1 到 8 之间")
 
     def _vehicle(self, vehicle_id: int) -> dict[str, Any]:
         for item in self._vehicles:
@@ -217,46 +225,24 @@ class FleetMissionRunner:
                 self._finish_step(vehicle_id, "已起飞")
 
             self._stage = "编队飞行"
-            offsets = formation_offsets(
-                config.formation,
-                len(config.vehicle_ids),
-                config.spacing_m,
-            )
-            leader = config.leader_target_map_m
-            for index, vehicle_id in enumerate(config.vehicle_ids):
-                self._check_cancel()
-                service = services[vehicle_id]
-                offset = offsets[index]
-                target = (
-                    leader[0] + offset[0],
-                    leader[1] + offset[1],
-                    -config.altitude_m,
+            sequence = config.formations or (config.formation,)
+            for formation_index, formation in enumerate(sequence):
+                self._stage = (
+                    f"队形 {formation_index + 1}/{len(sequence)}"
+                    f"：{formation.value}"
                 )
-                self._set_step(
-                    vehicle_id,
-                    "goto",
-                    f"飞往槽位 ({target[0]:.1f}, {target[1]:.1f})",
+                await self._fly_formation(
+                    services,
+                    config,
+                    formation,
                 )
-                await self._await_handle(
-                    service.goto_local_ned(
-                        target[0],
-                        target[1],
-                        target[2],
-                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
-                    ),
-                    vehicle_id,
-                    "goto",
-                    _STEP_TIMEOUT_S,
-                )
-                self._finish_step(vehicle_id, "已到位")
-
-            self._stage = f"保持队形 {config.hold_s} s"
-            for vehicle_id in config.vehicle_ids:
-                self._set_step(vehicle_id, "hold", "保持队形")
-            if config.hold_s > 0:
-                await self._sleep_or_cancel(config.hold_s)
-            for vehicle_id in config.vehicle_ids:
-                self._finish_step(vehicle_id, "编队完成")
+                self._stage = f"保持队形 {config.hold_s} s"
+                for vehicle_id in config.vehicle_ids:
+                    self._set_step(vehicle_id, "hold", "保持队形")
+                if config.hold_s > 0:
+                    await self._sleep_or_cancel(config.hold_s)
+                for vehicle_id in config.vehicle_ids:
+                    self._finish_step(vehicle_id, "编队完成")
 
             if config.land_after:
                 self._stage = "降落阶段"
@@ -299,8 +285,12 @@ class FleetMissionRunner:
             self._stage = "任务被取消"
             raise
         except FleetMissionError as exc:
-            self._phase = "failed"
-            self._stage = "任务失败"
+            if self._cancel_event.is_set():
+                self._phase = "cancelled"
+                self._stage = "已取消"
+            else:
+                self._phase = "failed"
+                self._stage = "任务失败"
             self._error = str(exc)
             await self._safety_land(services if "services" in locals() else {})
         except Exception as exc:  # pragma: no cover - defensive
@@ -309,7 +299,123 @@ class FleetMissionRunner:
             self._error = f"{type(exc).__name__}: {exc}"
             await self._safety_land(services if "services" in locals() else {})
 
+    async def _fly_formation(
+        self,
+        services: dict[int, FlightCommandService],
+        config: FleetMissionConfig,
+        formation: FormationType,
+    ) -> None:
+        """Fly one formation with vertical-lane transitions.
+
+        Every vehicle first climbs into its own altitude lane (1.5 m apart),
+        then morphs horizontally inside the lane, then levels off at the
+        formation altitude. Crossing paths therefore stay vertically
+        separated, mirroring the acceptance-script anti-collision design.
+        """
+        offsets = formation_offsets(
+            formation,
+            len(config.vehicle_ids),
+            config.spacing_m,
+        )
+        leader = config.leader_target_map_m
+        slots: dict[int, tuple[float, float, float]] = {}
+        for index, vehicle_id in enumerate(config.vehicle_ids):
+            offset = offsets[index]
+            slots[vehicle_id] = (
+                leader[0] + offset[0],
+                leader[1] + offset[1],
+                -config.altitude_m,
+            )
+        lanes = {
+            vehicle_id: -(config.altitude_m + 1.5 * (index + 1))
+            for index, vehicle_id in enumerate(config.vehicle_ids)
+        }
+
+        async def current_position(vehicle_id: int) -> tuple[float, float, float]:
+            link = self._runtime.link_for(vehicle_id)
+            if link is None:
+                raise FleetMissionError(f"飞机 {vehicle_id} 链路不可用")
+            snapshot = link.telemetry_snapshot()
+            position = snapshot.local_position_ned_m
+            if position is None:
+                raise FleetMissionError(f"飞机 {vehicle_id} 当前位置不可用")
+            return (float(position[0]), float(position[1]), float(position[2]))
+
+        # 1) climb into the lane altitudes (horizontal hold)
+        positions: dict[int, tuple[float, float, float]] = {}
+        for vehicle_id in config.vehicle_ids:
+            positions[vehicle_id] = await current_position(vehicle_id)
+            self._set_step(
+                vehicle_id,
+                "lane",
+                f"进入高度层 {abs(lanes[vehicle_id]):.1f} m",
+            )
+        await asyncio.gather(
+            *(
+                self._await_handle(
+                    services[vehicle_id].goto_local_ned(
+                        positions[vehicle_id][0],
+                        positions[vehicle_id][1],
+                        lanes[vehicle_id],
+                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                    ),
+                    vehicle_id,
+                    "lane",
+                    _STEP_TIMEOUT_S,
+                )
+                for vehicle_id in config.vehicle_ids
+            )
+        )
+
+        # 2) morph horizontally inside the lanes
+        for vehicle_id in config.vehicle_ids:
+            target = slots[vehicle_id]
+            self._set_step(
+                vehicle_id,
+                "goto",
+                f"飞往槽位 ({target[0]:.1f}, {target[1]:.1f})",
+            )
+        await asyncio.gather(
+            *(
+                self._await_handle(
+                    services[vehicle_id].goto_local_ned(
+                        slots[vehicle_id][0],
+                        slots[vehicle_id][1],
+                        lanes[vehicle_id],
+                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                    ),
+                    vehicle_id,
+                    "goto",
+                    _STEP_TIMEOUT_S,
+                )
+                for vehicle_id in config.vehicle_ids
+            )
+        )
+
+        # 3) level off into the formation altitude
+        for vehicle_id in config.vehicle_ids:
+            self._set_step(vehicle_id, "level", "统一高度")
+        await asyncio.gather(
+            *(
+                self._await_handle(
+                    services[vehicle_id].goto_local_ned(
+                        slots[vehicle_id][0],
+                        slots[vehicle_id][1],
+                        slots[vehicle_id][2],
+                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                    ),
+                    vehicle_id,
+                    "level",
+                    _STEP_TIMEOUT_S,
+                )
+                for vehicle_id in config.vehicle_ids
+            )
+        )
+        for vehicle_id in config.vehicle_ids:
+            self._finish_step(vehicle_id, "已到位")
+
     def _check_cancel(self) -> None:
+
         if self._cancel_event.is_set():
             raise FleetMissionError("编队任务已取消")
 

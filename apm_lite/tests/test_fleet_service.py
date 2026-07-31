@@ -195,6 +195,83 @@ def test_fleet_execute_api_requires_sim_vehicles_and_reports_status():
         assert status["execution"]["phase"] == "idle"
 
 
+def test_fleet_mission_sequence_and_cancel_round_trip():
+    import time as _time
+
+    runtimes = [
+        ManualRuntime(
+            ManualRuntimeConfig(
+                mode=ManualRuntimeMode.SITL,
+                vehicle_id=vehicle_id,
+                vehicle_name=f"SITL UAV {vehicle_id}",
+                startup_timeout_s=2.0,
+            ),
+            link_factory=lambda _config: DemoApmLink(),
+        )
+        for vehicle_id in (1, 2, 3, 4)
+    ]
+    app = create_app(FleetRuntime(runtimes))
+    with TestClient(app) as client:
+        invalid = client.post(
+            "/api/fleet/execute",
+            json={
+                "formation": "line",
+                "formations": ["line", "circle"],
+                "leader_target_map_m": [8.0, 0.0, -2.0],
+                "vehicle_ids": [1, 2, 3, 4],
+            },
+        )
+        assert invalid.status_code == 422
+
+        started = client.post(
+            "/api/fleet/execute",
+            json={
+                "formation": "line",
+                "formations": ["line", "v", "diamond"],
+                "leader_target_map_m": [8.0, 0.0, -2.0],
+                "spacing_m": 3.0,
+                "altitude_m": 2.0,
+                "hold_s": 0.2,
+                "vehicle_ids": [1, 2, 3, 4],
+            },
+        )
+        assert started.status_code == 200
+        assert started.json()["config"]["formations"] == ["line", "v", "diamond"]
+
+        deadline = _time.time() + 30.0
+        phase = None
+        while _time.time() < deadline:
+            phase = client.get("/api/fleet/execute").json()["phase"]
+            if phase in {"done", "failed", "cancelled"}:
+                break
+            _time.sleep(0.2)
+        assert phase == "done", client.get("/api/fleet/execute").json()
+
+        # cancel path: start a mission, cancel it, and expect cancelled + land
+        started = client.post(
+            "/api/fleet/execute",
+            json={
+                "formation": "v",
+                "leader_target_map_m": [8.0, 0.0, -2.0],
+                "hold_s": 30.0,
+                "vehicle_ids": [1, 2, 3, 4],
+            },
+        )
+        assert started.status_code == 200
+        cancelled = client.post("/api/fleet/execute/cancel")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["phase"] == "cancelling"
+
+        deadline = _time.time() + 30.0
+        phase = None
+        while _time.time() < deadline:
+            phase = client.get("/api/fleet/execute").json()["phase"]
+            if phase in {"done", "failed", "cancelled"}:
+                break
+            _time.sleep(0.2)
+        assert phase == "cancelled", client.get("/api/fleet/execute").json()
+
+
 def test_fleet_mission_runner_completes_demo_sitl_round_trip():
     import time as _time
 

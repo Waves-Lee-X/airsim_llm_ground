@@ -197,6 +197,12 @@ class FleetMissionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     formation: str = Field(pattern="^(line|v|diamond)$")
+    formations: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8,
+        description="Optional formation sequence; falls back to `formation`.",
+    )
     leader_target_map_m: tuple[float, float, float]
     spacing_m: float = Field(default=3.0, ge=0.5, le=50.0)
     altitude_m: float = Field(default=2.0, ge=0.5, le=20.0)
@@ -205,6 +211,16 @@ class FleetMissionRequest(BaseModel):
         default=(1, 2, 3, 4), min_length=2, max_length=8
     )
     land_after: bool = True
+
+    @model_validator(mode="after")
+    def formations_are_valid(self) -> "FleetMissionRequest":
+        if self.formations is not None:
+            for formation in self.formations:
+                if formation not in {"line", "v", "diamond"}:
+                    raise ValueError(
+                        "formations entries must be line, v or diamond"
+                    )
+        return self
 
 
 class FleetFormationRequest(BaseModel):
@@ -858,6 +874,11 @@ class BrowserGateway:
     ) -> dict[str, Any]:
         config = FleetMissionConfig(
             formation=FormationType(payload.formation),
+            formations=(
+                tuple(FormationType(value) for value in payload.formations)
+                if payload.formations is not None
+                else None
+            ),
             leader_target_map_m=tuple(
                 float(value) for value in payload.leader_target_map_m
             ),

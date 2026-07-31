@@ -2634,7 +2634,7 @@ button:disabled {
 /* ---- fleet mission execution ---- */
 .fleet-execute {
   display: grid;
-  grid-template-columns: auto 52px auto 52px 1fr 1fr;
+  grid-template-columns: auto 52px auto 52px 1fr 1fr 1fr;
   align-items: center;
   gap: 6px;
   padding: 8px 11px;

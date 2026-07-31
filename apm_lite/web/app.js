@@ -26,6 +26,7 @@ const state = {
   track: [],
   situationTrails: {},
   situationPayload: null,
+  fleetStatus: null,
   commandRows: [],
   pendingCommand: null,
   pendingAgentDraft: null,
@@ -75,7 +76,7 @@ function cacheElements() {
     "visionConsensus", "visionEvidenceList",
     "fleetPhase", "fleetApply", "fleetLeaderX",
     "fleetLeaderY", "fleetLeaderZ", "fleetSlots",
-    "fleetAltitude", "fleetHold", "fleetExecute", "fleetCancel",
+    "fleetAltitude", "fleetHold", "fleetExecute", "fleetSequenceDemo", "fleetCancel",
     "fleetMissionPhase", "fleetMissionVehicles",
     "gotoX", "gotoY", "gotoZ", "gotoFly",
     "situationMap", "situationEmpty", "situationLegend", "situationStamp",
@@ -924,6 +925,7 @@ function renderFleetStatus(payload) {
     : "none";
   elements.fleetMissionPhase.title = execution.error || "";
   elements.fleetExecute.disabled = execution.busy === true;
+  elements.fleetSequenceDemo.disabled = execution.busy === true;
   elements.fleetCancel.disabled = execution.busy !== true;
   const missionVehicles = Array.isArray(execution.vehicles) ? execution.vehicles : [];
   elements.fleetMissionVehicles.replaceChildren();
@@ -1053,6 +1055,42 @@ async function executeFleetMission() {
   void refreshFleetStatus();
 }
 
+async function executeFleetSequence() {
+  const leader = [
+    finiteNumber(elements.fleetLeaderX.value) ?? 0,
+    finiteNumber(elements.fleetLeaderY.value) ?? 0,
+    finiteNumber(elements.fleetLeaderZ.value) ?? -3,
+  ];
+  const simIds = (state.config?.vehicles || [])
+    .filter((vehicle) => String(vehicle.deployment_mode || "sim").toLowerCase() !== "real")
+    .map((vehicle) => Number(vehicle.vehicle_id));
+  const vehicleIds = simIds.length >= 2 ? simIds : [1, 2, 3, 4];
+  const payload = {
+    formation: "line",
+    formations: ["line", "v", "diamond"],
+    leader_target_map_m: leader,
+    spacing_m: 3.0,
+    altitude_m: finiteNumber(elements.fleetAltitude.value) ?? 2,
+    hold_s: finiteNumber(elements.fleetHold.value) ?? 5,
+    vehicle_ids: vehicleIds,
+    land_after: true,
+  };
+  elements.fleetExecute.disabled = true;
+  elements.fleetSequenceDemo.disabled = true;
+  try {
+    const result = await requestJson("/api/fleet/execute", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    elements.statusText.textContent = `编队序列已启动：${result.config?.formations?.join(" -> ") || "line -> v -> diamond"}`;
+  } catch (error) {
+    elements.statusText.textContent = error.message;
+    elements.fleetExecute.disabled = false;
+    elements.fleetSequenceDemo.disabled = false;
+  }
+  void refreshFleetStatus();
+}
+
 async function cancelFleetMission() {
   try {
     await requestJson("/api/fleet/execute/cancel", { method: "POST" });
@@ -1066,6 +1104,7 @@ async function cancelFleetMission() {
 async function refreshFleetStatus() {
   try {
     const payload = await requestJson("/api/fleet/status");
+    state.fleetStatus = payload;
     renderFleetStatus(payload);
   } catch (_error) {
     // Fleet panel stays optional while the rest of the station keeps working.
@@ -1498,11 +1537,15 @@ function renderSituationMap() {
   context.fillStyle = "#0a0e11";
   context.fillRect(0, 0, size.width, size.height);
 
+  const plannedPoints = ((state.fleetStatus || {}).directives || [])
+    .filter((item) => Array.isArray(item.target_map_m) && item.target_map_m.length >= 2)
+    .map((item) => ({ x: item.target_map_m[0], y: item.target_map_m[1] }));
   const points = vehicles.map((vehicle) => ({
     x: vehicle.position_m.x,
     y: vehicle.position_m.y,
   }));
   if (hasLeader) points.push({ x: leader[0], y: leader[1] });
+  points.push(...plannedPoints);
   if (!points.length) {
     if (elements.situationLegend) {
       elements.situationLegend.replaceChildren(
@@ -1567,6 +1610,31 @@ function renderSituationMap() {
   if (hasLeader) {
     const leaderPoint = toScreen(leader[0], leader[1]);
     drawSituationStar(context, leaderPoint.sx, leaderPoint.sy, 9 * size.ratio, "#f5d76e");
+  }
+
+  if (plannedPoints.length >= 2) {
+    context.strokeStyle = "#5c6b76";
+    context.lineWidth = 1.2 * size.ratio;
+    context.setLineDash([5 * size.ratio, 4 * size.ratio]);
+    context.beginPath();
+    plannedPoints.forEach((point, index) => {
+      const projected = toScreen(point.x, point.y);
+      if (index === 0) context.moveTo(projected.sx, projected.sy);
+      else context.lineTo(projected.sx, projected.sy);
+    });
+    context.stroke();
+    context.setLineDash([]);
+    plannedPoints.forEach((point) => {
+      const projected = toScreen(point.x, point.y);
+      context.strokeStyle = "#8fa3b3";
+      context.lineWidth = 1.2 * size.ratio;
+      context.beginPath();
+      context.moveTo(projected.sx - 5 * size.ratio, projected.sy - 5 * size.ratio);
+      context.lineTo(projected.sx + 5 * size.ratio, projected.sy + 5 * size.ratio);
+      context.moveTo(projected.sx + 5 * size.ratio, projected.sy - 5 * size.ratio);
+      context.lineTo(projected.sx - 5 * size.ratio, projected.sy + 5 * size.ratio);
+      context.stroke();
+    });
   }
 
   for (const vehicle of vehicles) {
@@ -2443,6 +2511,9 @@ function bindEvents() {
   });
   elements.fleetExecute.addEventListener("click", () => {
     void executeFleetMission();
+  });
+  elements.fleetSequenceDemo.addEventListener("click", () => {
+    void executeFleetSequence();
   });
   elements.fleetCancel.addEventListener("click", () => {
     void cancelFleetMission();
