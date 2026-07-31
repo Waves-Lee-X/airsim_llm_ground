@@ -23,8 +23,17 @@ class FormationType(str, Enum):
 FORMATION_LABELS = {
     FormationType.LINE: "一字横队",
     FormationType.V: "V字队形",
-    FormationType.DIAMOND: "菱形队形",
+    FormationType.DIAMOND: "正方形队形",
 }
+
+
+def _square_corners(half: float) -> tuple[Offset, ...]:
+    return (
+        (round(half, 6), round(-half, 6)),   # front-right
+        (round(half, 6), round(half, 6)),    # front-left
+        (round(-half, 6), round(-half, 6)),  # back-right
+        (round(-half, 6), round(half, 6)),   # back-left
+    )
 
 
 def formation_offsets(
@@ -36,6 +45,8 @@ def formation_offsets(
 
     Offsets are relative to the formation reference point. All formations are
     designed so every pairwise slot distance is at least ``spacing_m``.
+    The diamond formation is a 2x2 square; the V is symmetric for both odd
+    (leader on the vertex) and even (equal wing pairs) vehicle counts.
     """
     if vehicle_count < 1:
         raise ValueError("vehicle_count must be at least 1")
@@ -51,35 +62,39 @@ def formation_offsets(
             for index in range(count)
         )
     if formation == FormationType.V:
-        slots: list[Offset] = [(0.0, 0.0)]
-        rank = 1
-        while len(slots) < count:
+        if count % 2 == 1:
+            # Odd count: leader on the vertex, symmetric wing pairs behind.
+            slots: list[Offset] = [(0.0, 0.0)]
+            for rank in range(1, (count - 1) // 2 + 1):
+                back = -rank * spacing_m
+                slots.append(
+                    (round(back * _COS45, 6), round(-back * _SIN45, 6))
+                )
+                slots.append(
+                    (round(back * _COS45, 6), round(+back * _SIN45, 6))
+                )
+            return tuple(slots)
+        # Even count: no drone on the vertex; the wings carry equal numbers so
+        # the V stays perfectly symmetric (front-left slot first).
+        slots = []
+        for rank in range(1, count // 2 + 1):
             back = -rank * spacing_m
             slots.append(
-                (
-                    round(back * _COS45, 6),
-                    round(-back * _SIN45, 6),
-                )
+                (round(back * _COS45, 6), round(-back * _SIN45, 6))
             )
-            if len(slots) == count:
-                break
             slots.append(
-                (
-                    round(back * _COS45, 6),
-                    round(+back * _SIN45, 6),
-                )
+                (round(back * _COS45, 6), round(+back * _SIN45, 6))
             )
-            rank += 1
         return tuple(slots)
     if formation == FormationType.DIAMOND:
-        base: tuple[Offset, ...] = (
-            (0.0, 0.0),
-            (spacing_m, 0.0),
-            (0.0, -spacing_m),
-            (0.0, spacing_m),
-            (-spacing_m, 0.0),
-        )
-        return base[:count]
+        if count > 5:
+            raise ValueError("square formation supports at most 5 vehicles")
+        if count <= 4:
+            # Square side length equals the minimum spacing.
+            return _square_corners(spacing_m / 2.0)[:count]
+        # Five vehicles: centre plus four corners, with the centre exactly
+        # one spacing away from every corner (side becomes spacing * sqrt(2)).
+        return ((0.0, 0.0),) + _square_corners(spacing_m / math.sqrt(2.0))
     raise ValueError(f"unsupported formation {formation!r}")
 
 

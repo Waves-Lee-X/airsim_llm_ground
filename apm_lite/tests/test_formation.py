@@ -30,8 +30,10 @@ def test_line_formation_offsets_are_centered_and_spaced():
 
 def test_all_formations_respect_minimum_spacing():
     for formation in FormationType:
-        for count in (2, 3, 4, 5, 6):
+        counts = (2, 3, 4, 5) if formation == FormationType.DIAMOND else (2, 3, 4, 5, 6)
+        for count in counts:
             offsets = formation_offsets(formation, count, spacing_m=3.0)
+            assert len(offsets) == count
             assert minimum_pairwise_distance(offsets) >= 3.0 - 1e-6
             validate_spacing(offsets, min_spacing_m=3.0)
 
@@ -46,13 +48,34 @@ def test_v_formation_has_symmetric_wings():
     assert left[0] < 0.0
 
 
-def test_diamond_formation_orders_center_front_left_right_rear():
-    offsets = formation_offsets(FormationType.DIAMOND, 5, spacing_m=3.0)
-    assert offsets[0] == (0.0, 0.0)
-    assert offsets[1] == (3.0, 0.0)
-    assert offsets[2] == (0.0, -3.0)
-    assert offsets[3] == (0.0, 3.0)
-    assert offsets[4] == (-3.0, 0.0)
+def test_v_formation_even_count_is_symmetric_without_vertex():
+    offsets = formation_offsets(FormationType.V, 4, spacing_m=2.0)
+    assert len(offsets) == 4
+    # Two equal wing pairs, front-left slot first, no vertex drone.
+    front_left, front_right, back_left, back_right = offsets
+    assert front_left[1] == pytest.approx(-front_right[1])
+    assert back_left[1] == pytest.approx(-back_right[1])
+    assert front_left[0] == pytest.approx(front_right[0])
+    assert back_left[0] == pytest.approx(back_right[0])
+    assert back_left[0] < front_left[0] < 0.0
+    assert minimum_pairwise_distance(offsets) >= 2.0 - 1e-6
+
+
+def test_diamond_formation_is_a_square():
+    offsets = formation_offsets(FormationType.DIAMOND, 4, spacing_m=3.0)
+    assert offsets == (
+        (1.5, -1.5),
+        (1.5, 1.5),
+        (-1.5, -1.5),
+        (-1.5, 1.5),
+    )
+    assert minimum_pairwise_distance(offsets) == pytest.approx(3.0)
+    # A fifth vehicle sits on the square centre; the square grows so the
+    # centre stays exactly one spacing away from every corner.
+    five = formation_offsets(FormationType.DIAMOND, 5, spacing_m=3.0)
+    assert five[0] == (0.0, 0.0)
+    assert len(five) == 5
+    assert minimum_pairwise_distance(five) == pytest.approx(3.0)
 
 
 def test_spacing_validation_rejects_too_close_slots():
