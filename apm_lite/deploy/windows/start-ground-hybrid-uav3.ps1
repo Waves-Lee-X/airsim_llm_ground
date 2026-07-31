@@ -3,6 +3,9 @@ param(
     [int]$SerialBaud = 57600,
     [int]$WebPort = 8000,
     [int]$SimVehicleId = 1,
+    [int]$SimVehicleCount = 1,
+    [string]$SimVehicleIds = "",
+    [string]$SimSysIds = "",
     [int]$RealVehicleId = 3,
     [string]$RtspUrl = "rtsp://192.168.1.110:15544/cam",
     [string]$AirSimHost = "127.0.0.1",
@@ -76,6 +79,9 @@ if (Test-Path -LiteralPath $VlmEnvFile) {
     --host 127.0.0.1 `
     --port $WebPort `
     --sim-vehicle-id $SimVehicleId `
+    --sim-vehicle-count $SimVehicleCount `
+    --sim-vehicle-ids $SimVehicleIds `
+    --sim-sysids $SimSysIds `
     --sim-vehicle-name "SITL UAV $SimVehicleId" `
     --real-vehicle-id $RealVehicleId `
     --real-vehicle-name "real-uav$RealVehicleId" `

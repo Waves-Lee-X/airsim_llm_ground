@@ -918,6 +918,18 @@ function renderFleetStatus(payload) {
   elements.fleetSlots.append(list);
 }
 
+function switchDeploymentMode(mode) {
+  const vehicles = Array.isArray(state.config?.vehicles) ? state.config.vehicles : [];
+  const target = mode === "real"
+    ? vehicles.find((vehicle) => String(vehicle.deployment_mode || "sim").toLowerCase() === "real")
+    : vehicles.find((vehicle) => String(vehicle.deployment_mode || "sim").toLowerCase() !== "real");
+  if (!target) return;
+  const vehicleId = Number(target.vehicle_id);
+  if (vehicleId === state.selectedVehicleId) return;
+  elements.vehicleSelect.value = String(vehicleId);
+  elements.vehicleSelect.dispatchEvent(new Event("change"));
+}
+
 async function refreshFleetStatus() {
   try {
     const payload = await requestJson("/api/fleet/status");
@@ -2022,6 +2034,12 @@ function bindEvents() {
       });
       void applyFleetFormation();
     });
+  });
+  elements.simMode.addEventListener("click", () => {
+    switchDeploymentMode("sim");
+  });
+  elements.realMode.addEventListener("click", () => {
+    switchDeploymentMode("real");
   });
   elements.fleetApply.addEventListener("click", () => {
     void applyFleetFormation();

@@ -58,6 +58,7 @@ from .camera import (
     RtspCameraConfig,
 )
 from .runtime import (
+    FleetRuntime,
     HybridRuntime,
     ManualRuntime,
     ManualRuntimeConfig,
@@ -1328,7 +1329,7 @@ def _default_vision_evidence_dir() -> Path:
 
 
 def create_app(
-    runtime: ManualRuntime | HybridRuntime | None = None,
+    runtime: ManualRuntime | HybridRuntime | FleetRuntime | None = None,
     *,
     camera: CameraBridge | None = None,
     cameras: Mapping[int, CameraBridge] | None = None,
@@ -1793,6 +1794,17 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vehicle-id", type=int, default=1)
     parser.add_argument("--vehicle-name")
     parser.add_argument("--sim-vehicle-id", type=int, default=1)
+    parser.add_argument("--sim-vehicle-count", type=int, default=1)
+    parser.add_argument(
+        "--sim-vehicle-ids",
+        default="",
+        help="Comma-separated ground vehicle ids for the sim fleet.",
+    )
+    parser.add_argument(
+        "--sim-sysids",
+        default="",
+        help="Comma-separated MAVLink system ids for the sim fleet.",
+    )
     parser.add_argument("--sim-vehicle-name", default="SITL UAV 1")
     parser.add_argument("--real-vehicle-id", type=int, default=3)
     parser.add_argument("--real-vehicle-name", default="实机 UAV 3")
@@ -1887,16 +1899,45 @@ def main(argv: list[str] | None = None) -> int:
     )
     if mode == ManualRuntimeMode.HYBRID:
         try:
-            runtime: ManualRuntime | HybridRuntime = HybridRuntime(
+            sim_runtime_count = max(1, args.sim_vehicle_count)
+            if args.sim_vehicle_ids and args.sim_sysids:
+                sim_vehicle_ids = [
+                    int(value) for value in args.sim_vehicle_ids.split(",")
+                ]
+                sim_sysids = [int(value) for value in args.sim_sysids.split(",")]
+                if len(sim_vehicle_ids) != len(sim_sysids):
+                    raise SystemExit(
+                        "--sim-vehicle-ids and --sim-sysids must have equal length"
+                    )
+                sim_runtime_count = len(sim_vehicle_ids)
+            else:
+                sim_vehicle_ids = [
+                    args.sim_vehicle_id + index for index in range(sim_runtime_count)
+                ]
+                sim_sysids = list(sim_vehicle_ids)
+            sim_runtimes = [
                 ManualRuntime(
                     ManualRuntimeConfig(
                         mode=ManualRuntimeMode.SITL,
-                        vehicle_id=args.sim_vehicle_id,
-                        vehicle_name=args.sim_vehicle_name,
-                        fcu_endpoint=args.fcu_endpoint,
+                        vehicle_id=sim_vehicle_ids[index],
+                        mavlink_target_system=sim_sysids[index],
+                        vehicle_name=(
+                            f"SITL UAV {sim_sysids[index]}"
+                            if sim_runtime_count > 1
+                            else args.sim_vehicle_name
+                        ),
+                        fcu_endpoint=(
+                            f"udpin:0.0.0.0:{14550 + 10 * index}"
+                            if sim_runtime_count > 1
+                            else args.fcu_endpoint
+                        ),
                         frame_calibration_id=args.sim_frame_calibration_id,
                     )
-                ),
+                )
+                for index in range(sim_runtime_count)
+            ]
+            runtime: ManualRuntime | HybridRuntime | FleetRuntime = FleetRuntime(
+                sim_runtimes,
                 ManualRuntime(
                     ManualRuntimeConfig(
                         mode=ManualRuntimeMode.REAL_SERIAL,
@@ -1908,6 +1949,7 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     shared_secret=shared_secret,
                 ),
+                default_vehicle_id=args.sim_vehicle_id,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
@@ -1932,21 +1974,37 @@ def main(argv: list[str] | None = None) -> int:
         ManualRuntimeMode.DEMO,
         ManualRuntimeMode.HYBRID,
     }:
-        simulation_vehicle_id = (
-            args.sim_vehicle_id
-            if mode == ManualRuntimeMode.HYBRID
-            else args.vehicle_id
-        )
-        cameras[simulation_vehicle_id] = AirSimCameraBridge(
-            AirSimCameraConfig(
-                rpc_host=args.airsim_host or _default_airsim_host(),
-                rpc_port=args.airsim_port,
-                vehicle_name=args.airsim_vehicle,
-                camera_name=args.airsim_camera,
-                capture_fps=args.camera_fps,
-                request_timeout_s=args.camera_timeout,
+        if mode == ManualRuntimeMode.HYBRID and (
+            args.sim_vehicle_count > 1 or args.sim_vehicle_ids
+        ):
+            for sim_index in range(sim_runtime_count):
+                vehicle_id = sim_vehicle_ids[sim_index]
+                cameras[vehicle_id] = AirSimCameraBridge(
+                    AirSimCameraConfig(
+                        rpc_host=args.airsim_host or _default_airsim_host(),
+                        rpc_port=args.airsim_port,
+                        vehicle_name=f"Drone{sim_index + 1}",
+                        camera_name=args.airsim_camera,
+                        capture_fps=args.camera_fps,
+                        request_timeout_s=args.camera_timeout,
+                    )
+                )
+        else:
+            simulation_vehicle_id = (
+                args.sim_vehicle_id
+                if mode == ManualRuntimeMode.HYBRID
+                else args.vehicle_id
             )
-        )
+            cameras[simulation_vehicle_id] = AirSimCameraBridge(
+                AirSimCameraConfig(
+                    rpc_host=args.airsim_host or _default_airsim_host(),
+                    rpc_port=args.airsim_port,
+                    vehicle_name=args.airsim_vehicle,
+                    camera_name=args.airsim_camera,
+                    capture_fps=args.camera_fps,
+                    request_timeout_s=args.camera_timeout,
+                )
+            )
     if not args.disable_camera and args.rtsp_url:
         real_vehicle_id = (
             args.real_vehicle_id

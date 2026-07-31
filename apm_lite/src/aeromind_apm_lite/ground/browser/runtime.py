@@ -49,6 +49,7 @@ class ManualRuntimeConfig:
     vehicle_id: int = 1
     vehicle_name: str = "sitl-uav1"
     fcu_endpoint: str = "udpin:0.0.0.0:14550"
+    mavlink_target_system: int | None = None
     source_system: int = 201
     source_component: int = 191
     target_component: int = 1
@@ -66,6 +67,8 @@ class ManualRuntimeConfig:
     def __post_init__(self) -> None:
         if not 1 <= self.vehicle_id <= 255:
             raise ValueError("vehicle_id must be in [1, 255]")
+        if self.mavlink_target_system is not None and not 1 <= self.mavlink_target_system <= 255:
+            raise ValueError("mavlink_target_system must be in [1, 255]")
         if not self.vehicle_name:
             raise ValueError("vehicle_name must not be empty")
         if not self.frame_calibration_id:
@@ -99,7 +102,11 @@ class ManualRuntimeConfig:
             endpoint=self.fcu_endpoint,
             source_system=self.source_system,
             source_component=self.source_component,
-            target_system=self.vehicle_id,
+            target_system=(
+                self.mavlink_target_system
+                if self.mavlink_target_system is not None
+                else self.vehicle_id
+            ),
             target_component=self.target_component,
         )
 
@@ -457,7 +464,11 @@ class ManualRuntime:
         transport = PymavlinkTransport(self.config.fcu_connection())
         return ApmLink(
             transport,
-            target_system=self.config.vehicle_id,
+            target_system=(
+                self.config.mavlink_target_system
+                if self.config.mavlink_target_system is not None
+                else self.config.vehicle_id
+            ),
             target_component=self.config.target_component,
             source_system=self.config.source_system,
             source_component=self.config.source_component,
@@ -590,6 +601,162 @@ class HybridRuntime:
     async def start(self) -> None:
         if self._initialized:
             raise RuntimeError("hybrid runtime is already started")
+        self._errors.clear()
+        results = await asyncio.gather(
+            *(runtime.start() for runtime in self._runtimes.values()),
+            return_exceptions=True,
+        )
+        for vehicle_id, result in zip(self.vehicle_ids, results):
+            if isinstance(result, BaseException):
+                self._errors[vehicle_id] = str(result)
+        self._initialized = True
+
+    async def stop(self) -> None:
+        await asyncio.gather(
+            *(runtime.stop() for runtime in self._runtimes.values()),
+            return_exceptions=True,
+        )
+        self._initialized = False
+
+
+class FleetRuntime:
+    """Run several SITL bridges plus an optional real P9 bridge behind one API."""
+
+    def __init__(
+        self,
+        simulation: ManualRuntime | list[ManualRuntime],
+        real: ManualRuntime | None = None,
+        *,
+        default_vehicle_id: int | None = None,
+    ) -> None:
+        simulations = (
+            [simulation] if isinstance(simulation, ManualRuntime) else list(simulation)
+        )
+        if not simulations:
+            raise ValueError("fleet requires at least one simulation runtime")
+        for runtime in simulations:
+            if runtime.config.mode != ManualRuntimeMode.SITL:
+                raise ValueError("fleet simulation runtimes must use sitl mode")
+        if real is not None and real.config.mode != ManualRuntimeMode.REAL_SERIAL:
+            raise ValueError("fleet real runtime must use real_serial mode")
+        self._sim_vehicle_ids = tuple(runtime.config.vehicle_id for runtime in simulations)
+        self._runtimes: dict[int, ManualRuntime] = {
+            runtime.config.vehicle_id: runtime for runtime in simulations
+        }
+        if real is not None:
+            self._runtimes[real.config.vehicle_id] = real
+        if len(self._runtimes) != len(simulations) + (1 if real is not None else 0):
+            raise ValueError("fleet vehicle ids must be unique")
+        self._real_vehicle_id = real.config.vehicle_id if real is not None else None
+        self.config = simulations[0].config
+        self._default_vehicle_id = (
+            default_vehicle_id
+            if default_vehicle_id is not None
+            else self._sim_vehicle_ids[0]
+        )
+        if self._default_vehicle_id not in self._runtimes:
+            raise ValueError("default fleet vehicle is not registered")
+        self._errors: dict[int, str] = {}
+        self._initialized = False
+
+    @property
+    def started(self) -> bool:
+        return self._initialized
+
+    @property
+    def vehicle_ids(self) -> tuple[int, ...]:
+        return tuple(self._runtimes)
+
+    @property
+    def sim_vehicle_ids(self) -> tuple[int, ...]:
+        return self._sim_vehicle_ids
+
+    @property
+    def real_vehicle_id(self) -> int | None:
+        return self._real_vehicle_id
+
+    @property
+    def default_vehicle_id(self) -> int:
+        return self._default_vehicle_id
+
+    @property
+    def agent_connected(self) -> bool:
+        return self.agent_connected_for(self.default_vehicle_id)
+
+    @property
+    def link(self) -> Any | None:
+        return self.link_for(self.default_vehicle_id)
+
+    @property
+    def server(self) -> GroundServer:
+        return self.server_for(self.default_vehicle_id)
+
+    @property
+    def serial_runtime(self) -> ManualRuntime:
+        if self._real_vehicle_id is None:
+            raise RuntimeError("fleet runtime has no real serial bridge")
+        return self._runtimes[self._real_vehicle_id]
+
+    def config_for(self, vehicle_id: int) -> ManualRuntimeConfig:
+        return self.runtime_for(vehicle_id).config
+
+    def runtime_for(self, vehicle_id: int) -> ManualRuntime:
+        try:
+            return self._runtimes[vehicle_id]
+        except KeyError as exc:
+            raise KeyError(f"vehicle {vehicle_id} is not registered") from exc
+
+    def server_for(self, vehicle_id: int) -> GroundServer:
+        return self.runtime_for(vehicle_id).server
+
+    def link_for(self, vehicle_id: int) -> Any | None:
+        return self.runtime_for(vehicle_id).link
+
+    def started_for(self, vehicle_id: int) -> bool:
+        return self.runtime_for(vehicle_id).started
+
+    def agent_connected_for(self, vehicle_id: int) -> bool:
+        return self.runtime_for(vehicle_id).agent_connected
+
+    def error_for(self, vehicle_id: int) -> str | None:
+        self.runtime_for(vehicle_id)
+        return self._errors.get(vehicle_id)
+
+    def clear_error(self, vehicle_id: int) -> None:
+        self.runtime_for(vehicle_id)
+        self._errors.pop(vehicle_id, None)
+
+    def set_error(self, vehicle_id: int, error: str) -> None:
+        self.runtime_for(vehicle_id)
+        self._errors[vehicle_id] = error
+
+    def public_config(self) -> dict[str, Any]:
+        base = self.config.public_payload()
+        vehicles = [
+            runtime.config.public_payload()
+            for runtime in self._runtimes.values()
+        ]
+        real = (
+            self.serial_runtime.config.public_payload()
+            if self._real_vehicle_id is not None
+            else None
+        )
+        return {
+            **base,
+            "runtime_mode": "fleet",
+            "deployment_mode": "hybrid",
+            "ground_transport": "mixed",
+            "serial_runtime_configurable": self._real_vehicle_id is not None,
+            "ground_serial_port": real["ground_serial_port"] if real else None,
+            "ground_serial_baudrate": (
+                real["ground_serial_baudrate"] if real else None
+            ),
+            "vehicles": vehicles,
+        }
+
+    async def start(self) -> None:
+        if self._initialized:
+            raise RuntimeError("fleet runtime is already started")
         self._errors.clear()
         results = await asyncio.gather(
             *(runtime.start() for runtime in self._runtimes.values()),
