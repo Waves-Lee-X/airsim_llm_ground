@@ -55,6 +55,10 @@ class PymavlinkTransport:
             **kwargs,
         )
 
+    @property
+    def is_open(self) -> bool:
+        return self._connection is not None
+
     async def close(self) -> None:
         self._assert_owner()
         connection = self._require_connection()

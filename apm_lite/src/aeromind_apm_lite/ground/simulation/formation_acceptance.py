@@ -113,73 +113,78 @@ class VehicleDriver:
         except Exception as exc:
             self.pump_error = f"{type(exc).__name__}: {exc}"
             return
-        last_position_seen = time.monotonic()
-        interval_retries = 0
-        while not self.stop:
-            while True:
-                try:
-                    request = self._commands.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-                try:
-                    result = await self._execute_command(request)
-                except Exception as exc:
-                    if not request.future.done():
-                        request.future.set_exception(exc)
-                else:
-                    if not request.future.done():
-                        request.future.set_result(result)
-            now = time.monotonic()
-            if now - self._last_heartbeat_s >= 0.5:
-                await self.transport.send_heartbeat()
-                self._last_heartbeat_s = now
-            if self._goto_target is not None:
-                north, east, down = self._goto_target
-                await self.transport.send_local_position_target(
-                    north,
-                    east,
-                    down,
-                    yaw_rad=None,
-                )
-            envelope = await self.transport.receive(timeout_s=0.05)
-            if envelope is None:
-                if (
-                    interval_retries < 3
-                    and time.monotonic() - last_position_seen >= 2.0
-                ):
-                    interval_retries += 1
+        try:
+            last_position_seen = time.monotonic()
+            interval_retries = 0
+            while not self.stop:
+                while True:
                     try:
-                        await self.transport.request_message_interval(
-                            mavutil.mavlink.MAVLINK_MSG_ID_LOCAL_POSITION_NED,
-                            5.0,
-                        )
+                        request = self._commands.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                    try:
+                        result = await self._execute_command(request)
                     except Exception as exc:
-                        self.pump_error = f"{type(exc).__name__}: {exc}"
-                        return
-                continue
-            if envelope.name == "LOCAL_POSITION_NED":
-                last_position_seen = time.monotonic()
-                fields = envelope.fields
-                position = (
-                    float(fields["x"]),
-                    float(fields["y"]),
-                    float(fields["z"]),
-                )
-                self.position = position
+                        if not request.future.done():
+                            request.future.set_exception(exc)
+                    else:
+                        if not request.future.done():
+                            request.future.set_result(result)
                 now = time.monotonic()
-                if now - self._last_sample_s >= _SAMPLE_INTERVAL_S:
-                    self._last_sample_s = now
-                    self.trajectory.append((now, *position))
-            elif envelope.name == "HEARTBEAT":
-                base_mode = int(envelope.fields.get("base_mode", 0) or 0)
-                self.armed = bool(
-                    base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
-                )
-                self.mode = envelope.fields.get("mode_name")
-            elif envelope.name == "STATUSTEXT":
-                text = str(envelope.fields.get("text", "")).strip()
-                if text and text not in self.status_texts:
-                    self.status_texts.append(text)
+                if now - self._last_heartbeat_s >= 0.5:
+                    await self.transport.send_heartbeat()
+                    self._last_heartbeat_s = now
+                if self._goto_target is not None:
+                    north, east, down = self._goto_target
+                    await self.transport.send_local_position_target(
+                        north,
+                        east,
+                        down,
+                        yaw_rad=None,
+                    )
+                envelope = await self.transport.receive(timeout_s=0.05)
+                if envelope is None:
+                    if (
+                        interval_retries < 3
+                        and time.monotonic() - last_position_seen >= 2.0
+                    ):
+                        interval_retries += 1
+                        try:
+                            await self.transport.request_message_interval(
+                                mavutil.mavlink.MAVLINK_MSG_ID_LOCAL_POSITION_NED,
+                                5.0,
+                            )
+                        except Exception as exc:
+                            self.pump_error = f"{type(exc).__name__}: {exc}"
+                            return
+                    continue
+                if envelope.name == "LOCAL_POSITION_NED":
+                    last_position_seen = time.monotonic()
+                    fields = envelope.fields
+                    position = (
+                        float(fields["x"]),
+                        float(fields["y"]),
+                        float(fields["z"]),
+                    )
+                    self.position = position
+                    now = time.monotonic()
+                    if now - self._last_sample_s >= _SAMPLE_INTERVAL_S:
+                        self._last_sample_s = now
+                        self.trajectory.append((now, *position))
+                elif envelope.name == "HEARTBEAT":
+                    base_mode = int(envelope.fields.get("base_mode", 0) or 0)
+                    self.armed = bool(
+                        base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
+                    )
+                    self.mode = envelope.fields.get("mode_name")
+                elif envelope.name == "STATUSTEXT":
+                    text = str(envelope.fields.get("text", "")).strip()
+                    if text and text not in self.status_texts:
+                        self.status_texts.append(text)
+
+        finally:
+            if self.transport.is_open:
+                await self.transport.close()
 
     async def _execute_command(self, request: _CommandRequest) -> Any:
         kind = request.kind
@@ -199,6 +204,11 @@ class VehicleDriver:
             await self.transport.send_command_long(
                 mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
                 [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            )
+        elif kind == "disarm":
+            await self.transport.send_command_long(
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             )
         elif kind == "takeoff":
             await self.transport.send_command_long(
@@ -230,6 +240,9 @@ class VehicleDriver:
 
     async def arm(self) -> None:
         await self._send_command("arm")
+
+    async def disarm(self) -> None:
+        await self._send_command("disarm")
 
     async def takeoff(self) -> None:
         await self._send_command("takeoff")
@@ -324,20 +337,29 @@ async def run_formation_cycle(
                         raise
 
         await asyncio.gather(*(arm_with_retry(vehicle) for vehicle in vehicles))
-        await asyncio.gather(*(vehicle.takeoff() for vehicle in vehicles))
-        await asyncio.gather(
-            *(
-                vehicle.wait_until(
-                    lambda current, altitude=vehicle.altitude_m: (
-                        current.position is not None
-                        and current.position[2] <= -0.7 * altitude
-                    ),
-                    timeout_s=45.0,
-                    label="takeoff",
-                )
-                for vehicle in vehicles
-            )
-        )
+
+        async def takeoff_with_retry(vehicle: VehicleDriver) -> None:
+            for attempt in range(3):
+                await vehicle.takeoff()
+                try:
+                    await vehicle.wait_until(
+                        lambda current, altitude=vehicle.altitude_m: (
+                            current.position is not None
+                            and current.position[2] <= -0.7 * altitude
+                        ),
+                        timeout_s=20.0,
+                        label=f"takeoff attempt {attempt + 1}",
+                    )
+                    return
+                except FormationAcceptanceError:
+                    if attempt == 2:
+                        raise
+                    # The flight controller can reject a takeoff issued right
+                    # after a landing (landing detector still settling). Give
+                    # it a moment, then re-issue the command.
+                    await asyncio.sleep(5.0)
+
+        await asyncio.gather(*(takeoff_with_retry(vehicle) for vehicle in vehicles))
         # Let the EKF settle the true local offsets before the first entry,
         # otherwise every vehicle briefly reports the origin and converges
         # through the middle of the formation (the classic mid-air pinch).
@@ -414,6 +436,23 @@ async def run_formation_cycle(
                 for vehicle in vehicles
             )
         )
+        # Let the landing detector settle before the next run: a takeoff
+        # issued immediately after touchdown can be silently rejected, which
+        # previously made multi-run batches fail on the second run.
+        await asyncio.sleep(6.0)
+        await asyncio.gather(*(vehicle.disarm() for vehicle in vehicles))
+        await asyncio.gather(
+            *(
+                vehicle.wait_until(
+                    lambda current: current.armed is not True,
+                    timeout_s=10.0,
+                    label="disarm",
+                )
+                for vehicle in vehicles
+            ),
+            return_exceptions=True,
+        )
+        await asyncio.sleep(3.0)
     finally:
         for vehicle in vehicles:
             vehicle.stop = True
@@ -567,11 +606,6 @@ async def run_fleet_formation_acceptance_specs(
             for task in pumps:
                 task.cancel()
             await asyncio.gather(*pumps, return_exceptions=True)
-            for driver in drivers.values():
-                await asyncio.gather(
-                    driver.transport.close(),
-                    return_exceptions=True,
-                )
     return reports
 
 
