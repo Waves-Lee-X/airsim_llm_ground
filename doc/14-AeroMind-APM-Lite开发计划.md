@@ -617,6 +617,7 @@ Web 结构化结果/模型原文展示和 `preview_only` 安全隔离；Mission 
 
 ### M5：四机编队
 
+进度：2026-07-31 已完成确定性编队逻辑：三种队形（一字横队、V 字、菱形）槽位几何与最小间距校验、槽位内平滑切换插值、就近确定性槽位分配、整段时空碰撞检查（线性段重叠区间解析最近距离）以及 FleetCoordinator 的同步起始/过期 HOLD/单机失联降级与中止策略；新增 `fleet_launch_config` 四机 SITL 启动配置生成器（独立端口与系统号、横队初始摆放）。软件门禁全量基线为 `274 passed`，说明见 `apm_lite/docs/16-编队设计与验收.md`。SITL 仿真回归（三种队形各 10 次）与 Web 四机编排仍待完成。
 交付：
 
 - 四个 SITL/agent 实例和四机配置生成器。
@@ -749,6 +750,7 @@ M2 前冻结资源门槛；至少要求 30 分钟压力测试无热降频、OOM 
 23. [x] 在基础飞行和坐标工具稳定后实现支持对话、实时飞机状态和受控工具调用的 Mission Agent。2026-07-30 已完成内存多轮会话、遥测/P9/FCU/白名单/视觉/场地标定上下文注入、六种原子动作草案、120 秒单次确认票据、确认时二次门禁，以及接入原有 ACK/物理完成证据链；GOTO、编队、搜索和路径规划继续被确定性阻断，实机白名单仍只有 ARM/DISARM。Web 已提供对话、阻断原因、人工确认和取消操作，说明见 `apm_lite/docs/10-Mission-Agent设计与调试.md`，该项完成时全量基线为 `245 passed`。
 24. [x] 实现仿真与 UAV3 实机同时接入一个 Web 地面站。2026-07-30 已新增 `hybrid` 组合运行时，以独立机号路由 SITL UDP 和 P9 串口链路；状态、遥测、相机、Mission Agent 上下文、命令和证据均绑定所选 `vehicle_id`。新增 Windows 混合启动脚本及 SITL `--ground-on-windows` 生成选项，实机串口重连不重启 SITL，仿真权限不会扩展实机白名单。当前全量基线为 `247 passed`；该项只完成同站监控与隔离，不授权实机 TAKEOFF/GOTO/LAND/RTL。
 25. [x] 完成 M4 剩余视觉闭环：多帧视觉证据、OpenCV 颜色交叉验证与不可变证据持久化。2026-07-31 已新增确定性 HSV 颜色检测（红/绿/蓝/黄/橙/紫/粉/白/黑/灰）、VLM 与 OpenCV 一致性比对、最近 5 帧共识投票（3 票确认）以及按 UUID 不可变存档（帧 SHA-256 + 帧快照）；Web 增加交叉验证按钮与证据历史；新增 `POST /api/vision/crosscheck`、`GET /api/vision/evidence`、`GET /api/vision/evidence/{id}`、`GET /api/vision/evidence/{id}/frame` 接口，相关 Schema 已导出。该项完成时全量基线为 `257 passed`；真实场景模型准确率仍待室外/实景验收。
+26. [x] 实现四机编队核心逻辑与仿真启动配置生成器。2026-07-31 已完成三种队形槽位几何（line/v/diamond）、最小机间距校验、平滑切换插值、确定性槽位分配、整段时空碰撞检查与 FleetCoordinator 同步/过期/失联策略，并新增 `fleet_launch_config` 四机 SITL 配置生成（Drone1..4、独立端口与系统号、横队初始摆放）；设计文档见 `apm_lite/docs/16-编队设计与验收.md`，该项完成时全量基线为 `274 passed`。SITL 仿真回归与 Web 四机编排列入 M5 后续交付。
 
 ## 18. 后续里程碑必须确认的外部条件
 
