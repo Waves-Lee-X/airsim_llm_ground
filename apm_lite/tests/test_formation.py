@@ -278,3 +278,23 @@ def test_fleet_launch_config_generates_isolated_four_vehicle_sitl():
     assert initial_ys == [-4.5, -1.5, 1.5, 4.5]
     with pytest.raises(SimulationConfigError):
         fleet_launch_config(1)
+
+
+def test_coordinator_waits_for_never_seen_vehicles_instead_of_aborting():
+    coordinator = FleetCoordinator(min_spacing_m=3.0, lost_timeout_s=5.0)
+    states = {
+        1: _ready_state(1, 0.0, -1.5),
+        2: FleetVehicleState(
+            vehicle_id=2,
+            ready=False,
+            link_ok=False,
+            last_seen_age_s=None,
+        ),
+    }
+    decision = coordinator.plan(
+        states,
+        FormationType.LINE,
+        leader_target_map_m=(10.0, 0.0, -2.0),
+    )
+    assert decision.phase == "syncing"
+    assert all(directive.action == "hold" for directive in decision.directives)

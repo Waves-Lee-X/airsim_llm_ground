@@ -71,6 +71,8 @@ function cacheElements() {
     "visionCrosscheck", "visionCrossStatus",
     "visionVlmColor", "visionOpenCvColor", "visionAgreement",
     "visionConsensus", "visionEvidenceList",
+    "fleetPhase", "fleetApply", "fleetLeaderX",
+    "fleetLeaderY", "fleetLeaderZ", "fleetSlots",
     "agentVehicleState", "agentLinkState", "agentGpsState",
     "agentPermissionState", "resetAgentSession", "agentConversation",
     "agentDraft", "agentDraftAction", "agentDraftStatus",
@@ -94,6 +96,7 @@ function cacheElements() {
   elements.commandButtons = Array.from(document.querySelectorAll("[data-command]"));
   elements.semanticTabs = Array.from(document.querySelectorAll("[data-semantic-tab]"));
   elements.semanticModes = Array.from(document.querySelectorAll("[data-semantic-mode]"));
+  elements.fleetFormations = Array.from(document.querySelectorAll("[data-fleet-formation]"));
 }
 
 function valueOr(value, fallback = "--") {
@@ -505,6 +508,7 @@ function renderVisualSemantic(payload) {
   renderVisionCrossValidation(payload.cross_validation);
   renderVisionConsensus(payload.consensus);
   void refreshVisionEvidence();
+  void refreshFleetStatus();
   elements.visualSummary.textContent = [result.message, result.scene, result.suggestion]
     .filter(Boolean)
     .join(" · ") || "视觉分析已完成";
@@ -850,6 +854,100 @@ async function refreshVisionEvidence() {
     elements.visionEvidenceList.append(list);
   } catch (_error) {
     // Evidence history is optional while the rest of the station stays usable.
+  }
+}
+
+function renderFleetStatus(payload) {
+  const value = payload || {};
+  const phaseLabels = {
+    idle: "未编排",
+    syncing: "同步中",
+    transit: "切换中",
+    formation_hold: "编队保持",
+    degraded: "降级编队",
+    aborted: "中止",
+  };
+  elements.fleetPhase.textContent = (value.formation_label || value.formation || "line") + " · " + (phaseLabels[value.phase] || value.phase || "--");
+  elements.fleetPhase.dataset.level =
+    value.phase === "formation_hold" ? "ok"
+    : value.phase === "degraded" || value.phase === "aborted" ? "bad"
+    : value.phase === "idle" ? "none"
+    : "warn";
+  elements.fleetPhase.title = value.reason || "";
+  if (Array.isArray(value.leader_target_map_m) && value.leader_target_map_m.length === 3) {
+    elements.fleetLeaderX.value = value.leader_target_map_m[0];
+    elements.fleetLeaderY.value = value.leader_target_map_m[1];
+    elements.fleetLeaderZ.value = value.leader_target_map_m[2];
+  }
+  elements.fleetFormations.forEach((button) => {
+    const active = button.dataset.fleetFormation === value.formation;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  const directives = Array.isArray(value.directives) ? value.directives : [];
+  elements.fleetSlots.replaceChildren();
+  if (!directives.length) {
+    const empty = document.createElement("span");
+    empty.className = "semantic-empty";
+    empty.textContent = value.reason || "尚无编队数据";
+    elements.fleetSlots.append(empty);
+    return;
+  }
+  const list = document.createElement("ol");
+  directives.forEach((item) => {
+    const row = document.createElement("li");
+    const id = document.createElement("span");
+    id.className = "fleet-slot-id";
+    id.textContent = "UAV" + String(item.vehicle_id).padStart(2, "0");
+    const action = document.createElement("span");
+    action.className = "fleet-slot-action " + (item.action || "hold");
+    action.textContent = item.action || "--";
+    const target = document.createElement("span");
+    target.className = "fleet-slot-target";
+    target.textContent = item.target_map_m
+      ? item.target_map_m.map((value) => fixed(value, 1)).join(", ")
+      : "--";
+    const note = document.createElement("span");
+    note.className = "fleet-slot-note";
+    note.textContent = item.slot !== null && item.slot !== undefined
+      ? "槽位 " + item.slot + (item.reason ? " · " + item.reason : "")
+      : item.reason || "";
+    row.append(id, action, target, note);
+    list.append(row);
+  });
+  elements.fleetSlots.append(list);
+}
+
+async function refreshFleetStatus() {
+  try {
+    const payload = await requestJson("/api/fleet/status");
+    renderFleetStatus(payload);
+  } catch (_error) {
+    // Fleet panel stays optional while the rest of the station keeps working.
+  }
+}
+
+async function applyFleetFormation() {
+  const active = elements.fleetFormations.find((button) => button.classList.contains("active"));
+  const formation = active ? active.dataset.fleetFormation : "line";
+  try {
+    const payload = await requestJson("/api/fleet/formation", {
+      method: "POST",
+      body: JSON.stringify({
+        formation,
+        leader_target_map_m: [
+          finiteNumber(elements.fleetLeaderX.value) ?? 0,
+          finiteNumber(elements.fleetLeaderY.value) ?? 0,
+          finiteNumber(elements.fleetLeaderZ.value) ?? -3,
+        ],
+      }),
+    });
+    void payload;
+    await refreshFleetStatus();
+  } catch (error) {
+    elements.fleetPhase.textContent = "应用失败";
+    elements.fleetPhase.dataset.level = "bad";
+    elements.fleetPhase.title = error.message;
   }
 }
 
@@ -1915,6 +2013,19 @@ function bindEvents() {
   elements.visionCrosscheck.addEventListener("click", () => {
     void runVisionCrosscheck();
   });
+  elements.fleetFormations.forEach((button) => {
+    button.addEventListener("click", () => {
+      elements.fleetFormations.forEach((candidate) => {
+        const active = candidate === button;
+        candidate.classList.toggle("active", active);
+        candidate.setAttribute("aria-selected", String(active));
+      });
+      void applyFleetFormation();
+    });
+  });
+  elements.fleetApply.addEventListener("click", () => {
+    void applyFleetFormation();
+  });
   elements.missionParseForm.addEventListener("submit", (event) => {
     void parseMission(event);
   });
@@ -1985,6 +2096,7 @@ async function bootstrap() {
   window.setInterval(refreshStatus, 2000);
   window.setInterval(refreshCameraStatus, 2000);
   window.setInterval(refreshSemanticStatus, 3000);
+  window.setInterval(refreshFleetStatus, 3000);
   void refreshVisionEvidence();
 }
 

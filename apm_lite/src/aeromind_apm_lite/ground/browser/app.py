@@ -44,6 +44,10 @@ from aeromind_apm_lite.onboard.navigation_mission import (
     EKF_REQUIRED_GPS_NAVIGATION_FLAGS,
 )
 
+from .fleet_service import (
+    FleetConfigError,
+    FleetService,
+)
 from .camera import (
     AirSimCameraBridge,
     AirSimCameraConfig,
@@ -71,6 +75,10 @@ from .semantic import (
     SemanticBusy,
     SemanticService,
     SemanticUnavailable,
+)
+from aeromind_apm_lite.common.formation import (
+    FleetVehicleState,
+    FormationType,
 )
 from .vision_evidence import (
     ColorDetector,
@@ -143,6 +151,16 @@ class AgentConfirmationRequest(BaseModel):
 
     confirmed: bool
     vehicle_id: int | None = Field(default=None, ge=1, le=255)
+
+
+class FleetFormationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    formation: str = Field(default="line", pattern="^(line|v|diamond)$")
+    leader_target_map_m: tuple[float, float, float] | None = None
+    spacing_m: float | None = Field(default=None, ge=0.5, le=50.0)
+    transition_progress: float | None = Field(default=None, ge=0.0, le=1.0)
+    vehicle_ids: tuple[int, ...] | None = Field(default=None, min_length=2, max_length=8)
 
 
 class TrajectoryReportRequest(BaseModel):
@@ -220,6 +238,7 @@ class BrowserGateway:
         color_detector: ColorDetector | None = None,
         vision_consensus: VisionConsensusTracker | None = None,
         vision_producer_version: str = "aeromind-apm-lite-ground",
+        fleet: FleetService | None = None,
         telemetry_interval_s: float = 0.2,
     ) -> None:
         if telemetry_interval_s <= 0.0:
@@ -240,6 +259,7 @@ class BrowserGateway:
         self.color_detector = color_detector or ColorDetector()
         self.vision_consensus = vision_consensus or VisionConsensusTracker()
         self.vision_producer_version = vision_producer_version
+        self.fleet = fleet or FleetService()
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
@@ -672,6 +692,7 @@ class BrowserGateway:
                 "consensus": self.vision_consensus.consensus_payload(),
                 "evidence_available": self.vision_evidence.root.is_dir(),
             },
+            "fleet": self.fleet_status_payload(),
         }
 
     async def analyze_current_frame(
@@ -742,6 +763,49 @@ class BrowserGateway:
             }
         except VisionEvidenceError as exc:
             return {"error": str(exc)}
+
+    def _fleet_states(self) -> dict[int, FleetVehicleState]:
+        states: dict[int, FleetVehicleState] = {}
+        for vehicle_id in self.fleet.vehicle_ids:
+            try:
+                snapshot = self._link_snapshot_payload(vehicle_id)
+            except KeyError:
+                snapshot = None
+            if snapshot is None:
+                states[vehicle_id] = FleetVehicleState(vehicle_id=vehicle_id)
+                continue
+            position = snapshot.get("position_m")
+            states[vehicle_id] = FleetVehicleState(
+                vehicle_id=vehicle_id,
+                ready=bool(position is not None),
+                link_ok=True,
+                last_seen_age_s=0.0,
+                position_map_m=(
+                    (
+                        float(position["x"]),
+                        float(position["y"]),
+                        float(position["z"]),
+                    )
+                    if isinstance(position, dict)
+                    else None
+                ),
+            )
+        return states
+
+    def fleet_status_payload(self) -> dict[str, Any]:
+        return self.fleet.status_payload(self._fleet_states())
+
+    def set_fleet_formation(
+        self,
+        payload: FleetFormationRequest,
+    ) -> dict[str, Any]:
+        return self.fleet.set_formation(
+            FormationType(payload.formation),
+            leader_target_map_m=payload.leader_target_map_m,
+            spacing_m=payload.spacing_m,
+            transition_progress=payload.transition_progress,
+            vehicle_ids=payload.vehicle_ids,
+        )
 
     async def parse_mission(self, instruction: str) -> dict[str, Any]:
         payload = await self.semantic.parse_mission(instruction)
@@ -1275,6 +1339,7 @@ def create_app(
     vision_evidence: VisionEvidenceStore | None = None,
     color_detector: ColorDetector | None = None,
     vision_consensus: VisionConsensusTracker | None = None,
+    fleet: FleetService | None = None,
     static_dir: str | Path | None = None,
 ) -> FastAPI:
     runtime = runtime or ManualRuntime()
@@ -1289,6 +1354,7 @@ def create_app(
         vision_evidence=vision_evidence,
         color_detector=color_detector,
         vision_consensus=vision_consensus,
+        fleet=fleet,
     )
 
     @asynccontextmanager
@@ -1536,6 +1602,19 @@ def create_app(
             content=frame_data,
             media_type=evidence.frame.media_type,
         )
+
+    @app.get("/api/fleet/status")
+    async def fleet_status() -> dict[str, Any]:
+        return gateway.fleet_status_payload()
+
+    @app.post("/api/fleet/formation")
+    async def set_fleet_formation(
+        payload: FleetFormationRequest,
+    ) -> dict[str, Any]:
+        try:
+            return gateway.set_fleet_formation(payload)
+        except (FleetConfigError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/agent/status")
     async def mission_agent_status() -> dict[str, Any]:

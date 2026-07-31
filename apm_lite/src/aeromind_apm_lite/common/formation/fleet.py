@@ -27,6 +27,7 @@ class FleetDirective:
     action: str  # "goto" | "hold" | "land" | "rtl"
     target_map_m: Position | None = None
     reason: str = ""
+    slot: int | None = None
 
 
 @dataclass(frozen=True)
@@ -241,14 +242,15 @@ class FleetCoordinator:
         vehicle_ids = sorted(int(vehicle_id) for vehicle_id in states)
         state_by_id = {int(vehicle_id): states[vehicle_id] for vehicle_id in vehicle_ids}
 
+        # "Lost" means the vehicle was seen before and then exceeded the lost
+        # timeout. Vehicles that never connected are simply not ready yet and
+        # keep the fleet in the syncing phase instead of aborting it.
         lost = [
             vehicle_id
             for vehicle_id in vehicle_ids
             if not state_by_id[vehicle_id].link_ok
-            and (
-                state_by_id[vehicle_id].last_seen_age_s is None
-                or state_by_id[vehicle_id].last_seen_age_s > self.lost_timeout_s
-            )
+            and state_by_id[vehicle_id].last_seen_age_s is not None
+            and state_by_id[vehicle_id].last_seen_age_s > self.lost_timeout_s
         ]
         if lost:
             if self.degrade_on_lost and len(vehicle_ids) - len(lost) >= 2:
@@ -378,6 +380,7 @@ class FleetCoordinator:
                         f"{phase}: slot {slot} "
                         f"{formation.value if hasattr(formation, 'value') else formation}"
                     ),
+                    slot=slot,
                 )
             )
         return FleetDecision(

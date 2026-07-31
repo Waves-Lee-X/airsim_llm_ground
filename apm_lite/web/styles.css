@@ -1499,6 +1499,144 @@ button:disabled {
   font-size: 11px;
 }
 
+.fleet-panel {
+  min-width: 0;
+}
+
+.fleet-phase {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.fleet-phase[data-level="ok"] {
+  color: var(--green);
+}
+
+.fleet-phase[data-level="bad"] {
+  color: var(--red);
+}
+
+.fleet-phase[data-level="warn"] {
+  color: var(--amber);
+}
+
+.fleet-formation-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border-bottom: 1px solid var(--border);
+  background: var(--border);
+}
+
+.fleet-formation {
+  min-height: 28px;
+  border: 0;
+  border-radius: 0;
+  background: #13171b;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.fleet-formation.active {
+  background: var(--cyan-soft);
+  color: var(--cyan);
+}
+
+.fleet-leader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 11px;
+}
+
+.fleet-leader label {
+  color: var(--dim);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.fleet-leader input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 6px;
+  background: #101418;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.fleet-slots {
+  max-height: 148px;
+  overflow: auto;
+  padding: 6px 0;
+}
+
+.fleet-slots ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fleet-slots li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.fleet-slots li:nth-child(2n) {
+  background: #13171b;
+}
+
+.fleet-slot-id {
+  color: var(--cyan);
+}
+
+.fleet-slot-action {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.fleet-slot-action.goto {
+  color: var(--green);
+}
+
+.fleet-slot-action.hold {
+  color: var(--amber);
+}
+
+.fleet-slot-action.land,
+.fleet-slot-action.rtl {
+  color: var(--red);
+}
+
+.fleet-slot-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.fleet-slot-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+  font-size: 8px;
+}
+
 .semantic-evidence-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
