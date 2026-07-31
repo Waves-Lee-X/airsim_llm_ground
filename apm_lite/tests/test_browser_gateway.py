@@ -8,6 +8,7 @@ from aeromind_apm_lite.ground.browser.app import create_app
 from aeromind_apm_lite.ground.browser.camera import CameraFrame
 from aeromind_apm_lite.ground.browser.runtime import (
     DemoApmLink,
+    FleetRuntime,
     HybridRuntime,
     ManualRuntime,
     ManualRuntimeConfig,
@@ -469,6 +470,49 @@ def test_hybrid_mode_routes_simulation_and_real_vehicle_independently():
         assert simulation_link.ready
         assert len(opened_streams) == 2
         assert opened_streams[0].closed
+
+
+def test_fleet_runtime_pure_sim_numbering_is_sequential_without_real_bridge():
+    runtimes = [
+        ManualRuntime(
+            ManualRuntimeConfig(
+                mode=ManualRuntimeMode.SITL,
+                vehicle_id=vehicle_id,
+                vehicle_name=f"SITL UAV {vehicle_id}",
+                startup_timeout_s=2.0,
+            ),
+            link_factory=lambda _config: DemoApmLink(),
+        )
+        for vehicle_id in (1, 2, 3, 4)
+    ]
+    runtime = FleetRuntime(runtimes)
+    app = create_app(runtime)
+    with TestClient(app) as client:
+        config = client.get("/api/config").json()
+        assert [vehicle["vehicle_id"] for vehicle in config["vehicles"]] == [
+            1, 2, 3, 4,
+        ]
+        assert [vehicle["vehicle_name"] for vehicle in config["vehicles"]] == [
+            "SITL UAV 1",
+            "SITL UAV 2",
+            "SITL UAV 3",
+            "SITL UAV 4",
+        ]
+        assert config["serial_runtime_configurable"] is False
+
+        payload = client.get("/api/fleet/map").json()
+        ids = {vehicle["vehicle_id"] for vehicle in payload["vehicles"]}
+        assert ids == {1, 2, 3, 4}
+        names = {
+            vehicle["vehicle_id"]: vehicle["vehicle_name"]
+            for vehicle in payload["vehicles"]
+        }
+        assert names == {
+            1: "SITL UAV 1",
+            2: "SITL UAV 2",
+            3: "SITL UAV 3",
+            4: "SITL UAV 4",
+        }
 
 
 def test_hybrid_mode_rejects_vehicle_id_collision():

@@ -1497,7 +1497,8 @@ function renderSituationMap() {
       const swatch = document.createElement("i");
       swatch.style.background = situationColor(vehicle.vehicle_id);
       const label = document.createElement("b");
-      label.textContent = `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
+      label.textContent = vehicle.vehicle_name
+        || `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
       const detail = document.createElement("span");
       detail.textContent = `${vehicle.mode || "--"} · ${vehicle.armed ? "ARM" : "SAFE"} · ${vehicle.fcu_link_ok ? "在线" : "离线"}`;
       item.append(swatch, label, detail);
@@ -1509,7 +1510,8 @@ function renderSituationMap() {
       item.className = "situation-legend-item offline";
       const swatch = document.createElement("i");
       const label = document.createElement("b");
-      label.textContent = `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
+      label.textContent = vehicle.vehicle_name
+        || `UAV ${String(vehicle.vehicle_id).padStart(2, "0")}`;
       const detail = document.createElement("span");
       detail.textContent = "离线";
       item.append(swatch, label, detail);

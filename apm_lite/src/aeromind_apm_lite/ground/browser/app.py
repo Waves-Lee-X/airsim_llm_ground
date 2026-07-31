@@ -809,13 +809,19 @@ class BrowserGateway:
             if vehicle_id in seen:
                 continue
             seen.add(vehicle_id)
+            vehicle_name: str | None = None
             try:
                 snapshot = self._link_snapshot_payload(vehicle_id)
+                vehicle_name = self.runtime.config_for(vehicle_id).vehicle_name
             except KeyError:
                 snapshot = None
             if snapshot is None:
                 vehicles.append(
-                    {"vehicle_id": vehicle_id, "available": False}
+                    {
+                        "vehicle_id": vehicle_id,
+                        "vehicle_name": vehicle_name,
+                        "available": False,
+                    }
                 )
                 continue
             position = snapshot.get("position_m")
@@ -832,6 +838,7 @@ class BrowserGateway:
             vehicles.append(
                 {
                     "vehicle_id": vehicle_id,
+                    "vehicle_name": vehicle_name,
                     "available": True,
                     "fcu_link_ok": bool(snapshot.get("fcu_link_ok")),
                     "mode": snapshot.get("mode"),
@@ -1973,14 +1980,18 @@ def _default_airsim_host() -> str:
 def main(argv: list[str] | None = None) -> int:
     args = build_argument_parser().parse_args(argv)
     mode = ManualRuntimeMode(args.mode)
-    if mode in {ManualRuntimeMode.REAL_SERIAL, ManualRuntimeMode.HYBRID} and not args.secret_env:
-        raise SystemExit("--secret-env is required in real_serial and hybrid modes")
-    if (
-        mode in {ManualRuntimeMode.REAL_SERIAL, ManualRuntimeMode.HYBRID}
-        and not args.frame_calibration_id
-    ):
+    real_bridge_enabled = mode == ManualRuntimeMode.REAL_SERIAL or (
+        mode == ManualRuntimeMode.HYBRID
+        and bool(args.real_vehicle_id)
+        and args.real_vehicle_id > 0
+    )
+    if real_bridge_enabled and not args.secret_env:
         raise SystemExit(
-            "--frame-calibration-id is required in real_serial and hybrid modes"
+            "--secret-env is required when a real serial bridge is enabled"
+        )
+    if real_bridge_enabled and not args.frame_calibration_id:
+        raise SystemExit(
+            "--frame-calibration-id is required when a real serial bridge is enabled"
         )
     shared_secret = (
         load_shared_secret(args.secret_env)
@@ -2026,8 +2037,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 for index in range(sim_runtime_count)
             ]
-            runtime: ManualRuntime | HybridRuntime | FleetRuntime = FleetRuntime(
-                sim_runtimes,
+            real_runtime = (
                 ManualRuntime(
                     ManualRuntimeConfig(
                         mode=ManualRuntimeMode.REAL_SERIAL,
@@ -2038,7 +2048,13 @@ def main(argv: list[str] | None = None) -> int:
                         ground_serial_baudrate=args.serial_baud,
                     ),
                     shared_secret=shared_secret,
-                ),
+                )
+                if args.real_vehicle_id and args.real_vehicle_id > 0
+                else None
+            )
+            runtime: ManualRuntime | HybridRuntime | FleetRuntime = FleetRuntime(
+                sim_runtimes,
+                real_runtime,
                 default_vehicle_id=args.sim_vehicle_id,
             )
         except ValueError as exc:

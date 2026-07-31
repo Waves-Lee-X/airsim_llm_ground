@@ -147,7 +147,11 @@ def test_browser_fleet_map_aggregates_all_known_vehicles():
                     "position_m",
                 }
             else:
-                assert set(vehicle) == {"vehicle_id", "available"}
+                assert set(vehicle) == {
+                    "vehicle_id",
+                    "available",
+                    "vehicle_name",
+                }
         switched = client.post(
             "/api/fleet/formation",
             json={

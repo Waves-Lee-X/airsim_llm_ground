@@ -692,9 +692,9 @@ class FleetRuntime:
         return self.server_for(self.default_vehicle_id)
 
     @property
-    def serial_runtime(self) -> ManualRuntime:
+    def serial_runtime(self) -> ManualRuntime | None:
         if self._real_vehicle_id is None:
-            raise RuntimeError("fleet runtime has no real serial bridge")
+            return None
         return self._runtimes[self._real_vehicle_id]
 
     def config_for(self, vehicle_id: int) -> ManualRuntimeConfig:
