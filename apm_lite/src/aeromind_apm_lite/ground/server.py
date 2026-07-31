@@ -40,6 +40,7 @@ from aeromind_apm_lite.common.contracts import (
     VehicleCommand,
     VehicleCommandType,
     VehicleTelemetry,
+    Vector3,
     WireMessage,
     new_session_challenge,
 )
@@ -227,6 +228,7 @@ class GroundServer:
         *,
         mission_id: UUID | None = None,
         target_altitude_m: float | None = None,
+        target_position_ned_m: tuple[float, float, float] | None = None,
         reason: str = "",
         ttl_ms: int = 5_000,
     ) -> VehicleCommand:
@@ -240,6 +242,15 @@ class GroundServer:
                 ttl_ms=ttl_ms,
                 command=command,
                 target_altitude_m=target_altitude_m,
+                target_position_ned_m=(
+                    Vector3(
+                        x=target_position_ned_m[0],
+                        y=target_position_ned_m[1],
+                        z=target_position_ned_m[2],
+                    )
+                    if target_position_ned_m is not None
+                    else None
+                ),
                 reason=reason,
             )
             try:

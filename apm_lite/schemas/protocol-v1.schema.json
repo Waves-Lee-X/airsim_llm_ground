@@ -2284,6 +2284,17 @@
               "default": null,
               "title": "Target Altitude M"
             },
+            "target_position_ned_m": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
             "ttl_ms": {
               "default": 5000,
               "maximum": 300000,
@@ -2315,6 +2326,7 @@
             "land",
             "rtl",
             "hold",
+            "goto",
             "cancel"
           ],
           "title": "VehicleCommandType",

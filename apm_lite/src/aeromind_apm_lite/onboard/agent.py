@@ -515,6 +515,18 @@ class OnboardAgent:
                 raise ValueError("takeoff requires target_altitude_m")
             return self._submit_takeoff_sequence(altitude_m, expires_monotonic_s)
 
+        if command.command == VehicleCommandType.GOTO:
+            position = command.target_position_ned_m
+            if position is None:  # pragma: no cover - contract validation
+                raise ValueError("goto requires target_position_ned_m")
+            return self._link.submit(
+                FcuCommand(
+                    FcuAction.GOTO_LOCAL_NED,
+                    target_position_ned_m=(position.x, position.y, position.z),
+                ),
+                expires_monotonic_s=expires_monotonic_s,
+            )
+
         action = {
             VehicleCommandType.ARM: FcuAction.ARM,
             VehicleCommandType.DISARM: FcuAction.DISARM,

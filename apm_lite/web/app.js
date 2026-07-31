@@ -75,6 +75,9 @@ function cacheElements() {
     "visionConsensus", "visionEvidenceList",
     "fleetPhase", "fleetApply", "fleetLeaderX",
     "fleetLeaderY", "fleetLeaderZ", "fleetSlots",
+    "fleetAltitude", "fleetHold", "fleetExecute", "fleetCancel",
+    "fleetMissionPhase", "fleetMissionVehicles",
+    "gotoX", "gotoY", "gotoZ", "gotoFly",
     "situationMap", "situationEmpty", "situationLegend", "situationStamp",
     "agentVehicleState", "agentLinkState", "agentGpsState",
     "agentPermissionState", "resetAgentSession", "agentConversation",
@@ -470,6 +473,21 @@ function renderSemanticResult() {
       semanticResultRow("待确认", plan.ambiguities),
       semanticResultRow("执行策略", plan.execution_policy || "preview_only"),
     );
+    const fleetPlan = plan.fleet_plan;
+    if (fleetPlan) {
+      const formationLabels = { line: "一字", v: "V 字", diamond: "正方形" };
+      list.append(
+        semanticResultRow("编队计划", formationLabels[fleetPlan.formation] || fleetPlan.formation),
+        semanticResultRow("领机目标", Array.isArray(fleetPlan.leader_target_map_m)
+          ? fleetPlan.leader_target_map_m.map((value) => fixed(value, 1)).join(", ")
+          : "--"),
+        semanticResultRow("间距 / 高度", `${fleetPlan.spacing_m ?? "--"} m / ${fleetPlan.altitude_m ?? "--"} m`),
+        semanticResultRow("保持时间", `${fleetPlan.hold_s ?? "--"} s`),
+        semanticResultRow("参与飞机", Array.isArray(fleetPlan.vehicle_ids)
+          ? fleetPlan.vehicle_ids.join(", ")
+          : "--"),
+      );
+    }
     const steps = document.createElement("div");
     steps.className = "mission-steps";
     (Array.isArray(plan.steps) ? plan.steps : []).forEach((step, index) => {
@@ -887,6 +905,47 @@ function renderFleetStatus(payload) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
+  const execution = value.execution || {};
+  const missionLabels = {
+    idle: "未执行",
+    starting: "启动中",
+    running: "执行中",
+    cancelling: "取消中",
+    cancelled: "已取消",
+    done: "已完成",
+    failed: "失败",
+  };
+  elements.fleetMissionPhase.textContent = "任务：" + (missionLabels[execution.phase] || execution.phase || "--")
+    + (execution.stage ? " · " + execution.stage : "");
+  elements.fleetMissionPhase.dataset.level =
+    execution.phase === "done" ? "ok"
+    : execution.phase === "failed" ? "bad"
+    : execution.phase === "running" || execution.phase === "cancelling" ? "warn"
+    : "none";
+  elements.fleetMissionPhase.title = execution.error || "";
+  elements.fleetExecute.disabled = execution.busy === true;
+  elements.fleetCancel.disabled = execution.busy !== true;
+  const missionVehicles = Array.isArray(execution.vehicles) ? execution.vehicles : [];
+  elements.fleetMissionVehicles.replaceChildren();
+  if (missionVehicles.length) {
+    const missionList = document.createElement("ol");
+    missionVehicles.forEach((item) => {
+      const row = document.createElement("li");
+      const id = document.createElement("span");
+      id.className = "fleet-slot-id";
+      id.textContent = "UAV" + String(item.vehicle_id).padStart(2, "0");
+      const step = document.createElement("span");
+      step.className = "fleet-slot-action " + (item.state || "pending");
+      step.textContent = item.step || "--";
+      const detail = document.createElement("span");
+      detail.className = "fleet-slot-note";
+      detail.textContent = item.detail || item.state || "";
+      row.append(id, step, detail);
+      missionList.append(row);
+    });
+    elements.fleetMissionVehicles.append(missionList);
+  }
+
   const directives = Array.isArray(value.directives) ? value.directives : [];
   elements.fleetSlots.replaceChildren();
   if (!directives.length) {
@@ -931,6 +990,77 @@ function switchDeploymentMode(mode) {
   if (vehicleId === state.selectedVehicleId) return;
   elements.vehicleSelect.value = String(vehicleId);
   elements.vehicleSelect.dispatchEvent(new Event("change"));
+}
+
+async function sendGoto() {
+  const x = finiteNumber(elements.gotoX.value);
+  const y = finiteNumber(elements.gotoY.value);
+  const z = finiteNumber(elements.gotoZ.value);
+  if (x === null || y === null || z === null) {
+    elements.statusText.textContent = "请填写有效的 NED 目标坐标";
+    return;
+  }
+  elements.gotoFly.disabled = true;
+  try {
+    const result = await requestJson(`/api/vehicles/${state.selectedVehicleId}/commands/goto`, {
+      method: "POST",
+      body: JSON.stringify({
+        target_position_ned_m: [x, y, z],
+        reason: "operator goto",
+      }),
+    });
+    elements.statusText.textContent = `v${state.selectedVehicleId} 飞往 (${x}, ${y}, ${z})：${result.successful ? "已完成" : "未完成"}`;
+  } catch (error) {
+    elements.statusText.textContent = error.message;
+  } finally {
+    elements.gotoFly.disabled = false;
+    void refreshStatus();
+  }
+}
+
+async function executeFleetMission() {
+  const active = elements.fleetFormations.find((button) => button.classList.contains("active"));
+  const formation = active ? active.dataset.fleetFormation : "line";
+  const leader = [
+    finiteNumber(elements.fleetLeaderX.value) ?? 0,
+    finiteNumber(elements.fleetLeaderY.value) ?? 0,
+    finiteNumber(elements.fleetLeaderZ.value) ?? -3,
+  ];
+  const simIds = (state.config?.vehicles || [])
+    .filter((vehicle) => String(vehicle.deployment_mode || "sim").toLowerCase() !== "real")
+    .map((vehicle) => Number(vehicle.vehicle_id));
+  const vehicleIds = simIds.length >= 2 ? simIds : [1, 2, 3, 4];
+  const payload = {
+    formation,
+    leader_target_map_m: leader,
+    spacing_m: 3.0,
+    altitude_m: finiteNumber(elements.fleetAltitude.value) ?? 2,
+    hold_s: finiteNumber(elements.fleetHold.value) ?? 5,
+    vehicle_ids: vehicleIds,
+    land_after: true,
+  };
+  elements.fleetExecute.disabled = true;
+  try {
+    const result = await requestJson("/api/fleet/execute", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    elements.statusText.textContent = `编队任务已启动：${result.stage || result.phase || ""}`;
+  } catch (error) {
+    elements.statusText.textContent = error.message;
+    elements.fleetExecute.disabled = false;
+  }
+  void refreshFleetStatus();
+}
+
+async function cancelFleetMission() {
+  try {
+    await requestJson("/api/fleet/execute/cancel", { method: "POST" });
+    elements.statusText.textContent = "正在取消编队任务并降落";
+  } catch (error) {
+    elements.statusText.textContent = error.message;
+  }
+  void refreshFleetStatus();
 }
 
 async function refreshFleetStatus() {
@@ -1583,6 +1713,8 @@ function updateControlState() {
       || allowedCommands.has(String(button.dataset.command || "").toLowerCase());
     button.disabled = !(enabled && actionAllowed);
   });
+  elements.gotoFly.disabled = !(enabled
+    && (simulated || deploymentMode !== "real" || allowedCommands.has("goto")));
   const takeoffEnabled = enabled
     && (simulated || deploymentMode !== "real" || allowedCommands.has("takeoff"));
   elements.altitudeMinus.disabled = !takeoffEnabled;
@@ -2308,6 +2440,15 @@ function bindEvents() {
   });
   elements.fleetApply.addEventListener("click", () => {
     void applyFleetFormation();
+  });
+  elements.fleetExecute.addEventListener("click", () => {
+    void executeFleetMission();
+  });
+  elements.fleetCancel.addEventListener("click", () => {
+    void cancelFleetMission();
+  });
+  elements.gotoFly.addEventListener("click", () => {
+    void sendGoto();
   });
   elements.missionParseForm.addEventListener("submit", (event) => {
     void parseMission(event);

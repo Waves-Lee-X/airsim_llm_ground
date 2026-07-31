@@ -17,7 +17,13 @@ from typing import Any, AsyncIterator
 from uuid import UUID
 from fastapi import Body, FastAPI, HTTPException, Response, WebSocket
 from fastapi.staticfiles import StaticFiles
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 from starlette.websockets import WebSocketDisconnect
 
 from aeromind_apm_lite.common.contracts import (
@@ -45,6 +51,11 @@ from aeromind_apm_lite.onboard.navigation_mission import (
     EKF_REQUIRED_GPS_NAVIGATION_FLAGS,
 )
 
+from .fleet_executor import (
+    FleetMissionConfig,
+    FleetMissionError,
+    FleetMissionRunner,
+)
 from .fleet_service import (
     FleetConfigError,
     FleetService,
@@ -101,6 +112,7 @@ class BrowserAction(str, Enum):
     HOLD = "hold"
     LAND = "land"
     RTL = "rtl"
+    GOTO = "goto"
 
 
 class CommandRequest(BaseModel):
@@ -116,9 +128,35 @@ class CommandRequest(BaseModel):
             "altitude",
         ),
     )
+    target_position_ned_m: tuple[float, float, float] | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "target_position_ned_m",
+            "target_position",
+            "position_ned_m",
+        ),
+    )
     reason: str = Field(default="browser operator command", max_length=256)
     ttl_ms: int | None = Field(default=None, ge=100, le=300_000)
     completion_timeout_s: float = Field(default=75.0, ge=1.0, le=310.0)
+
+    @model_validator(mode="after")
+    def command_parameters_are_consistent(self) -> "CommandRequest":
+        if self.altitude_m is not None and self.target_position_ned_m is not None:
+            raise ValueError(
+                "altitude_m and target_position_ned_m cannot be combined"
+            )
+        if self.target_position_ned_m is not None:
+            if not all(
+                isinstance(value, (int, float)) and math.isfinite(float(value))
+                for value in self.target_position_ned_m
+            ):
+                raise ValueError("target_position_ned_m must contain finite values")
+            if any(
+                abs(float(value)) > 100_000.0 for value in self.target_position_ned_m
+            ):
+                raise ValueError("target_position_ned_m values are out of range")
+        return self
 
 
 class SerialConnectionRequest(BaseModel):
@@ -153,6 +191,20 @@ class AgentConfirmationRequest(BaseModel):
 
     confirmed: bool
     vehicle_id: int | None = Field(default=None, ge=1, le=255)
+
+
+class FleetMissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    formation: str = Field(pattern="^(line|v|diamond)$")
+    leader_target_map_m: tuple[float, float, float]
+    spacing_m: float = Field(default=3.0, ge=0.5, le=50.0)
+    altitude_m: float = Field(default=2.0, ge=0.5, le=20.0)
+    hold_s: float = Field(default=3.0, ge=0.0, le=120.0)
+    vehicle_ids: tuple[int, ...] = Field(
+        default=(1, 2, 3, 4), min_length=2, max_length=8
+    )
+    land_after: bool = True
 
 
 class FleetFormationRequest(BaseModel):
@@ -262,6 +314,7 @@ class BrowserGateway:
         self.vision_consensus = vision_consensus or VisionConsensusTracker()
         self.vision_producer_version = vision_producer_version
         self.fleet = fleet or FleetService()
+        self.fleet_mission = FleetMissionRunner(runtime)
         self.events = EventBroker()
         self._telemetry_interval_s = telemetry_interval_s
         self._telemetry_task: asyncio.Task[None] | None = None
@@ -795,7 +848,32 @@ class BrowserGateway:
         return states
 
     def fleet_status_payload(self) -> dict[str, Any]:
-        return self.fleet.status_payload(self._fleet_states())
+        payload = self.fleet.status_payload(self._fleet_states())
+        payload["execution"] = self.fleet_mission.status_payload()
+        return payload
+
+    async def start_fleet_mission(
+        self,
+        payload: FleetMissionRequest,
+    ) -> dict[str, Any]:
+        config = FleetMissionConfig(
+            formation=FormationType(payload.formation),
+            leader_target_map_m=tuple(
+                float(value) for value in payload.leader_target_map_m
+            ),
+            spacing_m=payload.spacing_m,
+            altitude_m=payload.altitude_m,
+            hold_s=payload.hold_s,
+            vehicle_ids=tuple(payload.vehicle_ids),
+            land_after=payload.land_after,
+        )
+        try:
+            return await self.fleet_mission.start(config)
+        except FleetMissionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    def fleet_mission_status_payload(self) -> dict[str, Any]:
+        return self.fleet_mission.status_payload()
 
     def fleet_map_payload(self) -> dict[str, Any]:
         """Aggregate the real local-NED positions of every known vehicle.
@@ -1007,26 +1085,68 @@ class BrowserGateway:
             draft_id,
             self.mission_agent_context(vehicle_id),
         )
-        request = CommandRequest(
-            altitude_m=claim["arguments"].get("altitude_m"),
-            reason=(
-                f"operator-confirmed Mission Agent: {claim['reason']}"
-            )[:256],
-        )
-        try:
-            command = await self.issue_command(
-                claim["vehicle_id"],
-                BrowserAction(claim["action"]),
-                request,
+        action = str(claim["action"]).lower()
+        arguments = claim["arguments"] or {}
+        reason = (
+            f"operator-confirmed Mission Agent: {claim['reason']}"
+        )[:256]
+        if action == "goto":
+            request = CommandRequest(
+                target_position_ned_m=tuple(arguments["target_position_ned_m"]),
+                reason=reason,
             )
-        except Exception as exc:
-            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
-            self.mission_agent.record_execution(
-                draft_id,
-                succeeded=False,
-                result={"detail": str(detail)},
+            try:
+                command = await self.issue_command(
+                    claim["vehicle_id"],
+                    BrowserAction.GOTO,
+                    request,
+                )
+            except Exception as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                self.mission_agent.record_execution(
+                    draft_id,
+                    succeeded=False,
+                    result={"detail": str(detail)},
+                )
+                raise
+        elif action == "formation":
+            payload = FleetMissionRequest(
+                formation=arguments["formation"],
+                leader_target_map_m=tuple(arguments["leader_target_map_m"]),
+                spacing_m=arguments["spacing_m"],
+                altitude_m=arguments["altitude_m"],
+                hold_s=arguments["hold_s"],
+                vehicle_ids=tuple(arguments["vehicle_ids"]),
             )
-            raise
+            try:
+                command = await self.start_fleet_mission(payload)
+            except Exception as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                self.mission_agent.record_execution(
+                    draft_id,
+                    succeeded=False,
+                    result={"detail": str(detail)},
+                )
+                raise
+        else:
+            request = CommandRequest(
+                altitude_m=arguments.get("altitude_m"),
+                reason=reason,
+            )
+            try:
+                command = await self.issue_command(
+                    claim["vehicle_id"],
+                    BrowserAction(action),
+                    request,
+                )
+            except Exception as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                self.mission_agent.record_execution(
+                    draft_id,
+                    succeeded=False,
+                    result={"detail": str(detail)},
+                )
+                raise
         draft = self.mission_agent.record_execution(
             draft_id,
             succeeded=command.get("successful") is True,
@@ -1140,6 +1260,16 @@ class BrowserGateway:
                 status_code=422,
                 detail="altitude_m is only valid for takeoff",
             )
+        if action == BrowserAction.GOTO and request.target_position_ned_m is None:
+            raise HTTPException(
+                status_code=422,
+                detail="goto requires target_position_ned_m",
+            )
+        if action != BrowserAction.GOTO and request.target_position_ned_m is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="target_position_ned_m is only valid for goto",
+            )
         if not self.runtime.started_for(selected):
             raise HTTPException(status_code=503, detail="runtime is not ready")
 
@@ -1167,6 +1297,7 @@ class BrowserGateway:
                 selected,
                 command_type,
                 target_altitude_m=request.altitude_m,
+                target_position_ned_m=request.target_position_ned_m,
                 reason=request.reason,
                 ttl_ms=request.ttl_ms or config.command_ttl_ms,
             )
@@ -1704,6 +1835,20 @@ def create_app(
     @app.get("/api/fleet/map")
     async def fleet_map() -> dict[str, Any]:
         return gateway.fleet_map_payload()
+
+    @app.post("/api/fleet/execute")
+    async def fleet_execute(
+        payload: FleetMissionRequest,
+    ) -> dict[str, Any]:
+        return await gateway.start_fleet_mission(payload)
+
+    @app.get("/api/fleet/execute")
+    async def fleet_execute_status() -> dict[str, Any]:
+        return gateway.fleet_mission_status_payload()
+
+    @app.post("/api/fleet/execute/cancel")
+    async def fleet_execute_cancel() -> dict[str, Any]:
+        return await gateway.fleet_mission.cancel()
 
     @app.post("/api/fleet/formation")
     async def set_fleet_formation(

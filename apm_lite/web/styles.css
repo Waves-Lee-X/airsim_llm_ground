@@ -2609,3 +2609,52 @@ button:disabled {
 .situation-legend-item.offline {
   opacity: 0.55;
 }
+
+/* ---- goto control ---- */
+.goto-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 64px 64px auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.goto-control label {
+  color: var(--dim);
+  font-size: 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.goto-control input {
+  min-width: 0;
+}
+
+/* ---- fleet mission execution ---- */
+.fleet-execute {
+  display: grid;
+  grid-template-columns: auto 52px auto 52px 1fr 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  border-top: 1px solid var(--border);
+}
+
+.fleet-execute label {
+  color: var(--dim);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.fleet-execute input {
+  min-width: 0;
+}
+
+.fleet-mission {
+  padding: 0 11px 8px;
+}
+
+.fleet-mission .fleet-slots {
+  padding: 6px 0 0;
+}

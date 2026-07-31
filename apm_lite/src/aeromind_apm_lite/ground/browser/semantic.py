@@ -167,6 +167,45 @@ def normalize_mission_result(content: str, instruction: str) -> dict[str, Any]:
     steps = [item for item in _as_list(parsed.get("steps")) if isinstance(item, dict)]
     for index, step in enumerate(steps, start=1):
         step.setdefault("order", index)
+    raw_fleet = parsed.get("fleet_plan")
+    fleet_plan = None
+    if isinstance(raw_fleet, dict):
+        fleet_plan = {
+            "formation": str(raw_fleet.get("formation") or "").strip().lower(),
+            "leader_target_map_m": [
+                float(value)
+                for value in _as_list(raw_fleet.get("leader_target_map_m"))[:3]
+                if isinstance(value, (int, float))
+            ],
+            "spacing_m": (
+                float(raw_fleet["spacing_m"])
+                if isinstance(raw_fleet.get("spacing_m"), (int, float))
+                else None
+            ),
+            "altitude_m": (
+                float(raw_fleet["altitude_m"])
+                if isinstance(raw_fleet.get("altitude_m"), (int, float))
+                else None
+            ),
+            "hold_s": (
+                float(raw_fleet["hold_s"])
+                if isinstance(raw_fleet.get("hold_s"), (int, float))
+                else None
+            ),
+            "vehicle_ids": [
+                int(value)
+                for value in _as_list(raw_fleet.get("vehicle_ids"))
+                if isinstance(value, (int, float))
+            ],
+        }
+        if (
+            fleet_plan["formation"] not in {"line", "v", "diamond"}
+            or len(fleet_plan["leader_target_map_m"]) != 3
+            or fleet_plan["spacing_m"] is None
+            or fleet_plan["altitude_m"] is None
+            or len(fleet_plan["vehicle_ids"]) < 2
+        ):
+            fleet_plan = None
     return {
         "summary": str(parsed.get("summary") or instruction).strip(),
         "intent": str(parsed.get("intent") or "unknown").strip(),
@@ -177,6 +216,7 @@ def normalize_mission_result(content: str, instruction: str) -> dict[str, Any]:
         "constraints": _as_list(parsed.get("constraints")),
         "safety_checks": _as_list(parsed.get("safety_checks")),
         "ambiguities": _as_list(parsed.get("ambiguities")),
+        "fleet_plan": fleet_plan,
         "executable": False,
         "execution_policy": "preview_only",
         "format_warning": warning,
@@ -415,6 +455,11 @@ class SemanticService:
             "constraints, safety_checks, ambiguities。steps 中每项包含 order, action, "
             "vehicle_id, target, completion_condition。缺少坐标、颜色、编号或安全前提时"
             "必须写入 ambiguities。"
+            "如果任务涉及编队飞行或指定去向，额外返回 fleet_plan 对象："
+            "formation（line/v/diamond）、leader_target_map_m（[北, 东, 下] 米，"
+            "例如飞到 (8,0) 高度 2 米则为 [8,0,-2]）、spacing_m、altitude_m、hold_s、"
+            "vehicle_ids。无法确定任何一项时 fleet_plan 置为 null，并把缺失项写入 "
+            "ambiguities。"
         )
         messages = [
             {"role": "system", "content": system_text},

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>AeroMind APM Lite 地面站</title>
-    <link rel="stylesheet" href="/styles.css?v=20260731.6" />
+    <link rel="stylesheet" href="/styles.css?v=20260731.7" />
   </head>
   <body>
     <div class="app-shell">
@@ -130,6 +130,14 @@
               </div>
             </div>
 
+            <div class="goto-control">
+              <label for="gotoX">飞往 NED (X 北 / Y 东 / Z 下)</label>
+              <input id="gotoX" type="number" value="8" step="1" inputmode="decimal" aria-label="目标北向 X" />
+              <input id="gotoY" type="number" value="0" step="1" inputmode="decimal" aria-label="目标东向 Y" />
+              <input id="gotoZ" type="number" value="-2" step="1" inputmode="decimal" aria-label="目标下向 Z" />
+              <button id="gotoFly" class="semantic-action semantic-action-small" type="button" disabled>飞往</button>
+            </div>
+
             <div class="command-grid">
               <button class="command-button primary-command" type="button" data-command="arm" disabled><span aria-hidden="true">●</span><strong>解锁</strong></button>
               <button class="command-button" type="button" data-command="disarm" disabled><span aria-hidden="true">○</span><strong>加锁</strong></button>
@@ -161,6 +169,18 @@
       <button id="fleetApply" class="semantic-action semantic-action-small" type="button">应用</button>
     </div>
     <div id="fleetSlots" class="fleet-slots"><span class="semantic-empty">尚无编队数据</span></div>
+    <div class="fleet-execute">
+      <label for="fleetAltitude">高度</label>
+      <input id="fleetAltitude" type="number" value="2" min="1" max="20" step="1" inputmode="decimal" />
+      <label for="fleetHold">保持 s</label>
+      <input id="fleetHold" type="number" value="5" min="0" max="120" step="1" inputmode="decimal" />
+      <button id="fleetExecute" class="semantic-action semantic-action-small" type="button">执行编队</button>
+      <button id="fleetCancel" class="semantic-action semantic-action-small" type="button" disabled>取消/降落</button>
+    </div>
+    <div class="fleet-mission">
+      <span id="fleetMissionPhase" class="fleet-phase">任务：--</span>
+      <div id="fleetMissionVehicles" class="fleet-slots"></div>
+    </div>
   </section>
   <section class="panel situation-panel">
     <div class="panel-heading compact">
@@ -477,6 +497,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js?v=20260731.6" defer></script>
+    <script src="/app.js?v=20260731.7" defer></script>
   </body>
 </html>

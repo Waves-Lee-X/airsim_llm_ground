@@ -546,6 +546,35 @@ def test_serial_reconfiguration_is_rejected_outside_real_mode():
         assert response.status_code == 409
 
 
+def test_goto_command_validation_and_demo_execution():
+    app = demo_app()
+    with TestClient(app) as client:
+        missing_position = client.post(
+            "/api/vehicles/1/commands/goto",
+            json={"completion_timeout_s": 2.0},
+        )
+        assert missing_position.status_code == 422
+        assert "goto requires target_position_ned_m" in missing_position.json()["detail"]
+
+        stray_position = client.post(
+            "/api/control/land",
+            json={"target_position_ned_m": [8.0, 0.0, -2.0]},
+        )
+        assert stray_position.status_code == 422
+        assert "only valid for goto" in stray_position.json()["detail"]
+
+        executed = client.post(
+            "/api/vehicles/1/commands/goto",
+            json={
+                "target_position_ned_m": [8.0, 0.0, -2.0],
+                "completion_timeout_s": 2.0,
+            },
+        )
+        assert executed.status_code == 200
+        body = executed.json()
+        assert body["command"] == "goto"
+
+
 def test_georeference_api_saves_version_hash_and_round_trip_report(tmp_path):
     config_path = tmp_path / "venue.yaml"
     app = demo_app(georeference=GeoReferenceStore(config_path))

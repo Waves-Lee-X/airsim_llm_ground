@@ -15,6 +15,7 @@ from .models import (
     TrajectorySegment,
     VehicleCommand,
     VehicleCommandType,
+    Vector3,
     VehicleTelemetry,
     WireMessage,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "TrajectorySegment",
     "VehicleCommand",
     "VehicleCommandType",
+    "Vector3",
     "VehicleTelemetry",
     "WireMessage",
     "decode_message",

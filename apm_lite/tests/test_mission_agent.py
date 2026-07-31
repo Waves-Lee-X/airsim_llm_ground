@@ -14,6 +14,8 @@ from aeromind_apm_lite.ground.browser.mission_agent import (
     normalize_agent_result,
 )
 from aeromind_apm_lite.ground.browser.runtime import (
+    DemoApmLink,
+    FleetRuntime,
     ManualRuntime,
     ManualRuntimeConfig,
     ManualRuntimeMode,
@@ -122,18 +124,66 @@ def test_agent_receives_live_vehicle_context_and_keeps_bounded_history():
 def test_agent_deterministic_gate_blocks_non_atomic_and_unauthorized_actions():
     async def scenario():
         semantic = configured_semantic(
-            '{"reply":"已生成航点", "risk_level":"low",'
-            '"proposed_action":{"action":"goto","vehicle_id":3,'
+            '{"reply":"已生成航线", "risk_level":"low",'
+            '"proposed_action":{"action":"search","vehicle_id":3,'
             '"arguments":{"north_m":3}}}'
         )
         agent = MissionAgentService(semantic)
         session_id = agent.create_session()["session_id"]
 
-        payload = await agent.chat(session_id, "向北飞三米", healthy_context())
+        payload = await agent.chat(session_id, "搜索目标", healthy_context())
 
         assert payload["draft"]["status"] == "blocked"
         assert not payload["draft"]["executable"]
-        assert any("六种原子动作" in item for item in payload["draft"]["blockers"])
+        assert any("受支持的原子动作" in item for item in payload["draft"]["blockers"])
+
+    asyncio.run(scenario())
+
+
+def test_agent_goto_and_formation_drafts_require_sim_mode():
+    async def scenario():
+        semantic = configured_semantic(
+            '{"reply":"生成编队草案", "risk_level":"medium",'
+            '"proposed_action":{"action":"formation","vehicle_id":1,'
+            '"arguments":{"formation":"v","leader_target_map_m":[8,0,-2],'
+            '"spacing_m":3,"altitude_m":2,"hold_s":5,"vehicle_ids":[1,2,3,4]},'
+            '"reason":"飞往 (8,0) 编 V 字"}}'
+        )
+        agent = MissionAgentService(semantic)
+        session_id = agent.create_session()["session_id"]
+
+        real_payload = await agent.chat(session_id, "编队", healthy_context())
+        assert real_payload["draft"]["status"] == "blocked"
+        assert any("仿真" in item for item in real_payload["draft"]["blockers"])
+
+        sim_payload = await agent.chat(
+            session_id,
+            "编队",
+            healthy_context(
+                deployment_mode="demo",
+                vehicle_id=1,
+                allowed_commands=["arm", "disarm", "takeoff", "hold", "land", "rtl"],
+            ),
+        )
+        assert sim_payload["draft"]["status"] == "pending_confirmation"
+        assert sim_payload["draft"]["action"] == "formation"
+        assert sim_payload["draft"]["blockers"] == []
+        assert sim_payload["draft"]["arguments"]["formation"] == "v"
+
+        semantic._call_api = lambda _model, _messages: (
+            '{"reply":"编队草案", "risk_level":"medium",'
+            '"proposed_action":{"action":"formation","vehicle_id":1,'
+            '"arguments":{"formation":"circle","leader_target_map_m":[8,0,-2],'
+            '"spacing_m":3,"altitude_m":2,"hold_s":5,"vehicle_ids":[1,2,3,4]},'
+            '"reason":"编队"}}'
+        )
+        bad = await agent.chat(session_id, "编队", healthy_context(
+            deployment_mode="demo",
+            vehicle_id=1,
+            allowed_commands=["arm", "disarm", "takeoff", "hold", "land", "rtl"],
+        ))
+        assert bad["draft"]["status"] == "blocked"
+        assert any("队形必须是" in item for item in bad["draft"]["blockers"])
 
     asyncio.run(scenario())
 
@@ -268,3 +318,55 @@ def test_agent_api_executes_demo_action_only_after_explicit_confirmation():
             json={"confirmed": True},
         )
         assert duplicate.status_code == 409
+
+
+def test_agent_confirmed_formation_draft_starts_fleet_mission():
+    import time as _time
+
+    runtimes = [
+        ManualRuntime(
+            ManualRuntimeConfig(
+                mode=ManualRuntimeMode.SITL,
+                vehicle_id=vehicle_id,
+                vehicle_name=f"SITL UAV {vehicle_id}",
+                startup_timeout_s=2.0,
+            ),
+            link_factory=lambda _config: DemoApmLink(),
+        )
+        for vehicle_id in (1, 2, 3, 4)
+    ]
+    semantic = configured_semantic(
+        '{"reply":"已生成编队任务", "state_summary":"仿真就绪",'
+        '"risk_level":"medium", "questions":[], "proposed_action":'
+        '{"action":"formation","vehicle_id":1,'
+        '"arguments":{"formation":"v","leader_target_map_m":[8,0,-2],'
+        '"spacing_m":3,"altitude_m":2,"hold_s":0.5,"vehicle_ids":[1,2,3,4]},'
+        '"reason":"飞往 (8,0) 编 V 字"}}'
+    )
+    app = create_app(FleetRuntime(runtimes), semantic=semantic)
+    with TestClient(app) as client:
+        session = client.post("/api/agent/sessions").json()
+        chat = client.post(
+            f"/api/agent/sessions/{session['session_id']}/messages",
+            json={"message": "飞往 (8,0) 编 V 字"},
+        ).json()
+        draft = chat["draft"]
+        assert draft["action"] == "formation"
+        assert draft["status"] == "pending_confirmation"
+
+        confirmed = client.post(
+            f"/api/agent/drafts/{draft['draft_id']}/confirm",
+            json={"confirmed": True},
+        )
+        assert confirmed.status_code == 200
+        body = confirmed.json()
+        assert body["command_result"]["phase"] in {"starting", "running", "done"}
+
+        deadline = _time.time() + 30.0
+        phase = None
+        while _time.time() < deadline:
+            phase = client.get("/api/fleet/execute").json()["phase"]
+            if phase in {"done", "failed", "cancelled"}:
+                break
+            _time.sleep(0.2)
+        assert phase == "done", client.get("/api/fleet/execute").json()

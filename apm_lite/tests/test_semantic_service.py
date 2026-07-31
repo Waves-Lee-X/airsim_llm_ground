@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -45,6 +46,49 @@ class FakeCamera:
 
     async def get_frame(self):
         return self.frame
+
+
+def test_normalize_mission_result_extracts_fleet_plan():
+    plan = normalize_mission_result(
+        json.dumps(
+            {
+                "summary": "飞到 (8,0) 编 V 字",
+                "intent": "formation",
+                "fleet_plan": {
+                    "formation": "v",
+                    "leader_target_map_m": [8.0, 0.0, -2.0],
+                    "spacing_m": 3.0,
+                    "altitude_m": 2.0,
+                    "hold_s": 5.0,
+                    "vehicle_ids": [1, 2, 3, 4],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        "飞到 (8,0) 编 V 字",
+    )
+    assert plan["fleet_plan"] == {
+        "formation": "v",
+        "leader_target_map_m": [8.0, 0.0, -2.0],
+        "spacing_m": 3.0,
+        "altitude_m": 2.0,
+        "hold_s": 5.0,
+        "vehicle_ids": [1, 2, 3, 4],
+    }
+
+
+def test_normalize_mission_result_rejects_incomplete_fleet_plan():
+    plan = normalize_mission_result(
+        json.dumps(
+            {
+                "summary": "编队",
+                "fleet_plan": {"formation": "v"},
+            },
+            ensure_ascii=False,
+        ),
+        "编队",
+    )
+    assert plan["fleet_plan"] is None
 
 
 def configured_service():

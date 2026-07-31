@@ -10,6 +10,8 @@ from aeromind_apm_lite.ground.browser.fleet_service import (
     FleetService,
 )
 from aeromind_apm_lite.ground.browser.runtime import (
+    DemoApmLink,
+    FleetRuntime,
     ManualRuntime,
     ManualRuntimeConfig,
     ManualRuntimeMode,
@@ -163,6 +165,75 @@ def test_browser_fleet_map_aggregates_all_known_vehicles():
         refreshed = client.get("/api/fleet/map").json()
         assert refreshed["formation"]["formation"] == "v"
         assert refreshed["formation"]["leader_target_map_m"] == [8.0, 0.0, -2.0]
+
+
+def test_fleet_execute_api_requires_sim_vehicles_and_reports_status():
+    runtime = ManualRuntime(
+        ManualRuntimeConfig(mode=ManualRuntimeMode.DEMO, startup_timeout_s=2.0)
+    )
+    app = create_app(runtime)
+    with TestClient(app) as client:
+        idle = client.get("/api/fleet/execute")
+        assert idle.status_code == 200
+        assert idle.json()["phase"] == "idle"
+
+        rejected = client.post(
+            "/api/fleet/execute",
+            json={
+                "formation": "v",
+                "leader_target_map_m": [8.0, 0.0, -2.0],
+                "spacing_m": 3.0,
+                "altitude_m": 2.0,
+                "hold_s": 1.0,
+                "vehicle_ids": [1, 2, 3, 4],
+            },
+        )
+        assert rejected.status_code == 409
+        assert "仿真" in rejected.json()["detail"]
+
+        status = client.get("/api/fleet/status").json()
+        assert status["execution"]["phase"] == "idle"
+
+
+def test_fleet_mission_runner_completes_demo_sitl_round_trip():
+    import time as _time
+
+    runtimes = [
+        ManualRuntime(
+            ManualRuntimeConfig(
+                mode=ManualRuntimeMode.SITL,
+                vehicle_id=vehicle_id,
+                vehicle_name=f"SITL UAV {vehicle_id}",
+                startup_timeout_s=2.0,
+            ),
+            link_factory=lambda _config: DemoApmLink(),
+        )
+        for vehicle_id in (1, 2, 3, 4)
+    ]
+    app = create_app(FleetRuntime(runtimes))
+    with TestClient(app) as client:
+        started = client.post(
+            "/api/fleet/execute",
+            json={
+                "formation": "v",
+                "leader_target_map_m": [8.0, 0.0, -2.0],
+                "spacing_m": 3.0,
+                "altitude_m": 2.0,
+                "hold_s": 0.5,
+                "vehicle_ids": [1, 2, 3, 4],
+            },
+        )
+        assert started.status_code == 200
+        assert started.json()["phase"] == "starting"
+
+        deadline = _time.time() + 30.0
+        phase = None
+        while _time.time() < deadline:
+            phase = client.get("/api/fleet/execute").json()["phase"]
+            if phase in {"done", "failed", "cancelled"}:
+                break
+            _time.sleep(0.2)
+        assert phase == "done", client.get("/api/fleet/execute").json()
 
 
 def test_fleet_status_is_included_in_station_status():

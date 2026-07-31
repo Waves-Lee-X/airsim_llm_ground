@@ -42,6 +42,7 @@ class VehicleCommandType(str, Enum):
     LAND = "land"
     RTL = "rtl"
     HOLD = "hold"
+    GOTO = "goto"
     CANCEL = "cancel"
 
 
@@ -119,14 +120,19 @@ class VehicleCommand(MessageBase):
     target_altitude_m: Optional[float] = Field(
         default=None, gt=0.0, le=120.0
     )
+    target_position_ned_m: Optional[Vector3] = None
     reason: str = Field(default="", max_length=256)
 
     @model_validator(mode="after")
-    def takeoff_requires_altitude(self) -> "VehicleCommand":
+    def command_parameters_are_consistent(self) -> "VehicleCommand":
         if self.command == VehicleCommandType.TAKEOFF and self.target_altitude_m is None:
             raise ValueError("takeoff requires target_altitude_m")
         if self.command != VehicleCommandType.TAKEOFF and self.target_altitude_m is not None:
             raise ValueError("target_altitude_m is only valid for takeoff")
+        if self.command == VehicleCommandType.GOTO and self.target_position_ned_m is None:
+            raise ValueError("goto requires target_position_ned_m")
+        if self.command != VehicleCommandType.GOTO and self.target_position_ned_m is not None:
+            raise ValueError("target_position_ned_m is only valid for goto")
         return self
 
 

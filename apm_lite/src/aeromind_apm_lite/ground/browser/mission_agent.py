@@ -16,7 +16,7 @@ from .semantic import SemanticService, extract_json_object
 
 
 ATOMIC_AGENT_ACTIONS = frozenset(
-    {"arm", "disarm", "takeoff", "hold", "land", "rtl"}
+    {"arm", "disarm", "takeoff", "hold", "land", "rtl", "goto", "formation"}
 )
 
 
@@ -146,7 +146,7 @@ class MissionAgentService:
         "你是 AeroMind APM Lite 的 Mission Agent。你可以解释当前飞机状态、回答问题并"
         "生成供操作员确认的单个原子动作草案，但你从不直接控制无人机。所有事实必须来自"
         "提供的状态 JSON，不得编造坐标、传感器、链路或执行结果。仅允许建议 arm、"
-        "disarm、takeoff、hold、land、rtl；GOTO、编队、搜索、路径规划和其他动作只能"
+        "disarm、takeoff、hold、land、rtl；GOTO与编队只允许在仿真（SIM/DEMO）模式下建议草案；搜索、路径规划和只能"
         "文字说明，不得放入 proposed_action。只返回合法 JSON，不输出 Markdown。字段为"
         " reply、state_summary、risk_level、questions、proposed_action。proposed_action"
         " 为 null 或包含 action、vehicle_id、arguments、reason；takeoff arguments 只含"
@@ -366,7 +366,7 @@ class MissionAgentService:
         if action == "return_home":
             action = "rtl"
         if action not in ATOMIC_AGENT_ACTIONS:
-            blockers.append("Agent 只允许建议六种原子动作")
+            blockers.append("Agent 只允许建议受支持的原子动作（arm/disarm/takeoff/hold/land/rtl/goto/formation）")
 
         current_vehicle_id = _integer(context.get("vehicle_id"))
         raw_vehicle_id = proposal.get("vehicle_id")
@@ -391,11 +391,71 @@ class MissionAgentService:
                 blockers.append("起飞高度必须在 0.5 到 20 米之间")
             else:
                 arguments["altitude_m"] = altitude
+        elif action == "goto":
+            position = raw_arguments.get("target_position_ned_m")
+            if not isinstance(position, (list, tuple)) or len(position) != 3:
+                blockers.append("GOTO 需要 target_position_ned_m（北、东、下三个数值）")
+            else:
+                values = [float(value) for value in position]
+                if not all(math.isfinite(value) for value in values) or any(
+                    abs(value) > 100_000.0 for value in values
+                ):
+                    blockers.append("GOTO 目标坐标超出有效范围")
+                else:
+                    arguments["target_position_ned_m"] = values
+        elif action == "formation":
+            formation = str(raw_arguments.get("formation") or "").strip().lower()
+            leader = raw_arguments.get("leader_target_map_m")
+            spacing = _finite_float(raw_arguments.get("spacing_m"))
+            altitude = _finite_float(raw_arguments.get("altitude_m"))
+            hold = _finite_float(raw_arguments.get("hold_s"))
+            ids = raw_arguments.get("vehicle_ids")
+            if formation not in {"line", "v", "diamond"}:
+                blockers.append("队形必须是 line、v 或 diamond")
+            if not isinstance(leader, (list, tuple)) or len(leader) != 3:
+                blockers.append("编队需要 leader_target_map_m（北、东、下三个数值）")
+            else:
+                leader_values = [float(value) for value in leader]
+                if not all(math.isfinite(value) for value in leader_values):
+                    blockers.append("编队领机目标坐标无效")
+            if spacing is None or not 0.5 <= spacing <= 50.0:
+                blockers.append("编队间距必须在 0.5 到 50 米之间")
+            if altitude is None or not 0.5 <= altitude <= 20.0:
+                blockers.append("编队高度必须在 0.5 到 20 米之间")
+            if hold is None or not 0.0 <= hold <= 120.0:
+                blockers.append("编队保持时间必须在 0 到 120 秒之间")
+            if not isinstance(ids, (list, tuple)) or not 2 <= len(ids) <= 8:
+                blockers.append("编队需要 2 到 8 架飞机的 vehicle_ids")
+            else:
+                id_values = []
+                for item in ids:
+                    value = _integer(item)
+                    if value is None or not 1 <= value <= 255:
+                        blockers.append("编队 vehicle_ids 必须是 1 到 255 的整数")
+                        break
+                    id_values.append(value)
+                if len(id_values) != len(set(id_values)):
+                    blockers.append("编队 vehicle_ids 不能重复")
+                if id_values:
+                    arguments["vehicle_ids"] = id_values
+            if formation in {"line", "v", "diamond"}:
+                arguments["formation"] = formation
+            if leader is not None and len(leader) == 3:
+                try:
+                    arguments["leader_target_map_m"] = [float(value) for value in leader]
+                except (TypeError, ValueError):
+                    blockers.append("编队领机目标坐标无效")
+            if spacing is not None:
+                arguments["spacing_m"] = spacing
+            if altitude is not None:
+                arguments["altitude_m"] = altitude
+            if hold is not None:
+                arguments["hold_s"] = hold
         elif raw_arguments:
             blockers.append("该原子动作不接受参数")
 
         deployment_mode = str(context.get("deployment_mode") or "").lower()
-        simulated = deployment_mode == "demo"
+        simulated = deployment_mode != "real"
         if not simulated:
             if context.get("agent_connected") is not True:
                 blockers.append("机载代理未连接")
@@ -408,6 +468,8 @@ class MissionAgentService:
             }
             if action and action not in allowed:
                 blockers.append(f"{action} 不在当前机载白名单")
+        if action in {"goto", "formation"} and not simulated:
+            blockers.append("GOTO 与编队执行仅在仿真（SIM/DEMO）模式下可用")
 
         telemetry = context.get("telemetry")
         if not isinstance(telemetry, dict):
