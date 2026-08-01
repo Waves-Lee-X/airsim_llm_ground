@@ -439,6 +439,182 @@ def test_agent_plan_draft_requires_sim_and_validates_steps():
     asyncio.run(scenario())
 
 
+def test_agent_analyze_proposed_action_becomes_plan_draft():
+    async def scenario():
+        sim_context = healthy_context(
+            deployment_mode="demo",
+            vehicle_id=1,
+            allowed_commands=["arm", "disarm", "takeoff", "hold", "land", "rtl"],
+        )
+        semantic = configured_semantic(
+            json.dumps(
+                {
+                    "reply": "先分析画面",
+                    "risk_level": "low",
+                    "proposed_action": {
+                        "action": "analyze",
+                        "vehicle_id": 1,
+                        "arguments": {"prompt": "橙色球体", "navigate_after": True},
+                        "reason": "识别橙色球体并飞近",
+                    },
+                },
+                ensure_ascii=False,
+            )
+        )
+        agent = MissionAgentService(semantic)
+        session_id = agent.create_session()["session_id"]
+        pending = await agent.chat(session_id, "识别橙色球体", sim_context)
+        draft = pending["draft"]
+        assert draft["action"] == "plan"
+        assert draft["status"] == "pending_confirmation"
+        steps = draft["arguments"]["steps"]
+        assert steps[0]["action"] == "takeoff"
+        assert steps[1]["action"] == "analyze"
+        assert steps[1]["arguments"]["navigate_after"] is True
+
+    asyncio.run(scenario())
+
+
+def test_agent_plan_goto_normalizes_altitude_and_injects_takeoff():
+    async def scenario():
+        sim_context = healthy_context(
+            deployment_mode="demo",
+            vehicle_id=1,
+            allowed_commands=["arm", "disarm", "takeoff", "hold", "land", "rtl", "goto"],
+        )
+        semantic = configured_semantic(
+            json.dumps(
+                {
+                    "reply": "已生成计划",
+                    "risk_level": "low",
+                    "plan": [
+                        {
+                            "action": "goto",
+                            "vehicle_ids": [1],
+                            "arguments": {"target_position_ned_m": [15, 0, -0.01]},
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        agent = MissionAgentService(semantic)
+        session_id = agent.create_session()["session_id"]
+        pending = await agent.chat(session_id, "向目标飞15米", sim_context)
+        steps = pending["draft"]["arguments"]["steps"]
+        assert pending["draft"]["status"] == "pending_confirmation"
+        assert steps[0]["action"] == "takeoff"
+        assert steps[0]["arguments"]["altitude_m"] == 3.0
+        assert steps[1]["action"] == "goto"
+        assert steps[1]["arguments"]["target_position_ned_m"] == [15, 0, -2.0]
+
+        semantic._call_api = lambda _model, _messages: (
+            json.dumps(
+                {
+                    "reply": "已生成计划",
+                    "risk_level": "low",
+                    "plan": [
+                        {
+                            "action": "goto",
+                            "vehicle_ids": [1],
+                            "arguments": {"target_position_ned_m": [15, 0, 3]},
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        flipped = await agent.chat(session_id, "飞3米高", sim_context)
+        goto_step = flipped["draft"]["arguments"]["steps"][1]
+        assert goto_step["arguments"]["target_position_ned_m"] == [15, 0, -3]
+
+        semantic._call_api = lambda _model, _messages: (
+            json.dumps(
+                {
+                    "reply": "已生成计划",
+                    "risk_level": "low",
+                    "plan": [
+                        {
+                            "action": "goto",
+                            "vehicle_ids": [1],
+                            "arguments": {"target_position_ned_m": [600, 0, -3]},
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        far = await agent.chat(session_id, "飞到远处", sim_context)
+        assert far["draft"]["status"] == "blocked"
+        assert any("过远" in item for item in far["draft"]["blockers"])
+
+    asyncio.run(scenario())
+
+
+def test_agent_plan_analyze_accepts_approach_distance_and_injects_takeoff():
+    async def scenario():
+        sim_context = healthy_context(
+            deployment_mode="demo",
+            vehicle_id=1,
+            allowed_commands=["arm", "disarm", "takeoff", "hold", "land", "rtl"],
+        )
+        semantic = configured_semantic(
+            json.dumps(
+                {
+                    "reply": "已生成计划",
+                    "risk_level": "low",
+                    "plan": [
+                        {
+                            "action": "analyze",
+                            "vehicle_ids": [1],
+                            "arguments": {
+                                "prompt": "橙色球体",
+                                "navigate_after": True,
+                                "approach_distance_m": 20,
+                            },
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        agent = MissionAgentService(semantic)
+        session_id = agent.create_session()["session_id"]
+        pending = await agent.chat(session_id, "向球飞20米", sim_context)
+        steps = pending["draft"]["arguments"]["steps"]
+        assert pending["draft"]["status"] == "pending_confirmation"
+        assert steps[0]["action"] == "takeoff"
+        assert steps[0]["arguments"]["altitude_m"] == 3.0
+        assert steps[1]["action"] == "analyze"
+        assert steps[1]["arguments"]["approach_distance_m"] == 20.0
+
+        semantic._call_api = lambda _model, _messages: (
+            json.dumps(
+                {
+                    "reply": "已生成计划",
+                    "risk_level": "low",
+                    "plan": [
+                        {
+                            "action": "analyze",
+                            "vehicle_ids": [1],
+                            "arguments": {
+                                "prompt": "x",
+                                "navigate_after": True,
+                                "approach_distance_m": 200,
+                            },
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        bad = await agent.chat(session_id, "飞200米", sim_context)
+        assert bad["draft"]["status"] == "blocked"
+        assert any("approach_distance_m" in item for item in bad["draft"]["blockers"])
+
+    asyncio.run(scenario())
+
+
 def test_approach_bearing_math_matches_estimator():
     # A target far off to the right (center_x > 0.5) must yield a positive
     # eastward bearing when the aircraft faces north (yaw=0).

@@ -160,12 +160,18 @@ class MissionAgentService:
         "plan 为步骤数组，每步包含 action、vehicle_id 或 vehicle_ids、arguments、reason；"
         "支持动作 "
         "arm/disarm/takeoff/goto/formation/hold/land/analyze；goto arguments 含 "
-        "target_position_ned_m（[北,东,下]）；"
+        "target_position_ned_m（[北,东,下]：z 为向下为正，z=-3 表示 3 米高度，"
+        "禁止贴地目标 z≈0 或正数高度）；"
         "formation arguments 含 formation（line/v/diamond）、leader_target_map_m、spacing_m、altitude_m；"
-        "analyze arguments 可含 prompt 与 navigate_after（navigate_after 必须是布尔值 true 或 false，"
-        "表示识别到目标后由规划器自动定位并飞往目标，不要传坐标对象），"
+        "analyze 只能作为 plan 步骤，不能作为单动作 proposed_action；"
+        "analyze arguments 可含 prompt、navigate_after 与 approach_distance_m"
+        "（navigate_after 必须是布尔值 true 或 false，表示识别到目标后由规划器自动定位并飞往目标，"
+        "不要传坐标对象；approach_distance_m 为朝目标方向逼近的米数，默认 15），"
         "且只能指定一架飞机。"
-        "当 analyze 已设置 navigate_after 时，不要再额外生成 goto 步骤。"
+        "用户要求‘向目标方向飞 X 米’时应使用 analyze 的 navigate_after=true 与 approach_distance_m=X，"
+        "不要凭空编造 goto 坐标；当 analyze 已设置 navigate_after 时，不要再额外生成 goto 步骤。"
+        "若目标飞机未起飞（armed=false 且模式为 LAND/STABILIZE），飞行类步骤"
+        "（goto/analyze+navigate_after/formation）之前必须先加 takeoff 步骤。"
         "不要声称动作已经执行。"
     )
 
@@ -250,6 +256,29 @@ class MissionAgentService:
                     "reason": (
                         str(result["reply"] or "Mission Agent 计划")[:128]
                     ),
+                }
+            if (
+                isinstance(proposal, dict)
+                and str(proposal.get("action") or "").strip().lower()
+                == "analyze"
+            ):
+                # analyze only exists as a plan step; wrap a single-action
+                # proposal into a one-step plan instead of blocking it.
+                vehicle_id = _integer(proposal.get("vehicle_id"))
+                proposal = {
+                    "action": "plan",
+                    "plan": [
+                        {
+                            "action": "analyze",
+                            "vehicle_ids": (
+                                [vehicle_id] if vehicle_id is not None else []
+                            ),
+                            "arguments": proposal.get("arguments") or {},
+                        }
+                    ],
+                    "reason": str(
+                        proposal.get("reason") or "视觉分析草案"
+                    )[:128],
                 }
             draft = self._create_draft(
                 session,
@@ -451,8 +480,27 @@ class MissionAgentService:
                         values = [float(value) for value in position]
                         if not all(math.isfinite(value) for value in values):
                             blockers.append(f"第 {index} 步 GOTO 坐标无效")
+                        elif abs(values[0]) > 500.0 or abs(values[1]) > 500.0:
+                            blockers.append(
+                                f"第 {index} 步 GOTO 目标过远（水平距离需在 500 米内）"
+                            )
                         else:
-                            arguments["target_position_ned_m"] = values
+                            if values[2] >= 0.5:
+                                # The model often uses altitude-positive
+                                # convention; NED wants down-positive.
+                                values[2] = -values[2]
+                            elif values[2] > -0.5:
+                                # Near-ground/zero altitude: normalize to a
+                                # safe working altitude instead of a
+                                # ground-level target that can never be
+                                # reached physically.
+                                values[2] = -2.0
+                            if values[2] < -100.0:
+                                blockers.append(
+                                    f"第 {index} 步 GOTO 高度超出范围"
+                                )
+                            else:
+                                arguments["target_position_ned_m"] = values
                     except (TypeError, ValueError):
                         blockers.append(f"第 {index} 步 GOTO 坐标无效")
             elif action == "analyze":
@@ -472,6 +520,13 @@ class MissionAgentService:
                         blockers.append(f"第 {index} 步 navigate_after 必须是布尔值")
                 elif navigate:
                     arguments["navigate_after"] = True
+                distance = _finite_float(raw_args.get("approach_distance_m"))
+                if distance is not None and not 1.0 <= distance <= 100.0:
+                    blockers.append(
+                        f"第 {index} 步 approach_distance_m 必须在 1-100 米"
+                    )
+                elif distance is not None:
+                    arguments["approach_distance_m"] = distance
             elif action == "formation":
                 formation = str(raw_args.get("formation") or "").strip().lower()
                 leader = raw_args.get("leader_target_map_m")
@@ -506,6 +561,47 @@ class MissionAgentService:
                         "arguments": arguments,
                     }
                 )
+        # A grounded vehicle cannot physically complete flight steps; ensure
+        # it takes off first when the plan omitted the step.
+        context_vehicle = current_vehicle_id
+        telemetry = context.get("telemetry") if isinstance(context, dict) else None
+        armed = context.get("armed")
+        if armed is None and isinstance(telemetry, dict):
+            armed = telemetry.get("armed")
+        mode = str(context.get("mode") or "").upper()
+        if not mode and isinstance(telemetry, dict):
+            mode = str(telemetry.get("mode") or "").upper()
+        context_grounded = (
+            context_vehicle is not None
+            and armed is False
+            and mode in {"LAND", "STABILIZE", ""}
+        )
+        if context_grounded:
+            planned: list[dict[str, Any]] = []
+            taken_off: set[int] = set()
+            for step in normalized:
+                ids = set(step["vehicle_ids"])
+                if step["action"] == "takeoff":
+                    taken_off.update(ids)
+                needs_flight = step["action"] in {"goto", "formation"} or (
+                    step["action"] == "analyze"
+                    and bool(step["arguments"].get("navigate_after"))
+                )
+                if (
+                    needs_flight
+                    and context_vehicle in ids
+                    and context_vehicle not in taken_off
+                ):
+                    planned.append(
+                        {
+                            "action": "takeoff",
+                            "vehicle_ids": [context_vehicle],
+                            "arguments": {"altitude_m": 3.0},
+                        }
+                    )
+                    taken_off.add(context_vehicle)
+                planned.append(step)
+            normalized = planned
         return normalized, blockers
 
     def _create_draft(

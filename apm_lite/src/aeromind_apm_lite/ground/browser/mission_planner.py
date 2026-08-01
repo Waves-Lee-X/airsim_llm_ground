@@ -309,6 +309,9 @@ class MissionPlanner:
                         vehicle_id,
                         analysis,
                         services[vehicle_id],
+                        approach_distance_m=float(
+                            params.get("approach_distance_m", 15.0)
+                        ),
                     )
                     if approach is None:
                         navigate_detail = "；未能定位目标，未导航"
