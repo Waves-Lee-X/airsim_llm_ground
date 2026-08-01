@@ -69,6 +69,15 @@ def _standoff_point(
     return (target[0] - dx * scale, target[1] - dy * scale)
 
 
+def _recenter_leg_m(distance_m: float, standoff_m: float) -> float:
+    """Clamp the recenter leg so the vehicle never crosses the standoff
+    safety margin (1.5 m) while centering the target in frame."""
+    leg = 5.0
+    if standoff_m > 0.0:
+        leg = min(leg, max(0.0, float(distance_m) - standoff_m - 1.5))
+    return leg
+
+
 _PLAN_ACTIONS = frozenset(
     {"arm", "disarm", "takeoff", "goto", "formation", "hold", "land", "analyze"}
 )
@@ -463,6 +472,7 @@ class MissionPlanner:
                     current[0] + dx * approach_distance_m,
                     current[1] + dy * approach_distance_m,
                     current[2],
+                    yaw_rad=math.atan2(dy, dx),
                     expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
                 ),
                 vehicle_id,
@@ -825,6 +835,179 @@ class MissionPlanner:
             )
         return f"；{source_label}，已飞往目标 ({tx:.1f}, {ty:.1f})"
 
+    async def _verify_target_in_view(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        params: Mapping[str, Any],
+        standoff_m: float,
+    ) -> str | None:
+        """Require the target back in frame and centered before the analyze
+        step may complete (the blind fallback approach is not proof)."""
+        prompt = str(
+            params.get("prompt")
+            or "识别画面中的目标物体（锥桶/球体）"
+        )
+        for _round in range(4):
+            analysis = await self.analyzer(vehicle_id, prompt)
+            center = self._analysis_target_center(analysis)
+            target_ned = await self._locate_visual_target(vehicle_id, analysis)
+            if (
+                center is not None
+                and abs(float(center[0]) - 0.5) <= 0.25
+                and target_ned is not None
+                and await self._target_reachable(vehicle_id, target_ned)
+            ):
+                target_ned = await self._recenter_and_relocalize(
+                    vehicle_id,
+                    service,
+                    analysis,
+                    params,
+                    target_ned,
+                    standoff_m,
+                )
+                if await self._target_reachable(vehicle_id, target_ned):
+                    return await self._fly_to_visual_standoff(
+                        vehicle_id,
+                        service,
+                        target_ned,
+                        standoff_m,
+                        "最终校验定位",
+                    )
+            coverage = self._frame_coverage_ratio(analysis)
+            if coverage is not None and coverage > 0.55:
+                backed = await self._back_away_from_target(
+                    vehicle_id,
+                    service,
+                    analysis,
+                )
+                if backed:
+                    continue
+            analysis, target_ned = await self._search_visual_target(
+                vehicle_id,
+                service,
+                analysis,
+                params,
+            )
+            if (
+                target_ned is not None
+                and await self._target_reachable(vehicle_id, target_ned)
+            ):
+                target_ned = await self._recenter_and_relocalize(
+                    vehicle_id,
+                    service,
+                    analysis,
+                    params,
+                    target_ned,
+                    standoff_m,
+                )
+                if await self._target_reachable(vehicle_id, target_ned):
+                    return await self._fly_to_visual_standoff(
+                        vehicle_id,
+                        service,
+                        target_ned,
+                        standoff_m,
+                        "搜索后定位",
+                    )
+        return None
+
+    def _frame_coverage_ratio(
+        self,
+        analysis: dict[str, Any],
+    ) -> float | None:
+        """Fraction of the frame covered by the detected target blob."""
+        cross = analysis.get("cross_validation")
+        if isinstance(cross, dict):
+            detection = cross.get("detection")
+            if isinstance(detection, dict):
+                ratio = detection.get("coverage_ratio")
+                if isinstance(ratio, (int, float)) and ratio > 0.0:
+                    return float(ratio)
+        opencv = analysis.get("opencv_detection")
+        frame_size = analysis.get("frame_size_px")
+        bbox = opencv.get("bbox") if isinstance(opencv, dict) else None
+        if (
+            isinstance(bbox, (list, tuple))
+            and len(bbox) == 4
+            and all(isinstance(value, (int, float)) for value in bbox)
+            and isinstance(frame_size, (list, tuple))
+            and len(frame_size) == 2
+            and frame_size[0] > 0
+            and frame_size[1] > 0
+        ):
+            bx, by, bw, bh = (float(value) for value in bbox)
+            return min(
+                1.0,
+                (bw * bh) / (float(frame_size[0]) * float(frame_size[1])),
+            )
+        return None
+
+    async def _back_away_from_target(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        analysis: dict[str, Any],
+    ) -> bool:
+        """Move 6 m away from the target direction when it fills the frame."""
+        link = self._runtime.link_for(vehicle_id)
+        if link is None:
+            return False
+        snapshot = link.telemetry_snapshot()
+        position = snapshot.local_position_ned_m
+        if position is None:
+            return False
+        yaw = (
+            float(snapshot.attitude_rpy_rad[2])
+            if snapshot.attitude_rpy_rad is not None
+            else 0.0
+        )
+        center = self._analysis_target_center(analysis)
+        if center is not None:
+            frame_size = analysis.get("frame_size_px")
+            fov = analysis.get("camera_fov_degrees")
+            if (
+                isinstance(frame_size, (list, tuple))
+                and len(frame_size) == 2
+                and fov is not None
+            ):
+                horizontal = (float(center[0]) - 0.5) * 2.0
+                h_angle = horizontal * math.radians(float(fov)) / 2.0
+                dir_b_x = math.cos(h_angle)
+                dir_b_y = math.sin(h_angle)
+                dir_x = math.cos(yaw) * dir_b_x - math.sin(yaw) * dir_b_y
+                dir_y = math.sin(yaw) * dir_b_x + math.cos(yaw) * dir_b_y
+                norm = math.hypot(dir_x, dir_y)
+                if norm > 1e-6:
+                    dx, dy = dir_x / norm, dir_y / norm
+                    await self._await_handle(
+                        service.goto_local_ned(
+                            position[0] - dx * 6.0,
+                            position[1] - dy * 6.0,
+                            position[2],
+                            yaw_rad=math.atan2(dy, dx),
+                            expires_monotonic_s=(
+                                self._clock() + _STEP_TIMEOUT_S
+                            ),
+                        ),
+                        vehicle_id,
+                        "back_away",
+                        _STEP_TIMEOUT_S,
+                    )
+                    return True
+        await self._await_handle(
+            service.goto_local_ned(
+                position[0] - math.cos(yaw) * 6.0,
+                position[1] - math.sin(yaw) * 6.0,
+                position[2],
+                yaw_rad=yaw,
+                expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+            ),
+            vehicle_id,
+            "back_away",
+            _STEP_TIMEOUT_S,
+        )
+        return True
+
     async def _target_reachable(
         self,
         vehicle_id: int,
@@ -850,6 +1033,7 @@ class MissionPlanner:
         analysis: dict[str, Any],
         params: Mapping[str, Any],
         target_ned: tuple[float, float, float],
+        standoff_m: float = 0.0,
     ) -> tuple[float, float, float]:
         """Move toward the target in short legs, re-analyzing until the target
         sits near the frame center (edge/occluded pixels localize poorly)."""
@@ -864,24 +1048,36 @@ class MissionPlanner:
                 float(current_best[1]) - current[1],
                 float(current_best[0]) - current[0],
             )
-            try:
-                await self._await_handle(
-                    service.goto_local_ned(
-                        current[0] + math.cos(bearing) * 5.0,
-                        current[1] + math.sin(bearing) * 5.0,
-                        current[2],
-                        yaw_rad=bearing,
-                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
-                    ),
-                    vehicle_id,
-                    "recenter_yaw",
-                    _STEP_TIMEOUT_S,
-                )
-            except FleetMissionError as exc:
-                raise FleetMissionError(
-                    f"{exc} [pos=({current[0]:.1f},{current[1]:.1f}) "
-                    f"target=({current_best[0]:.1f},{current_best[1]:.1f})]"
-                ) from exc
+            # Never let the recenter leg overshoot the requested standoff:
+            # approaching too close fills the frame, blinds the VLM and can
+            # make the reachability guard discard a valid target.
+            distance_m = math.hypot(
+                float(current_best[0]) - current[0],
+                float(current_best[1]) - current[1],
+            )
+            leg_m = _recenter_leg_m(distance_m, standoff_m)
+            if leg_m >= 0.75:
+                try:
+                    await self._await_handle(
+                        service.goto_local_ned(
+                            current[0] + math.cos(bearing) * leg_m,
+                            current[1] + math.sin(bearing) * leg_m,
+                            current[2],
+                            yaw_rad=bearing,
+                            expires_monotonic_s=(
+                                self._clock() + _STEP_TIMEOUT_S
+                            ),
+                        ),
+                        vehicle_id,
+                        "recenter_yaw",
+                        _STEP_TIMEOUT_S,
+                    )
+                except FleetMissionError as exc:
+                    raise FleetMissionError(
+                        f"{exc} [pos=({current[0]:.1f},{current[1]:.1f}) "
+                        f"target=({current_best[0]:.1f},"
+                        f"{current_best[1]:.1f})]"
+                    ) from exc
             analysis = await self.analyzer(vehicle_id, prompt)
             refined = await self._locate_visual_target(vehicle_id, analysis)
             if refined is not None and await self._target_reachable(vehicle_id, refined):
@@ -1011,6 +1207,7 @@ class MissionPlanner:
                 analysis,
                 params,
                 target_ned,
+                standoff,
             )
             if not await self._target_reachable(vehicle_id, target_ned):
                 target_ned = None
@@ -1045,9 +1242,16 @@ class MissionPlanner:
         )
         if approach is None:
             return "；未能定位目标，未导航"
-        return (
-            f"；目标较远，已朝目标方向前进 "
-            f"{approach:.0f} m（建议再次分析）"
+        verified = await self._verify_target_in_view(
+            vehicle_id,
+            service,
+            params,
+            standoff,
+        )
+        if verified is not None:
+            return verified
+        raise FleetMissionError(
+            "最终视觉校验未通过：目标未回到画面中央，停止继续飞行"
         )
 
     async def _ensure_armed(

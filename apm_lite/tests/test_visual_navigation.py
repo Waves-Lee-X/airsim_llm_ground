@@ -97,6 +97,25 @@ def test_line_intersection_and_standoff_geometry():
     assert abs(px - 3.6) < 1e-9 and abs(py - 4.8) < 1e-9
 
 
+def test_recenter_leg_respects_standoff_safety_margin():
+    from aeromind_apm_lite.ground.browser.mission_planner import (
+        _recenter_leg_m,
+    )
+
+    # No standoff requested: the default 5 m leg is used.
+    assert _recenter_leg_m(20.0, 0.0) == 5.0
+    # Far away: leg capped at 5 m.
+    assert _recenter_leg_m(50.0, 5.0) == 5.0
+    # Close enough that a 5 m leg would overshoot: the leg shrinks so the
+    # vehicle stays at least 1.5 m in front of the standoff point.
+    assert abs(_recenter_leg_m(8.0, 5.0) - 1.5) < 1e-9
+    # At or beyond the standoff point: no forward movement.
+    assert _recenter_leg_m(6.5, 5.0) == 0.0
+    assert _recenter_leg_m(4.0, 5.0) == 0.0
+    # Never negative.
+    assert _recenter_leg_m(0.0, 5.0) >= 0.0
+
+
 def test_estimate_object_radius_from_bbox_and_depth():
     from aeromind_apm_lite.ground.browser.visual_navigation import (
         estimate_object_radius,
