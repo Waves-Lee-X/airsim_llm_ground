@@ -162,8 +162,9 @@ class MissionAgentService:
         "arm/disarm/takeoff/goto/formation/hold/land/analyze；goto arguments 含 "
         "target_position_ned_m（[北,东,下]）；"
         "formation arguments 含 formation（line/v/diamond）、leader_target_map_m、spacing_m、altitude_m；"
-        "analyze arguments 可含 prompt 与 navigate_after（识别到目标后自动飞往目标，"
-        "仅仿真可用），且只能指定一架飞机（到达目标后拍照识别）。"
+        "analyze arguments 可含 prompt 与 navigate_after（navigate_after 必须是布尔值 true 或 false，"
+        "表示识别到目标后由规划器自动定位并飞往目标，不要传坐标对象），"
+        "且只能指定一架飞机。"
         "当 analyze 已设置 navigate_after 时，不要再额外生成 goto 步骤。"
         "不要声称动作已经执行。"
     )
@@ -462,7 +463,13 @@ class MissionAgentService:
                     arguments["prompt"] = prompt
                 navigate = raw_args.get("navigate_after")
                 if navigate is not None and not isinstance(navigate, bool):
-                    blockers.append(f"第 {index} 步 navigate_after 必须是布尔值")
+                    if isinstance(navigate, dict):
+                        # The model sometimes emits a hint object (e.g. a
+                        # target position); the boolean alone is what the
+                        # planner needs, so normalize it to True.
+                        arguments["navigate_after"] = True
+                    else:
+                        blockers.append(f"第 {index} 步 navigate_after 必须是布尔值")
                 elif navigate:
                     arguments["navigate_after"] = True
             elif action == "formation":
