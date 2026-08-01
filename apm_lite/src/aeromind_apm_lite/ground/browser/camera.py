@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,77 @@ from typing import Any, Callable, Optional, Protocol, Tuple
 
 class CameraUnavailable(RuntimeError):
     """Raised when no fresh camera frame is available."""
+
+
+def read_airsim_depth_at(
+    *,
+    rpc_host: str,
+    rpc_port: int,
+    vehicle_name: str,
+    camera_name: str,
+    center_normalized: tuple[float, float],
+    width_px: int,
+    height_px: int,
+    fov_degrees: float,
+) -> dict[str, Any] | None:
+    """Read the AirSim float depth at a normalized pixel center.
+
+    Returns ``{"distance_m": ...}`` (Euclidean distance along the camera ray
+    through the pixel) or ``None`` when depth is unavailable or the pixel is
+    out of range.  Callers combine the distance with the pixel bearing and
+    the vehicle pose to localize the target in the FCU local frame.
+    """
+    try:
+        import airsim
+        import numpy as np
+    except ImportError:  # pragma: no cover - ground extra dependency
+        return None
+    try:
+        client = airsim.MultirotorClient(ip=rpc_host, port=rpc_port)
+        client.confirmConnection()
+        responses = client.simGetImages(
+            [
+                # AirSim 1.8.x clients do not accept width/height kwargs here;
+                # the default depth resolution (256x144) is enough because the
+                # pixel is sampled with normalized coordinates.
+                airsim.ImageRequest(
+                    camera_name,
+                    airsim.ImageType.DepthPerspective,
+                    pixels_as_float=True,
+                    compress=False,
+                )
+            ],
+            vehicle_name=vehicle_name,
+        )
+        if not responses or getattr(responses[0], "width", 0) <= 0:
+            return None
+        response = responses[0]
+        depth = np.array(
+            response.image_data_float,
+            dtype=np.float32,
+        ).reshape(response.height, response.width)
+        cx, cy = center_normalized
+        u = int(round(cx * response.width))
+        v = int(round(cy * response.height))
+        if not (0 <= u < response.width and 0 <= v < response.height):
+            return None
+        z_depth = float(depth[v, u])
+        if not math.isfinite(z_depth) or z_depth <= 0.05:
+            return None
+        # DepthPerspective stores the camera-Z distance; convert it to the
+        # Euclidean distance along the ray through the pixel.
+        half_h = math.radians(float(fov_degrees)) / 2.0
+        half_v = math.atan(
+            math.tan(half_h) / (float(response.width) / max(1, response.height))
+        )
+        h_angle = (float(cx) - 0.5) * 2.0 * half_h
+        v_angle = (0.5 - float(cy)) * 2.0 * half_v
+        along = math.cos(v_angle) * math.cos(h_angle)
+        if along <= 0.01:
+            return None
+        return {"distance_m": float(z_depth / along)}
+    except Exception:  # pragma: no cover - fault isolation
+        return None
 
 
 class AirSimImageClient(Protocol):

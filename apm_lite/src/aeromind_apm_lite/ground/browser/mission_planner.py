@@ -13,7 +13,7 @@ import asyncio
 import math
 import time
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from aeromind_apm_lite.common.formation import FormationType
 from aeromind_apm_lite.ground.browser.fleet_executor import (
@@ -21,13 +21,52 @@ from aeromind_apm_lite.ground.browser.fleet_executor import (
     fly_formation,
 )
 from aeromind_apm_lite.ground.browser.runtime import ManualRuntimeMode
-from aeromind_apm_lite.ground.browser.visual_navigation import estimate_target_ned
+from aeromind_apm_lite.ground.browser.visual_navigation import (
+    estimate_object_radius,
+    estimate_target_ned,
+    pixel_ray_ned,
+    target_from_depth,
+)
 from aeromind_apm_lite.onboard.flight_commands import FlightCommandService
 from aeromind_apm_lite.onboard.mavlink.models import CommandStatus
 
 _STEP_TIMEOUT_S = 120.0
 _TAKEOFF_TIMEOUT_S = 90.0
 _LAND_TIMEOUT_S = 60.0
+
+def _line_intersection(
+    a: tuple[float, float],
+    u: tuple[float, float],
+    b: tuple[float, float],
+    v: tuple[float, float],
+    *,
+    max_range_m: float = 300.0,
+) -> tuple[float, float] | None:
+    """Intersect ray ``a + t*u`` with ray ``b + s*v`` in the horizontal plane."""
+    denom = u[0] * v[1] - u[1] * v[0]
+    if abs(denom) <= 1e-9:
+        return None
+    t = ((b[0] - a[0]) * v[1] - (b[1] - a[1]) * v[0]) / denom
+    if not math.isfinite(t) or t <= 0.0 or t > max_range_m:
+        return None
+    return (a[0] + t * u[0], a[1] + t * u[1])
+
+
+def _standoff_point(
+    target: tuple[float, float],
+    from_position: tuple[float, float],
+    standoff_m: float,
+) -> tuple[float, float]:
+    """Return the point ``standoff_m`` before ``target`` on the line from
+    ``from_position`` toward ``target`` (used to stop in front of a target)."""
+    dx = target[0] - from_position[0]
+    dy = target[1] - from_position[1]
+    distance = math.hypot(dx, dy)
+    if distance <= 1e-6:
+        return target
+    scale = standoff_m / distance
+    return (target[0] - dx * scale, target[1] - dy * scale)
+
 
 _PLAN_ACTIONS = frozenset(
     {"arm", "disarm", "takeoff", "goto", "formation", "hold", "land", "analyze"}
@@ -300,42 +339,12 @@ class MissionPlanner:
             result_text = str(analysis.get("result") or analysis)
             navigate_detail = ""
             if params.get("navigate_after"):
-                target_ned = await self._locate_visual_target(
+                navigate_detail = await self._navigate_to_visual_target(
                     vehicle_id,
+                    services[vehicle_id],
                     analysis,
+                    params,
                 )
-                if target_ned is None:
-                    approach = await self._approach_target_direction(
-                        vehicle_id,
-                        analysis,
-                        services[vehicle_id],
-                        approach_distance_m=float(
-                            params.get("approach_distance_m", 15.0)
-                        ),
-                    )
-                    if approach is None:
-                        navigate_detail = "；未能定位目标，未导航"
-                    else:
-                        navigate_detail = (
-                            "；目标较远，已朝目标方向前进 "
-                            f"{approach:.0f} m（建议再次分析）"
-                        )
-                else:
-                    current = await self._current_position(vehicle_id)
-                    await self._await_handle(
-                        services[vehicle_id].goto_local_ned(
-                            target_ned[0],
-                            target_ned[1],
-                            current[2],
-                            expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
-                        ),
-                        vehicle_id,
-                        "navigate_to_target",
-                        _STEP_TIMEOUT_S,
-                    )
-                    navigate_detail = (
-                        f"；已飞往目标 ({target_ned[0]:.1f}, {target_ned[1]:.1f})"
-                    )
             entry.update(
                 {
                     "state": "done",
@@ -398,6 +407,8 @@ class MissionPlanner:
             target = result.get("target")
             if not isinstance(target, dict):
                 return None
+            if target.get("found") is False:
+                return None
             center_x = target.get("center_x")
             frame_size = analysis.get("frame_size_px")
             fov = analysis.get("camera_fov_degrees")
@@ -445,17 +456,116 @@ class MissionPlanner:
         except (TypeError, ValueError):
             return None
 
+    def _analysis_target_center(
+        self,
+        analysis: dict[str, Any],
+    ) -> tuple[float, float] | None:
+        """Normalized target center from the VLM or the deterministic fallbacks."""
+        result = analysis.get("result")
+        if isinstance(result, dict):
+            target = result.get("target")
+            if isinstance(target, dict) and target.get("found") is not False:
+                cx = target.get("center_x")
+                cy = target.get("center_y")
+                if (
+                    isinstance(cx, (int, float))
+                    and isinstance(cy, (int, float))
+                    and 0.0 <= float(cx) <= 1.0
+                    and 0.0 <= float(cy) <= 1.0
+                ):
+                    return (float(cx), float(cy))
+        salient = analysis.get("salient_center")
+        if (
+            isinstance(salient, (list, tuple))
+            and len(salient) == 2
+            and all(isinstance(value, (int, float)) for value in salient)
+            and 0.0 <= float(salient[0]) <= 1.0
+            and 0.0 <= float(salient[1]) <= 1.0
+        ):
+            return (float(salient[0]), float(salient[1]))
+        opencv = analysis.get("opencv_detection")
+        bbox = opencv.get("bbox") if isinstance(opencv, dict) else None
+        frame_size = analysis.get("frame_size_px")
+        if (
+            isinstance(bbox, (list, tuple))
+            and len(bbox) == 4
+            and all(isinstance(value, (int, float)) for value in bbox)
+            and isinstance(frame_size, (list, tuple))
+            and len(frame_size) == 2
+            and frame_size[0] > 0
+            and frame_size[1] > 0
+        ):
+            bx, by, bw, bh = (float(value) for value in bbox)
+            return (
+                (bx + bw / 2.0) / float(frame_size[0]),
+                (by + bh / 2.0) / float(frame_size[1]),
+            )
+        return None
+
+    async def _depth_target_local(
+        self,
+        vehicle_id: int,
+        analysis: dict[str, Any],
+    ) -> tuple[float, float, float] | None:
+        """Local NED position of the target surface from the depth reading.
+
+        The depth pixel hits the object surface; the standoff distance is
+        measured from this surface point (the object's outside), so large
+        objects keep the drone well clear instead of parking under them.
+        """
+        depth_target = analysis.get("depth_target")
+        if not isinstance(depth_target, dict):
+            return None
+        distance = float(depth_target.get("distance_m") or 0.0)
+        if distance <= 0.05:
+            return None
+        center = self._analysis_target_center(analysis)
+        frame_size = analysis.get("frame_size_px")
+        fov = analysis.get("camera_fov_degrees")
+        if (
+            center is None
+            or not isinstance(frame_size, (list, tuple))
+            or len(frame_size) != 2
+            or fov is None
+        ):
+            return None
+        link = self._runtime.link_for(vehicle_id)
+        if link is None:
+            return None
+        snapshot = link.telemetry_snapshot()
+        position = snapshot.local_position_ned_m
+        attitude = snapshot.attitude_rpy_rad
+        if position is None:
+            return None
+        yaw = float(attitude[2]) if attitude is not None else 0.0
+        return target_from_depth(
+            frame_width_px=int(frame_size[0]),
+            frame_height_px=int(frame_size[1]),
+            fov_degrees=float(fov),
+            target_center_normalized=center,
+            vehicle_position_ned=position,
+            vehicle_yaw_rad=yaw,
+            distance_m=distance,
+        )
+
     async def _locate_visual_target(
         self,
         vehicle_id: int,
         analysis: dict[str, Any],
     ) -> tuple[float, float, float] | None:
+        depth_local = await self._depth_target_local(vehicle_id, analysis)
+        if depth_local is not None:
+            return depth_local
         try:
             result = analysis.get("result")
             if not isinstance(result, dict):
                 return None
             target = result.get("target")
             if not isinstance(target, dict):
+                return None
+            if target.get("found") is False:
+                # The model explicitly says the target is absent; blob
+                # fallbacks would navigate to a random salient spot.
                 return None
             center_x = target.get("center_x")
             center_y = target.get("center_y")
@@ -515,6 +625,230 @@ class MissionPlanner:
             )
         except (TypeError, ValueError):
             return None
+
+    def _target_bearing_unit(
+        self,
+        analysis: dict[str, Any],
+        yaw_rad: float,
+    ) -> tuple[float, float] | None:
+        """Unit NED direction (north, east) of the detected target center."""
+        try:
+            result = analysis.get("result")
+            if not isinstance(result, dict):
+                return None
+            target = result.get("target")
+            if not isinstance(target, dict):
+                return None
+            if target.get("found") is False:
+                return None
+            center_x = target.get("center_x")
+            center_y = target.get("center_y")
+            frame_size = analysis.get("frame_size_px")
+            fov = analysis.get("camera_fov_degrees")
+            if not isinstance(frame_size, (list, tuple)) or len(frame_size) != 2:
+                return None
+            if center_x is None or center_y is None:
+                # Deterministic fallback: salient blob or OpenCV palette blob.
+                salient = analysis.get("salient_center")
+                if (
+                    isinstance(salient, (list, tuple))
+                    and len(salient) == 2
+                    and all(isinstance(v, (int, float)) for v in salient)
+                    and 0.0 <= float(salient[0]) <= 1.0
+                    and 0.0 <= float(salient[1]) <= 1.0
+                ):
+                    center_x = float(salient[0])
+                    center_y = float(salient[1])
+                else:
+                    opencv = analysis.get("opencv_detection")
+                    bbox = opencv.get("bbox") if isinstance(opencv, dict) else None
+                    if (
+                        not isinstance(bbox, (list, tuple))
+                        or len(bbox) != 4
+                        or not all(isinstance(v, (int, float)) for v in bbox)
+                        or frame_size[0] <= 0
+                    ):
+                        return None
+                    bx, by, bw, bh = (float(value) for value in bbox)
+                    center_x = (bx + bw / 2.0) / float(frame_size[0])
+                    center_y = (by + bh / 2.0) / float(frame_size[1])
+            if fov is None:
+                return None
+            horizontal = (float(center_x) - 0.5) * 2.0
+            half = math.radians(float(fov)) / 2.0
+            h_angle = horizontal * half
+            dir_b_x = math.cos(h_angle)
+            dir_b_y = math.sin(h_angle)
+            dir_x = math.cos(yaw_rad) * dir_b_x - math.sin(yaw_rad) * dir_b_y
+            dir_y = math.sin(yaw_rad) * dir_b_x + math.cos(yaw_rad) * dir_b_y
+            norm = math.hypot(dir_x, dir_y)
+            if norm <= 1e-6:
+                return None
+            return (dir_x / norm, dir_y / norm)
+        except (TypeError, ValueError):
+            return None
+
+    async def _triangulate_visual_target(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        analysis: dict[str, Any],
+        probe_distance_m: float,
+    ) -> tuple[float, float, float] | None:
+        """Estimate the target's horizontal position from two bearings.
+
+        Flies ``probe_distance_m`` forward along the current heading, takes a
+        second visual analysis, then intersects the two bearing rays.  This
+        works even when the flat-ground ray never meets the ground plane
+        (level front camera at altitude), so the drone can still stop a
+        requested distance in front of the target.
+        """
+        if probe_distance_m <= 0.0:
+            return None
+        link = self._runtime.link_for(vehicle_id)
+        if link is None:
+            return None
+        start = await self._current_position(vehicle_id)
+        snapshot = link.telemetry_snapshot()
+        yaw1 = (
+            float(snapshot.attitude_rpy_rad[2])
+            if snapshot.attitude_rpy_rad is not None
+            else 0.0
+        )
+        bearing1 = self._target_bearing_unit(analysis, yaw1)
+        if bearing1 is None:
+            return None
+        # Probe perpendicular to the target ray so the two bearing rays
+        # intersect strongly; flying along the target ray would leave them
+        # (near-)parallel and make triangulation fail.
+        probe_dir = (-bearing1[1], bearing1[0])
+        probe_target = (
+            start[0] + probe_dir[0] * probe_distance_m,
+            start[1] + probe_dir[1] * probe_distance_m,
+            start[2],
+        )
+        await self._await_handle(
+            service.goto_local_ned(
+                probe_target[0],
+                probe_target[1],
+                probe_target[2],
+                yaw_rad=yaw1,
+                expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+            ),
+            vehicle_id,
+            "probe_move",
+            _STEP_TIMEOUT_S,
+        )
+        analysis2 = await self.analyzer(
+            vehicle_id,
+            "重新定位目标：必须返回 target.center_x 与 "
+            "target.center_y（绘制目标中心在画面中的归一化坐标 0-1），"
+            "找不到目标则 found=false；不要只用文字描述",
+        )
+        snapshot2 = link.telemetry_snapshot()
+        yaw2 = (
+            float(snapshot2.attitude_rpy_rad[2])
+            if snapshot2.attitude_rpy_rad is not None
+            else yaw1
+        )
+        bearing2 = self._target_bearing_unit(analysis2, yaw2)
+        if bearing2 is None:
+            return None
+        b = (probe_target[0], probe_target[1])
+        point = _line_intersection(
+            (start[0], start[1]),
+            bearing1,
+            b,
+            bearing2,
+        )
+        if point is None:
+            return None
+        return (point[0], point[1], start[2])
+
+    async def _fly_to_visual_standoff(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        target_ned: tuple[float, float, float],
+        standoff_distance_m: float,
+        source_label: str,
+    ) -> str:
+        """Fly to the target (or ``standoff_distance_m`` in front of it)."""
+        current = await self._current_position(vehicle_id)
+        target_x, target_y = float(target_ned[0]), float(target_ned[1])
+        tx, ty = target_x, target_y
+        if standoff_distance_m > 0.0:
+            tx, ty = _standoff_point(
+                (target_x, target_y),
+                (current[0], current[1]),
+                standoff_distance_m,
+            )
+        # Face the target from the (standoff) point, not from the start.
+        yaw_rad = math.atan2(target_y - ty, target_x - tx)
+        await self._await_handle(
+            service.goto_local_ned(
+                tx,
+                ty,
+                current[2],
+                yaw_rad=yaw_rad,
+                expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+            ),
+            vehicle_id,
+            "navigate_to_target",
+            _STEP_TIMEOUT_S,
+        )
+        if standoff_distance_m > 0.0:
+            return (
+                f"；{source_label}，已飞往目标前方 "
+                f"{standoff_distance_m:.0f} m ({tx:.1f}, {ty:.1f}) 并朝向目标"
+            )
+        return f"；{source_label}，已飞往目标 ({tx:.1f}, {ty:.1f})"
+
+    async def _navigate_to_visual_target(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        analysis: dict[str, Any],
+        params: Mapping[str, Any],
+    ) -> str:
+        standoff = max(0.0, float(params.get("standoff_distance_m", 0.0) or 0.0))
+        probe = max(0.0, float(params.get("probe_distance_m", 8.0) or 8.0))
+        target_ned = await self._locate_visual_target(vehicle_id, analysis)
+        if target_ned is not None:
+            return await self._fly_to_visual_standoff(
+                vehicle_id,
+                service,
+                target_ned,
+                standoff,
+                "已定位目标",
+            )
+        if probe > 0.0:
+            triangulated = await self._triangulate_visual_target(
+                vehicle_id,
+                service,
+                analysis,
+                probe,
+            )
+            if triangulated is not None:
+                return await self._fly_to_visual_standoff(
+                    vehicle_id,
+                    service,
+                    triangulated,
+                    standoff,
+                    "三角测距定位",
+                )
+        approach = await self._approach_target_direction(
+            vehicle_id,
+            analysis,
+            service,
+            approach_distance_m=float(params.get("approach_distance_m", 15.0)),
+        )
+        if approach is None:
+            return "；未能定位目标，未导航"
+        return (
+            f"；目标较远，已朝目标方向前进 "
+            f"{approach:.0f} m（建议再次分析）"
+        )
 
     async def _ensure_armed(
         self,

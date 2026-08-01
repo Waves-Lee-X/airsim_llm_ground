@@ -229,6 +229,7 @@ class GroundServer:
         mission_id: UUID | None = None,
         target_altitude_m: float | None = None,
         target_position_ned_m: tuple[float, float, float] | None = None,
+        yaw_rad: float | None = None,
         reason: str = "",
         ttl_ms: int = 5_000,
     ) -> VehicleCommand:
@@ -251,6 +252,7 @@ class GroundServer:
                     if target_position_ned_m is not None
                     else None
                 ),
+                yaw_rad=yaw_rad,
                 reason=reason,
             )
             try:

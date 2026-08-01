@@ -523,6 +523,7 @@ class OnboardAgent:
                 FcuCommand(
                     FcuAction.GOTO_LOCAL_NED,
                     target_position_ned_m=(position.x, position.y, position.z),
+                    yaw_rad=command.yaw_rad,
                 ),
                 expires_monotonic_s=expires_monotonic_s,
             )

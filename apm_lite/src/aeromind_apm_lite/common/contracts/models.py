@@ -121,6 +121,9 @@ class VehicleCommand(MessageBase):
         default=None, gt=0.0, le=120.0
     )
     target_position_ned_m: Optional[Vector3] = None
+    yaw_rad: Optional[float] = Field(
+        default=None, ge=-3.141593, le=3.141593
+    )
     reason: str = Field(default="", max_length=256)
 
     @model_validator(mode="after")
@@ -133,6 +136,8 @@ class VehicleCommand(MessageBase):
             raise ValueError("goto requires target_position_ned_m")
         if self.command != VehicleCommandType.GOTO and self.target_position_ned_m is not None:
             raise ValueError("target_position_ned_m is only valid for goto")
+        if self.command != VehicleCommandType.GOTO and self.yaw_rad is not None:
+            raise ValueError("yaw_rad is only valid for goto")
         return self
 
 

@@ -65,6 +65,7 @@ from .fleet_service import (
 )
 from .camera import (
     AirSimCameraBridge,
+    read_airsim_depth_at,
     AirSimCameraConfig,
     CameraBridge,
     CameraFrame,
@@ -139,6 +140,7 @@ class CommandRequest(BaseModel):
             "position_ned_m",
         ),
     )
+    yaw_rad: float | None = Field(default=None, ge=-3.141593, le=3.141593)
     reason: str = Field(default="browser operator command", max_length=256)
     ttl_ms: int | None = Field(default=None, ge=100, le=300_000)
     completion_timeout_s: float = Field(default=75.0, ge=1.0, le=310.0)
@@ -867,10 +869,64 @@ class BrowserGateway:
         except Exception:
             payload["opencv_detection"] = None
         payload["salient_center"] = salient_center
+        payload["depth_target"] = self._read_target_depth(selected, payload)
         payload["consensus"] = self.vision_consensus.append(payload)
         payload["evidence"] = await self._save_vision_evidence(payload, frame)
         await self.events.publish("visual_semantic_result", payload)
         return payload
+
+    def _read_target_depth(
+        self,
+        vehicle_id: int,
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Read the AirSim depth at the detected target pixel.
+
+        The depth value plus the camera pose give an exact 3D surface point
+        in the AirSim world frame, which the planner converts into the FCU
+        local frame and uses to stop a requested distance in front of the
+        object center.
+        """
+        camera_bridge = self.cameras.get(vehicle_id)
+        camera_config = getattr(camera_bridge, "config", None)
+        if not isinstance(camera_config, AirSimCameraConfig):
+            return None
+        frame_size = payload.get("frame_size_px")
+        if not isinstance(frame_size, (list, tuple)) or len(frame_size) != 2:
+            return None
+        result = payload.get("result") or {}
+        target = result.get("target") or {}
+        center = None
+        if isinstance(target, dict) and target.get("found") is not False:
+            cx = target.get("center_x")
+            cy = target.get("center_y")
+            if (
+                isinstance(cx, (int, float))
+                and isinstance(cy, (int, float))
+                and 0.0 <= float(cx) <= 1.0
+                and 0.0 <= float(cy) <= 1.0
+            ):
+                center = (float(cx), float(cy))
+        if center is None:
+            salient = payload.get("salient_center")
+            if (
+                isinstance(salient, (list, tuple))
+                and len(salient) == 2
+                and all(isinstance(value, (int, float)) for value in salient)
+            ):
+                center = (float(salient[0]), float(salient[1]))
+        if center is None:
+            return None
+        return read_airsim_depth_at(
+            rpc_host=camera_config.rpc_host,
+            rpc_port=camera_config.rpc_port,
+            vehicle_name=camera_config.vehicle_name,
+            camera_name=camera_config.camera_name,
+            center_normalized=center,
+            width_px=camera_config.width_px,
+            height_px=camera_config.height_px,
+            fov_degrees=camera_config.fov_degrees,
+        )
 
     def _cross_validate_visual(
         self,
@@ -1537,6 +1593,7 @@ class BrowserGateway:
                 command_type,
                 target_altitude_m=request.altitude_m,
                 target_position_ned_m=request.target_position_ned_m,
+                yaw_rad=request.yaw_rad,
                 reason=request.reason,
                 ttl_ms=request.ttl_ms or config.command_ttl_ms,
             )

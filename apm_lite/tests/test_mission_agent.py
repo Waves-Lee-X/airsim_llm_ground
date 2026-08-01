@@ -551,6 +551,71 @@ def test_agent_plan_goto_normalizes_altitude_and_injects_takeoff():
     asyncio.run(scenario())
 
 
+def test_agent_plan_analyze_accepts_standoff_and_probe():
+    async def scenario():
+        sim_context = healthy_context(
+            deployment_mode="demo",
+            vehicle_id=1,
+            allowed_commands=["arm", "disarm", "takeoff", "hold", "land", "rtl"],
+        )
+        semantic = configured_semantic(
+            json.dumps(
+                {
+                    "reply": "已生成计划",
+                    "risk_level": "low",
+                    "plan": [
+                        {
+                            "action": "analyze",
+                            "vehicle_ids": [1],
+                            "arguments": {
+                                "prompt": "橙色球体",
+                                "navigate_after": True,
+                                "standoff_distance_m": 5,
+                                "probe_distance_m": 8,
+                            },
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        agent = MissionAgentService(semantic)
+        session_id = agent.create_session()["session_id"]
+        pending = await agent.chat(session_id, "停在球体前方5米", sim_context)
+        steps = pending["draft"]["arguments"]["steps"]
+        assert pending["draft"]["status"] == "pending_confirmation"
+        analyze_step = steps[1]
+        assert analyze_step["action"] == "analyze"
+        assert analyze_step["arguments"]["standoff_distance_m"] == 5.0
+        assert analyze_step["arguments"]["probe_distance_m"] == 8.0
+
+        semantic._call_api = lambda _model, _messages: (
+            json.dumps(
+                {
+                    "reply": "已生成计划",
+                    "risk_level": "low",
+                    "plan": [
+                        {
+                            "action": "analyze",
+                            "vehicle_ids": [1],
+                            "arguments": {
+                                "prompt": "x",
+                                "navigate_after": True,
+                                "standoff_distance_m": 200,
+                            },
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        bad = await agent.chat(session_id, "停很远", sim_context)
+        assert bad["draft"]["status"] == "blocked"
+        assert any("standoff_distance_m" in item for item in bad["draft"]["blockers"])
+
+    asyncio.run(scenario())
+
+
 def test_agent_plan_analyze_accepts_approach_distance_and_injects_takeoff():
     async def scenario():
         sim_context = healthy_context(

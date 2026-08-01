@@ -21,6 +21,79 @@ def _deg2rad(value: float) -> float:
     return math.radians(float(value))
 
 
+def pixel_ray_ned(
+    *,
+    frame_width_px: int,
+    frame_height_px: int,
+    fov_degrees: float,
+    target_center_normalized: Sequence[float],
+    vehicle_yaw_rad: float,
+) -> tuple[float, float, float] | None:
+    """Unit NED ray (north, east, down) through a normalized pixel center.
+
+    ``target_center_normalized`` is ``(cx, cy)`` in [0, 1] with x increasing to
+    the right of the image and y increasing downward.  The camera optical
+    axis is assumed aligned with the vehicle body X axis (level camera).
+    """
+    if frame_width_px <= 0 or frame_height_px <= 0:
+        return None
+    if fov_degrees <= 0.0:
+        return None
+    if len(target_center_normalized) != 2:
+        return None
+    cx = float(target_center_normalized[0])
+    cy = float(target_center_normalized[1])
+    if not (0.0 <= cx <= 1.0 and 0.0 <= cy <= 1.0):
+        return None
+    horizontal = (cx - 0.5) * 2.0  # -1 .. 1, right positive
+    vertical = (0.5 - cy) * 2.0    # -1 .. 1, up positive
+    half_h = _deg2rad(fov_degrees) / 2.0
+    aspect = frame_width_px / frame_height_px
+    half_v = math.atan(math.tan(half_h) / aspect)
+    h_angle = horizontal * half_h
+    v_angle = vertical * half_v
+    dir_x_b = math.cos(v_angle) * math.cos(h_angle)
+    dir_y_b = math.cos(v_angle) * math.sin(h_angle)
+    dir_z_b = -math.sin(v_angle)
+    yaw = float(vehicle_yaw_rad)
+    dir_x = math.cos(yaw) * dir_x_b - math.sin(yaw) * dir_y_b
+    dir_y = math.sin(yaw) * dir_x_b + math.cos(yaw) * dir_y_b
+    norm = math.sqrt(dir_x * dir_x + dir_y * dir_y + dir_z_b * dir_z_b)
+    if norm <= 1e-9:
+        return None
+    return (dir_x / norm, dir_y / norm, dir_z_b / norm)
+
+
+def target_from_depth(
+    *,
+    frame_width_px: int,
+    frame_height_px: int,
+    fov_degrees: float,
+    target_center_normalized: Sequence[float],
+    vehicle_position_ned: Sequence[float],
+    vehicle_yaw_rad: float,
+    distance_m: float,
+) -> tuple[float, float, float] | None:
+    """3D NED point at ``distance_m`` along the camera ray through the pixel."""
+    if distance_m <= 0.0 or len(vehicle_position_ned) != 3:
+        return None
+    ray = pixel_ray_ned(
+        frame_width_px=frame_width_px,
+        frame_height_px=frame_height_px,
+        fov_degrees=fov_degrees,
+        target_center_normalized=target_center_normalized,
+        vehicle_yaw_rad=vehicle_yaw_rad,
+    )
+    if ray is None:
+        return None
+    px, py, pz = (float(value) for value in vehicle_position_ned)
+    return (
+        px + ray[0] * float(distance_m),
+        py + ray[1] * float(distance_m),
+        pz + ray[2] * float(distance_m),
+    )
+
+
 def estimate_target_ned(
     *,
     frame_width_px: int,
@@ -52,22 +125,16 @@ def estimate_target_ned(
         return None
     px, py, pz = (float(value) for value in vehicle_position_ned)
 
-    horizontal = (cx - 0.5) * 2.0  # -1 .. 1, right positive
-    vertical = (0.5 - cy) * 2.0    # -1 .. 1, up positive
-    half = _deg2rad(fov_degrees) / 2.0
-    h_angle = horizontal * half
-    v_angle = vertical * half
-
-    # Camera ray in the body frame (x forward, y right, z down).
-    dir_x_b = math.cos(v_angle) * math.cos(h_angle)
-    dir_y_b = math.cos(v_angle) * math.sin(h_angle)
-    dir_z_b = -math.sin(v_angle)
-
-    yaw = float(vehicle_yaw_rad)
-    dir_x = math.cos(yaw) * dir_x_b - math.sin(yaw) * dir_y_b
-    dir_y = math.sin(yaw) * dir_x_b + math.cos(yaw) * dir_y_b
-    dir_z = dir_z_b
-
+    ray = pixel_ray_ned(
+        frame_width_px=frame_width_px,
+        frame_height_px=frame_height_px,
+        fov_degrees=fov_degrees,
+        target_center_normalized=(cx, cy),
+        vehicle_yaw_rad=vehicle_yaw_rad,
+    )
+    if ray is None:
+        return None
+    dir_x, dir_y, dir_z = ray
     if dir_z < _MIN_DOWNWARD_SLOPE:
         return None  # ray points up or level; flat-ground assumption fails
 
@@ -79,6 +146,30 @@ def estimate_target_ned(
         round(py + distance * dir_y, 3),
         round(float(target_plane_z_ned), 3),
     )
+
+
+def estimate_object_radius(
+    *,
+    bbox_height_px: float,
+    distance_m: float,
+    frame_width_px: int,
+    fov_degrees: float,
+) -> float | None:
+    """Estimate the object radius from its apparent bbox height and depth.
+
+    radius = (bbox_height_px / 2) * distance / focal_length_px.  Used to
+    convert a surface depth reading into the object's center so standoff
+    distances are measured from the center instead of the surface.
+    """
+    if (
+        bbox_height_px <= 1.0
+        or distance_m <= 0.0
+        or frame_width_px <= 0
+        or fov_degrees <= 0.0
+    ):
+        return None
+    focal = (frame_width_px / 2.0) / math.tan(math.radians(fov_degrees) / 2.0)
+    return (bbox_height_px / 2.0) * distance_m / focal
 
 
 def detect_salient_target_center(

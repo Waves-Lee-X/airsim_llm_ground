@@ -168,7 +168,9 @@ class MissionAgentService:
         "（navigate_after 必须是布尔值 true 或 false，表示识别到目标后由规划器自动定位并飞往目标，"
         "不要传坐标对象；approach_distance_m 为朝目标方向逼近的米数，默认 15），"
         "且只能指定一架飞机。"
-        "用户要求‘向目标方向飞 X 米’时应使用 analyze 的 navigate_after=true 与 approach_distance_m=X，"
+        "user\u8981\u6c42\u2018\u5411\u76ee\u6807\u65b9\u5411\u98de X \u7c73\u2019\u65f6\u5e94\u4f7f\u7528 analyze \u7684 navigate_after=true \u4e0e approach_distance_m=X\uff0c"
+        "\u8981\u6c42\u2018\u505c\u5728\u76ee\u6807\u5916\u4fa7\uff08\u8868\u9762\uff09\u524d\u65b9 X \u7c73\u2019\u65f6\u4f7f\u7528 navigate_after=true \u4e0e standoff_distance_m=X\uff08\u8ba1\u5212\u5668\u901a\u8fc7\u6df1\u5ea6\u4f20\u611f\u5668\u5b9a\u4f4d\u76ee\u6807\u8868\u9762\uff0c\u505c\u5728\u76ee\u6807\u5916\u4fa7 X \u7c73\u3001\u673a\u5934\u671d\u5411\u76ee\u6807\uff09\uff0c"
+        "\u4e0d\u8981\u51ed\u7a7a\u7f16\u9020 goto \u5750\u6807\uff1b\u5f53 analyze \u5df2\u8bbe\u7f6e navigate_after \u65f6\uff0c\u4e0d\u8981\u518d\u989d\u5916\u751f\u6210 goto \u6b65\u9aa4\u3002"
         "不要凭空编造 goto 坐标；当 analyze 已设置 navigate_after 时，不要再额外生成 goto 步骤。"
         "若目标飞机未起飞（armed=false 且模式为 LAND/STABILIZE），飞行类步骤"
         "（goto/analyze+navigate_after/formation）之前必须先加 takeoff 步骤。"
@@ -527,6 +529,20 @@ class MissionAgentService:
                     )
                 elif distance is not None:
                     arguments["approach_distance_m"] = distance
+                standoff = _finite_float(raw_args.get("standoff_distance_m"))
+                if standoff is not None and not 0.0 <= standoff <= 100.0:
+                    blockers.append(
+                        f"第 {index} 步 standoff_distance_m 必须在 0-100 米"
+                    )
+                elif standoff is not None:
+                    arguments["standoff_distance_m"] = standoff
+                probe = _finite_float(raw_args.get("probe_distance_m"))
+                if probe is not None and not 0.0 <= probe <= 50.0:
+                    blockers.append(
+                        f"第 {index} 步 probe_distance_m 必须在 0-50 米"
+                    )
+                elif probe is not None:
+                    arguments["probe_distance_m"] = probe
             elif action == "formation":
                 formation = str(raw_args.get("formation") or "").strip().lower()
                 leader = raw_args.get("leader_target_map_m")
