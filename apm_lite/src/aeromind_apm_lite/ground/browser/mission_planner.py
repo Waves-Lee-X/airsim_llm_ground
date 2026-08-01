@@ -31,6 +31,7 @@ from aeromind_apm_lite.onboard.flight_commands import FlightCommandService
 from aeromind_apm_lite.onboard.mavlink.models import CommandStatus
 
 _STEP_TIMEOUT_S = 120.0
+_MAX_TARGET_RANGE_M = 150.0
 _TAKEOFF_TIMEOUT_S = 90.0
 _LAND_TIMEOUT_S = 60.0
 
@@ -464,6 +465,10 @@ class MissionPlanner:
         result = analysis.get("result")
         if isinstance(result, dict):
             target = result.get("target")
+            if isinstance(target, dict) and target.get("found") is False:
+                # The model explicitly says the target is absent; blob
+                # fallbacks would navigate to a random salient spot.
+                return None
             if isinstance(target, dict) and target.get("found") is not False:
                 cx = target.get("center_x")
                 cy = target.get("center_y")
@@ -804,6 +809,127 @@ class MissionPlanner:
             )
         return f"；{source_label}，已飞往目标 ({tx:.1f}, {ty:.1f})"
 
+    async def _target_reachable(
+        self,
+        vehicle_id: int,
+        target_ned: tuple[float, float, float] | None,
+    ) -> bool:
+        """Sanity guard: only navigate to targets within a bounded range."""
+        if target_ned is None:
+            return False
+        current = await self._current_position(vehicle_id)
+        return (
+            math.hypot(
+                float(target_ned[0]) - current[0],
+                float(target_ned[1]) - current[1],
+            )
+            <= _MAX_TARGET_RANGE_M
+        )
+
+    async def _recenter_and_relocalize(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        analysis: dict[str, Any],
+        params: Mapping[str, Any],
+        target_ned: tuple[float, float, float],
+    ) -> tuple[float, float, float]:
+        """Move toward the target in short legs, re-analyzing until the target
+        sits near the frame center (edge/occluded pixels localize poorly)."""
+        prompt = str(
+            params.get("prompt")
+            or "\u8bc6\u522b\u753b\u9762\u4e2d\u7684\u76ee\u6807\u7269\u4f53\uff08\u9525\u6876/\u7403\u4f53\uff09"
+        )
+        current_best = target_ned
+        for _attempt in range(3):
+            current = await self._current_position(vehicle_id)
+            bearing = math.atan2(
+                float(current_best[1]) - current[1],
+                float(current_best[0]) - current[0],
+            )
+            await self._await_handle(
+                service.goto_local_ned(
+                    current[0] + math.cos(bearing) * 5.0,
+                    current[1] + math.sin(bearing) * 5.0,
+                    current[2],
+                    yaw_rad=bearing,
+                    expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                ),
+                vehicle_id,
+                "recenter_yaw",
+                _STEP_TIMEOUT_S,
+            )
+            analysis = await self.analyzer(vehicle_id, prompt)
+            refined = await self._locate_visual_target(vehicle_id, analysis)
+            if refined is not None and await self._target_reachable(vehicle_id, refined):
+                current_best = refined
+            center = self._analysis_target_center(analysis)
+            if center is not None and abs(float(center[0]) - 0.5) <= 0.25:
+                return current_best
+        return current_best
+
+    async def _search_visual_target(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        analysis: dict[str, Any],
+        params: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], tuple[float, float, float] | None]:
+        """Rotate the aircraft in place and re-analyze until the target is
+        localized, so the closed loop works from any starting heading."""
+        search_steps = int(params.get("search_steps", 6) or 6)
+        step_deg = float(params.get("search_step_deg", 60.0) or 60.0)
+        if search_steps <= 0 or step_deg <= 0.0:
+            return analysis, None
+        prompt = str(
+            params.get("prompt")
+            or "识别画面中的目标物体（锥桶/球体）"
+        )
+        leg_m = float(params.get("search_leg_m", 3.0) or 3.0)
+        current = await self._current_position(vehicle_id)
+        link = self._runtime.link_for(vehicle_id)
+        if link is None:
+            return analysis, None
+        snapshot = link.telemetry_snapshot()
+        yaw = (
+            float(snapshot.attitude_rpy_rad[2])
+            if snapshot.attitude_rpy_rad is not None
+            else 0.0
+        )
+        for _step in range(max(0, search_steps)):
+            yaw += math.radians(step_deg)
+            # A short moving leg completes reliably (yaw-in-place gotos do
+            # rotate but their physical-completion check rarely fires).
+            await self._await_handle(
+                service.goto_local_ned(
+                    current[0] + math.cos(yaw) * leg_m,
+                    current[1] + math.sin(yaw) * leg_m,
+                    current[2],
+                    yaw_rad=yaw,
+                    expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                ),
+                vehicle_id,
+                "search_yaw",
+                _STEP_TIMEOUT_S,
+            )
+            analysis = await self.analyzer(vehicle_id, prompt)
+            target = await self._locate_visual_target(vehicle_id, analysis)
+            self._results.append(
+                {
+                    "vehicle_id": vehicle_id,
+                    "step": "search_probe",
+                    "status": "completed",
+                    "detail": (
+                        f"\u641c\u7d22\u65b9\u4f4d {math.degrees(yaw):.0f}\u00b0 "
+                        f"found={target is not None}"
+                    ),
+                    "at_monotonic_s": round(self._clock(), 2),
+                }
+            )
+            if target is not None:
+                return analysis, target
+        return analysis, None
+
     async def _navigate_to_visual_target(
         self,
         vehicle_id: int,
@@ -814,6 +940,28 @@ class MissionPlanner:
         standoff = max(0.0, float(params.get("standoff_distance_m", 0.0) or 0.0))
         probe = max(0.0, float(params.get("probe_distance_m", 8.0) or 8.0))
         target_ned = await self._locate_visual_target(vehicle_id, analysis)
+        if not await self._target_reachable(vehicle_id, target_ned):
+            target_ned = None
+        if target_ned is None:
+            # Target not in view or not localizable: rotate and re-analyze.
+            analysis, target_ned = await self._search_visual_target(
+                vehicle_id,
+                service,
+                analysis,
+                params,
+            )
+            if not await self._target_reachable(vehicle_id, target_ned):
+                target_ned = None
+        if target_ned is not None:
+            target_ned = await self._recenter_and_relocalize(
+                vehicle_id,
+                service,
+                analysis,
+                params,
+                target_ned,
+            )
+            if not await self._target_reachable(vehicle_id, target_ned):
+                target_ned = None
         if target_ned is not None:
             return await self._fly_to_visual_standoff(
                 vehicle_id,

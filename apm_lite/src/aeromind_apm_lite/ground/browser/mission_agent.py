@@ -543,6 +543,20 @@ class MissionAgentService:
                     )
                 elif probe is not None:
                     arguments["probe_distance_m"] = probe
+                search_steps = _integer(raw_args.get("search_steps"))
+                if search_steps is not None and not 0 <= search_steps <= 12:
+                    blockers.append(
+                        f"第 {index} 步 search_steps 必须在 0-12"
+                    )
+                elif search_steps is not None:
+                    arguments["search_steps"] = search_steps
+                search_step_deg = _finite_float(raw_args.get("search_step_deg"))
+                if search_step_deg is not None and not 15.0 <= search_step_deg <= 180.0:
+                    blockers.append(
+                        f"第 {index} 步 search_step_deg 必须在 15-180 度"
+                    )
+                elif search_step_deg is not None:
+                    arguments["search_step_deg"] = search_step_deg
             elif action == "formation":
                 formation = str(raw_args.get("formation") or "").strip().lower()
                 leader = raw_args.get("leader_target_map_m")
