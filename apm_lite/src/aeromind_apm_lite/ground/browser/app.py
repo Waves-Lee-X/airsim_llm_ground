@@ -787,9 +787,58 @@ class BrowserGateway:
     ) -> dict[str, Any]:
         selected = self._vehicle_id(vehicle_id)
         frame = await self.camera_frame(selected)
+        frame_size_px: list[int] | None = None
+        salient_center: list[float] | None = None
+        try:
+            import cv2
+            import numpy as np
+
+            from aeromind_apm_lite.ground.browser.visual_navigation import (
+                detect_salient_target_center,
+            )
+
+            decoded = cv2.imdecode(
+                np.frombuffer(frame.data, dtype=np.uint8),
+                cv2.IMREAD_COLOR,
+            )
+            if decoded is not None:
+                height_px, width_px = decoded.shape[:2]
+                frame_size_px = [int(width_px), int(height_px)]
+                salient = detect_salient_target_center(
+                    frame.data,
+                    frame_width_px=int(width_px),
+                    frame_height_px=int(height_px),
+                )
+                if salient is not None:
+                    salient_center = [float(salient[0]), float(salient[1])]
+        except Exception:
+            frame_size_px = None
+            salient_center = None
+        camera_status = self.camera_status_payload(selected)
+        camera_fov_degrees = (
+            float(camera_status["fov_degrees"])
+            if isinstance(camera_status, dict)
+            and camera_status.get("fov_degrees") is not None
+            else None
+        )
         payload = await self.semantic.analyze_frame(frame, prompt)
         payload["vehicle_id"] = selected
+        payload["frame_size_px"] = frame_size_px
+        payload["camera_fov_degrees"] = camera_fov_degrees
         payload["cross_validation"] = self._cross_validate_visual(payload, frame)
+        try:
+            detection = self.color_detector.detect(
+                frame.data,
+                sequence=frame.sequence,
+                captured_at_utc=frame.captured_at_utc,
+                media_type=frame.media_type,
+            )
+            payload["opencv_detection"] = (
+                detection.public_payload() if detection is not None else None
+            )
+        except Exception:
+            payload["opencv_detection"] = None
+        payload["salient_center"] = salient_center
         payload["consensus"] = self.vision_consensus.append(payload)
         payload["evidence"] = await self._save_vision_evidence(payload, frame)
         await self.events.publish("visual_semantic_result", payload)

@@ -33,9 +33,9 @@ class AirSimCameraConfig:
     rpc_port: int = 41451
     vehicle_name: str = "Drone1"
     camera_name: str = "front_center"
-    width_px: int = 1280
-    height_px: int = 720
-    fov_degrees: float = 90.0
+    width_px: int = 640
+    height_px: int = 360
+    fov_degrees: float = 95.0
     capture_fps: float = 5.0
     request_timeout_s: float = 2.0
     reconnect_delay_s: float = 1.0

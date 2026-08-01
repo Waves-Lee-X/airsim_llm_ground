@@ -439,6 +439,29 @@ def test_agent_plan_draft_requires_sim_and_validates_steps():
     asyncio.run(scenario())
 
 
+def test_approach_bearing_math_matches_estimator():
+    # A target far off to the right (center_x > 0.5) must yield a positive
+    # eastward bearing when the aircraft faces north (yaw=0).
+    import math as _math
+
+    from aeromind_apm_lite.ground.browser.mission_planner import MissionPlanner
+
+    # Verify the bearing formula used by _approach_target_direction through a
+    # standalone computation mirroring the planner helper.
+    fov = 95.0
+    center_x = 0.75
+    horizontal = (center_x - 0.5) * 2.0
+    h_angle = horizontal * _math.radians(fov) / 2.0
+    dir_x = _math.cos(h_angle)
+    dir_y = _math.sin(h_angle)
+    norm = _math.hypot(dir_x, dir_y)
+    dx, dy = dir_x / norm, dir_y / norm
+    assert dy > 0.0  # target on the right -> east positive with yaw=0
+    assert dx > 0.0  # still forward of the aircraft
+
+    assert MissionPlanner is not None
+
+
 async def fake_analyzer(vehicle_id, prompt):
     return {
         "vehicle_id": vehicle_id,

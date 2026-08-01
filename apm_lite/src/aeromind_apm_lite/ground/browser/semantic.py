@@ -142,6 +142,16 @@ def normalize_visual_result(content: str) -> dict[str, Any]:
             "box_id": str(target.get("box_id") or "").strip() or None,
             "color": str(color or "").strip() or None,
             "face": str(target.get("face") or "").strip() or None,
+            "center_x": (
+                float(target["center_x"])
+                if isinstance(target.get("center_x"), (int, float))
+                else None
+            ),
+            "center_y": (
+                float(target["center_y"])
+                if isinstance(target.get("center_y"), (int, float))
+                else None
+            ),
             "confidence": _confidence(
                 target.get("confidence", parsed.get("confidence"))
             ),
@@ -413,6 +423,8 @@ class SemanticService:
             f"任务：{prompt}\n"
             "返回字段：message, scene, target, objects, risk_level, suggestion, "
             "mission_relevance。target 必须包含 found, label, box_id, color, "
+            "center_x, center_y（目标中心在画面中的归一化坐标 0-1，x 向右 y 向下，"
+            "用于定位三维位置；无法确定时用 null），"
             "face, confidence, evidence；confidence 为 0 到 1。risk_level 只能为 "
             "low、medium 或 high。没有看清的字段使用 null。"
         )

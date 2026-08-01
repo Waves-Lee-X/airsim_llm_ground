@@ -10,6 +10,7 @@ vehicles. Only simulation (SITL) vehicles are allowed.
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -20,6 +21,7 @@ from aeromind_apm_lite.ground.browser.fleet_executor import (
     fly_formation,
 )
 from aeromind_apm_lite.ground.browser.runtime import ManualRuntimeMode
+from aeromind_apm_lite.ground.browser.visual_navigation import estimate_target_ned
 from aeromind_apm_lite.onboard.flight_commands import FlightCommandService
 from aeromind_apm_lite.onboard.mavlink.models import CommandStatus
 
@@ -138,6 +140,11 @@ class MissionPlanner:
                 prompt = step.params.get("prompt")
                 if prompt is not None and not isinstance(prompt, str):
                     raise FleetMissionError(f"第 {index} 步 analyze 提示词必须是字符串")
+                navigate = step.params.get("navigate_after")
+                if navigate is not None and not isinstance(navigate, bool):
+                    raise FleetMissionError(
+                        f"第 {index} 步 navigate_after 必须是布尔值"
+                    )
             if action == "formation":
                 formation = step.params.get("formation")
                 if formation not in {"line", "v", "diamond"}:
@@ -291,10 +298,45 @@ class MissionPlanner:
             )
             analysis = await self.analyzer(vehicle_id, prompt)
             result_text = str(analysis.get("result") or analysis)
+            navigate_detail = ""
+            if params.get("navigate_after"):
+                target_ned = await self._locate_visual_target(
+                    vehicle_id,
+                    analysis,
+                )
+                if target_ned is None:
+                    approach = await self._approach_target_direction(
+                        vehicle_id,
+                        analysis,
+                        services[vehicle_id],
+                    )
+                    if approach is None:
+                        navigate_detail = "；未能定位目标，未导航"
+                    else:
+                        navigate_detail = (
+                            "；目标较远，已朝目标方向前进 "
+                            f"{approach:.0f} m（建议再次分析）"
+                        )
+                else:
+                    current = await self._current_position(vehicle_id)
+                    await self._await_handle(
+                        services[vehicle_id].goto_local_ned(
+                            target_ned[0],
+                            target_ned[1],
+                            current[2],
+                            expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                        ),
+                        vehicle_id,
+                        "navigate_to_target",
+                        _STEP_TIMEOUT_S,
+                    )
+                    navigate_detail = (
+                        f"；已飞往目标 ({target_ned[0]:.1f}, {target_ned[1]:.1f})"
+                    )
             entry.update(
                 {
                     "state": "done",
-                    "detail": f"analyze: {result_text[:160]}",
+                    "detail": f"analyze: {result_text[:140]}{navigate_detail}",
                 }
             )
             self._results.append(
@@ -302,7 +344,7 @@ class MissionPlanner:
                     "vehicle_id": vehicle_id,
                     "step": "analyze",
                     "status": "completed",
-                    "detail": result_text[:400],
+                    "detail": f"{result_text[:380]}{navigate_detail}",
                     "at_monotonic_s": round(self._clock(), 2),
                 }
             )
@@ -324,6 +366,152 @@ class MissionPlanner:
             raise FleetMissionError(f"不支持的步骤动作 {action!r}")
 
         entry.update({"state": "done", "detail": f"{action} 完成"})
+
+    async def _current_position(
+        self,
+        vehicle_id: int,
+    ) -> tuple[float, float, float]:
+        link = self._runtime.link_for(vehicle_id)
+        if link is None:
+            raise FleetMissionError(f"飞机 {vehicle_id} 链路不可用")
+        snapshot = link.telemetry_snapshot()
+        position = snapshot.local_position_ned_m
+        if position is None:
+            raise FleetMissionError(f"飞机 {vehicle_id} 当前位置不可用")
+        return (float(position[0]), float(position[1]), float(position[2]))
+
+    async def _approach_target_direction(
+        self,
+        vehicle_id: int,
+        analysis: dict[str, Any],
+        service: FlightCommandService,
+        approach_distance_m: float = 15.0,
+    ) -> float | None:
+        'Fly toward the horizontal bearing of the detected target.'
+        try:
+            result = analysis.get("result")
+            if not isinstance(result, dict):
+                return None
+            target = result.get("target")
+            if not isinstance(target, dict):
+                return None
+            center_x = target.get("center_x")
+            frame_size = analysis.get("frame_size_px")
+            fov = analysis.get("camera_fov_degrees")
+            if (
+                center_x is None
+                or not isinstance(frame_size, (list, tuple))
+                or len(frame_size) != 2
+                or fov is None
+            ):
+                return None
+            link = self._runtime.link_for(vehicle_id)
+            if link is None:
+                return None
+            snapshot = link.telemetry_snapshot()
+            position = snapshot.local_position_ned_m
+            attitude = snapshot.attitude_rpy_rad
+            if position is None:
+                return None
+            yaw = float(attitude[2]) if attitude is not None else 0.0
+            horizontal = (float(center_x) - 0.5) * 2.0
+            half = math.radians(float(fov)) / 2.0
+            h_angle = horizontal * half
+            dir_b_x = math.cos(h_angle)
+            dir_b_y = math.sin(h_angle)
+            dir_x = math.cos(yaw) * dir_b_x - math.sin(yaw) * dir_b_y
+            dir_y = math.sin(yaw) * dir_b_x + math.cos(yaw) * dir_b_y
+            norm = math.hypot(dir_x, dir_y)
+            if norm <= 1e-6:
+                return None
+            dx = dir_x / norm
+            dy = dir_y / norm
+            current = await self._current_position(vehicle_id)
+            await self._await_handle(
+                service.goto_local_ned(
+                    current[0] + dx * approach_distance_m,
+                    current[1] + dy * approach_distance_m,
+                    current[2],
+                    expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                ),
+                vehicle_id,
+                "approach_target",
+                _STEP_TIMEOUT_S,
+            )
+            return approach_distance_m
+        except (TypeError, ValueError):
+            return None
+
+    async def _locate_visual_target(
+        self,
+        vehicle_id: int,
+        analysis: dict[str, Any],
+    ) -> tuple[float, float, float] | None:
+        try:
+            result = analysis.get("result")
+            if not isinstance(result, dict):
+                return None
+            target = result.get("target")
+            if not isinstance(target, dict):
+                return None
+            center_x = target.get("center_x")
+            center_y = target.get("center_y")
+            frame_size = analysis.get("frame_size_px")
+            fov = analysis.get("camera_fov_degrees")
+            if (
+                not isinstance(frame_size, (list, tuple))
+                or len(frame_size) != 2
+                or fov is None
+            ):
+                return None
+            if center_x is None or center_y is None:
+                # Fall back to the deterministic salient blob (non-background
+                # color) or the OpenCV palette blob when the VLM did not
+                # report pixel coordinates.
+                salient = analysis.get("salient_center")
+                if (
+                    isinstance(salient, (list, tuple))
+                    and len(salient) == 2
+                    and all(isinstance(v, (int, float)) for v in salient)
+                    and 0.0 <= float(salient[0]) <= 1.0
+                    and 0.0 <= float(salient[1]) <= 1.0
+                ):
+                    center_x = float(salient[0])
+                    center_y = float(salient[1])
+                opencv = analysis.get("opencv_detection")
+                bbox = opencv.get("bbox") if isinstance(opencv, dict) else None
+                if (
+                    not isinstance(bbox, (list, tuple))
+                    or len(bbox) != 4
+                    or not all(isinstance(v, (int, float)) for v in bbox)
+                ):
+                    return None
+                bx, by, bw, bh = (float(value) for value in bbox)
+                if frame_size[0] <= 0 or frame_size[1] <= 0:
+                    return None
+                center_x = (bx + bw / 2.0) / float(frame_size[0])
+                center_y = (by + bh / 2.0) / float(frame_size[1])
+            if not (0.0 <= center_x <= 1.0 and 0.0 <= center_y <= 1.0):
+                return None
+            link = self._runtime.link_for(vehicle_id)
+            if link is None:
+                return None
+            snapshot = link.telemetry_snapshot()
+            position = snapshot.local_position_ned_m
+            attitude = snapshot.attitude_rpy_rad
+            if position is None:
+                return None
+            yaw = float(attitude[2]) if attitude is not None else 0.0
+            return estimate_target_ned(
+                frame_width_px=int(frame_size[0]),
+                frame_height_px=int(frame_size[1]),
+                fov_degrees=float(fov),
+                target_center_normalized=(float(center_x), float(center_y)),
+                vehicle_position_ned=position,
+                vehicle_yaw_rad=yaw,
+            )
+        except (TypeError, ValueError):
+            return None
 
     async def _ensure_armed(
         self,
