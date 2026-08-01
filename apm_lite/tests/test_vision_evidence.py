@@ -67,7 +67,7 @@ def test_normalize_color_accepts_english_and_chinese_labels():
     assert normalize_color("蓝") == "blue"
     assert normalize_color("GREEN") == "green"
     assert normalize_color(None) is None
-    assert normalize_color("深红色") is None
+    assert normalize_color("深红色") == "red"  # deep red normalizes to red
 
 
 def test_color_detector_finds_dominant_solid_color():
@@ -341,3 +341,22 @@ class StaticCamera:
 
     async def get_frame(self):
         return self._frame
+
+
+def test_normalize_color_handles_compound_descriptions():
+    from aeromind_apm_lite.ground.browser.vision_evidence import (
+        normalize_color,
+    )
+
+    assert normalize_color(None) is None
+    assert normalize_color("orange") == "orange"
+    assert normalize_color("橙色") == "orange"
+    assert normalize_color("blue and white") == "blue"
+    assert normalize_color("blue-gray with white grid pattern") == "blue"
+    assert normalize_color("blueandwhite") == "blue"
+    assert normalize_color("bright orange sphere") == "orange"
+    assert normalize_color("dark gray") == "gray"
+    assert normalize_color("浅蓝色") == "blue"
+    assert normalize_color("grey") == "gray"
+    assert normalize_color("红橙色") == "red"
+    assert normalize_color("无法确定颜色") is None

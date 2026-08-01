@@ -107,7 +107,21 @@ _COLOR_ALIASES: dict[str, str] = {
     "黑": "black",
     "gray": "gray",
     "grey": "gray",
-    "灰色": "gray",
+    "灰颜色": "gray",
+    "灰": "gray",
+}
+
+#: Single-character Chinese color words for compound descriptions (蓝白色).
+_CHINESE_COLOR_CHARS: dict[str, str] = {
+    "红": "red",
+    "绿": "green",
+    "蓝": "blue",
+    "黄": "yellow",
+    "橙": "orange",
+    "紫": "purple",
+    "粉": "pink",
+    "白": "white",
+    "黑": "black",
     "灰": "gray",
 }
 
@@ -128,12 +142,33 @@ _COLOR_HSV_RANGES: dict[str, tuple[tuple[int, int, int, int, int, int], ...]] = 
 
 
 def normalize_color(value: Any) -> str | None:
-    """Return the canonical color name for a VLM/English/Chinese label."""
+    """Return the canonical color name for a VLM/English/Chinese label.
+
+    Accepts single palette words (orange / 橙色), hyphen/space/and-separated
+    compounds (blue-gray, blue and white, 蓝白色) and light/dark modifiers;
+    the first canonical token wins for compound descriptions.  This keeps
+    free-form VLM color text comparable with the deterministic detector.
+    """
     if value is None:
         return None
     text = str(value).strip().lower()
-    text = re.sub(r"[^a-z\u4e00-\u9fff]", "", text)
-    return _COLOR_ALIASES.get(text)
+    cleaned = re.sub(r"[^a-z\u4e00-\u9fff]", "", text)
+    direct = _COLOR_ALIASES.get(cleaned)
+    if direct is not None:
+        return direct
+    for part in re.split(r"[^a-z\u4e00-\u9fff]+", text):
+        if not part or part in {"light", "dark", "deep", "bright", "pale"}:
+            continue
+        alias = _COLOR_ALIASES.get(part)
+        if alias is not None:
+            return alias
+    for name in CANONICAL_COLORS:
+        if name in cleaned:
+            return name
+    for char, name in _CHINESE_COLOR_CHARS.items():
+        if char in cleaned:
+            return name
+    return None
 
 
 class ColorDetection(VisionModel):

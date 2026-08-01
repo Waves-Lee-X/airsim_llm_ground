@@ -422,7 +422,10 @@ class SemanticService:
         user_text = (
             f"任务：{prompt}\n"
             "返回字段：message, scene, target, objects, risk_level, suggestion, "
-            "mission_relevance。target 必须包含 found, label, box_id, color, "
+            "mission_relevance。target 必须包含 found, label, box_id, "
+            "color（color 必须且只能使用标准色板之一："
+            "red/green/blue/yellow/orange/purple/pink/white/black/gray，单个英文单词，"
+            "禁止 blue-gray、blue and white 等复合描述，不确定时用 null）, "
             "center_x, center_y（目标中心在画面中的归一化坐标 0-1，x 向右 y 向下，"
             "用于定位三维位置；无法确定时用 null），"
             "face, confidence, evidence；confidence 为 0 到 1。risk_level 只能为 "
