@@ -309,11 +309,27 @@ class MissionPlanner:
                 _TAKEOFF_TIMEOUT_S,
             )
         elif action == "hold":
+            # GUIDED position-hold instead of LOITER: in this SITL setup the
+            # LOITER mode drops the aircraft to the ground, and a GUIDED hold
+            # keeps the mode ready for the following visual-navigation steps.
             await for_each(
-                "hold",
-                lambda vid: services[vid].set_mode("LOITER"),
+                "set_mode",
+                lambda vid: services[vid].set_mode("GUIDED"),
                 _STEP_TIMEOUT_S,
             )
+            for vehicle_id in step.vehicle_ids:
+                current = await self._current_position(vehicle_id)
+                await self._await_handle(
+                    services[vehicle_id].goto_local_ned(
+                        current[0],
+                        current[1],
+                        current[2],
+                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                    ),
+                    vehicle_id,
+                    "hold_position",
+                    _STEP_TIMEOUT_S,
+                )
         elif action == "land":
             await for_each("land", lambda vid: services[vid].land(), _LAND_TIMEOUT_S)
         elif action == "goto":
@@ -814,17 +830,18 @@ class MissionPlanner:
         vehicle_id: int,
         target_ned: tuple[float, float, float] | None,
     ) -> bool:
-        """Sanity guard: only navigate to targets within a bounded range."""
+        """Sanity guard: only navigate to targets within a bounded range.
+
+        The lower bound rejects depth readings that hit the ground or a
+        nearby object (a credible target is at least 3 m away)."""
         if target_ned is None:
             return False
         current = await self._current_position(vehicle_id)
-        return (
-            math.hypot(
-                float(target_ned[0]) - current[0],
-                float(target_ned[1]) - current[1],
-            )
-            <= _MAX_TARGET_RANGE_M
+        distance = math.hypot(
+            float(target_ned[0]) - current[0],
+            float(target_ned[1]) - current[1],
         )
+        return 2.0 <= distance <= _MAX_TARGET_RANGE_M
 
     async def _recenter_and_relocalize(
         self,
@@ -847,25 +864,35 @@ class MissionPlanner:
                 float(current_best[1]) - current[1],
                 float(current_best[0]) - current[0],
             )
-            await self._await_handle(
-                service.goto_local_ned(
-                    current[0] + math.cos(bearing) * 5.0,
-                    current[1] + math.sin(bearing) * 5.0,
-                    current[2],
-                    yaw_rad=bearing,
-                    expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
-                ),
-                vehicle_id,
-                "recenter_yaw",
-                _STEP_TIMEOUT_S,
-            )
+            try:
+                await self._await_handle(
+                    service.goto_local_ned(
+                        current[0] + math.cos(bearing) * 5.0,
+                        current[1] + math.sin(bearing) * 5.0,
+                        current[2],
+                        yaw_rad=bearing,
+                        expires_monotonic_s=self._clock() + _STEP_TIMEOUT_S,
+                    ),
+                    vehicle_id,
+                    "recenter_yaw",
+                    _STEP_TIMEOUT_S,
+                )
+            except FleetMissionError as exc:
+                raise FleetMissionError(
+                    f"{exc} [pos=({current[0]:.1f},{current[1]:.1f}) "
+                    f"target=({current_best[0]:.1f},{current_best[1]:.1f})]"
+                ) from exc
             analysis = await self.analyzer(vehicle_id, prompt)
             refined = await self._locate_visual_target(vehicle_id, analysis)
             if refined is not None and await self._target_reachable(vehicle_id, refined):
                 current_best = refined
-            center = self._analysis_target_center(analysis)
-            if center is not None and abs(float(center[0]) - 0.5) <= 0.25:
-                return current_best
+                center = self._analysis_target_center(analysis)
+                if center is not None and abs(float(center[0]) - 0.5) <= 0.25:
+                    return current_best
+                continue
+            # Re-analysis was not credible (target lost / ground hit): keep
+            # the original target instead of chasing an invalid point.
+            return current_best
         return current_best
 
     async def _search_visual_target(
@@ -930,6 +957,30 @@ class MissionPlanner:
                 return analysis, target
         return analysis, None
 
+    async def _ensure_guided(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+    ) -> None:
+        """Make sure the vehicle is in GUIDED before issuing position targets.
+
+        Hold steps leave the vehicle in LOITER, where position targets are
+        ignored; switching back to GUIDED keeps the visual-navigation chain
+        working in mixed fleet+vision plans.
+        """
+        link = self._runtime.link_for(vehicle_id)
+        if link is None:
+            return
+        snapshot = link.telemetry_snapshot()
+        if snapshot.mode == "GUIDED":
+            return
+        await self._await_handle(
+            service.set_mode("GUIDED"),
+            vehicle_id,
+            "set_mode_guided",
+            _STEP_TIMEOUT_S,
+        )
+
     async def _navigate_to_visual_target(
         self,
         vehicle_id: int,
@@ -939,6 +990,7 @@ class MissionPlanner:
     ) -> str:
         standoff = max(0.0, float(params.get("standoff_distance_m", 0.0) or 0.0))
         probe = max(0.0, float(params.get("probe_distance_m", 8.0) or 8.0))
+        await self._ensure_guided(vehicle_id, service)
         target_ned = await self._locate_visual_target(vehicle_id, analysis)
         if not await self._target_reachable(vehicle_id, target_ned):
             target_ned = None

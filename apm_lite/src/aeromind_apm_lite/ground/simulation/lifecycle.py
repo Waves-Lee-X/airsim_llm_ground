@@ -146,7 +146,7 @@ def validate_m1_parameters(instance: SitlInstanceConfig) -> None:
         "MAV_GCS_SYSID_HI": 0.0,
         "FS_GCS_ENABLE": 5.0,
         "FS_GCS_TIMEOUT": 3.0,
-        "GUID_TIMEOUT": 1.0,
+        "GUID_TIMEOUT": 0.0,
         "ARMING_CHECK": 1.0,
         "SCHED_LOOP_RATE": 150.0,
         "SIM_GPS1_HZ": 5.0,
