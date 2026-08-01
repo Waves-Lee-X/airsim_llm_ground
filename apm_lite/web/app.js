@@ -200,6 +200,7 @@ function normalizeTelemetry(payload) {
     ekf_ok: valueOr(candidate.ekf_ok, health.ekf_ok),
     landed_state: candidate.landed_state,
     home_position_ned_m: vectorTuple(candidate.home_position_ned_m),
+    global_position_deg_m: vectorTuple(candidate.global_position_deg_m),
     last_status_text: candidate.last_status_text,
     observed_at_utc: candidate.observed_at_utc || root.observed_at_utc,
     field_ages_s: candidate.field_ages_s || {},
@@ -1375,7 +1376,13 @@ function renderTelemetry(telemetry) {
   elements.modeValue.textContent = String(valueOr(telemetry.mode, "UNKNOWN")).toUpperCase();
   elements.altitudeValue.textContent = fixed(telemetry.relative_altitude_m, 1);
   elements.batteryValue.textContent = formatBattery(telemetry);
-  elements.gpsValue.textContent = telemetry.gps_fix_type === null || telemetry.gps_fix_type === undefined ? "--" : `FIX ${telemetry.gps_fix_type}`;
+  const gpsFix = telemetry.gps_fix_type === null || telemetry.gps_fix_type === undefined
+    ? "--"
+    : `FIX ${telemetry.gps_fix_type}`;
+  const gpsCoords = Array.isArray(telemetry.global_position_deg_m)
+    ? ` · ${fixed(telemetry.global_position_deg_m[0], 6)}, ${fixed(telemetry.global_position_deg_m[1], 6)}`
+    : "";
+  elements.gpsValue.textContent = gpsFix + gpsCoords;
   elements.satellitesValue.textContent = String(valueOr(telemetry.satellites_visible));
   elements.prearmValue.textContent = booleanLabel(telemetry.prearm_ok, "通过", "未通过");
 

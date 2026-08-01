@@ -34,10 +34,12 @@ from aeromind_apm_lite.common.contracts import (
 )
 from aeromind_apm_lite.common.credentials import load_shared_secret
 from aeromind_apm_lite.common.coordinates import (
+    GeodeticPosition,
     GeoReference,
     GeoReferenceConflict,
     GeoReferenceError,
     GeoReferenceStore,
+    geodetic_to_local_ned,
 )
 from aeromind_apm_lite.common.trajectory import (
     TrajectoryEvidence,
@@ -909,13 +911,18 @@ class BrowserGateway:
         return self.fleet_mission.status_payload()
 
     def fleet_map_payload(self) -> dict[str, Any]:
-        """Aggregate the real local-NED positions of every known vehicle.
+        """Aggregate the real fleet positions onto one shared north-up map.
 
-        One shared situation map for the whole fleet: the browser draws every
-        available vehicle on a single north-up local-NED canvas.
+        Each FCU reports NED relative to its own home, and in multi-SITL runs
+        every vehicle is spawned at a different point, so raw per-vehicle local
+        NED would collapse the whole fleet onto a single pixel.  The shared map
+        therefore derives every position from WGS84 GPS relative to a stable
+        fleet origin (the first online vehicle's home), matching what the
+        simulator scene shows.
         """
         vehicles: list[dict[str, Any]] = []
         seen: set[int] = set()
+        snapshots: dict[int, tuple[dict[str, Any] | None, str | None]] = {}
         for vehicle_id in (*self.runtime.vehicle_ids, *self.fleet.vehicle_ids):
             if vehicle_id in seen:
                 continue
@@ -926,6 +933,34 @@ class BrowserGateway:
                 vehicle_name = self.runtime.config_for(vehicle_id).vehicle_name
             except KeyError:
                 snapshot = None
+            snapshots[vehicle_id] = (snapshot, vehicle_name)
+
+        origin_deg_m: list[float] | None = None
+        origin: GeodeticPosition | None = None
+        for snapshot, _name in snapshots.values():
+            if snapshot is None:
+                continue
+            candidate = snapshot.get("home_position_deg_m") or snapshot.get(
+                "global_position_deg_m"
+            )
+            if (
+                isinstance(candidate, (list, tuple))
+                and len(candidate) >= 3
+                and all(isinstance(value, (int, float)) for value in candidate[:3])
+            ):
+                origin = GeodeticPosition(
+                    float(candidate[0]),
+                    float(candidate[1]),
+                    float(candidate[2]),
+                )
+                origin_deg_m = [
+                    origin.latitude_deg,
+                    origin.longitude_deg,
+                    origin.altitude_m,
+                ]
+                break
+
+        for vehicle_id, (snapshot, vehicle_name) in snapshots.items():
             if snapshot is None:
                 vehicles.append(
                     {
@@ -937,6 +972,35 @@ class BrowserGateway:
                 continue
             position = snapshot.get("position_m")
             velocity = snapshot.get("velocity_m_s")
+            global_position = snapshot.get("global_position_deg_m")
+            shared_position: dict[str, float] | None = None
+            if (
+                origin is not None
+                and isinstance(global_position, (list, tuple))
+                and len(global_position) >= 3
+                and all(
+                    isinstance(value, (int, float)) for value in global_position[:3]
+                )
+            ):
+                shared_ned = geodetic_to_local_ned(
+                    GeodeticPosition(
+                        float(global_position[0]),
+                        float(global_position[1]),
+                        float(global_position[2]),
+                    ),
+                    origin,
+                )
+                shared_position = {
+                    "x": float(shared_ned.x),
+                    "y": float(shared_ned.y),
+                    "z": float(shared_ned.z),
+                }
+            if shared_position is None and isinstance(position, dict):
+                shared_position = {
+                    "x": float(position["x"]),
+                    "y": float(position["y"]),
+                    "z": float(position["z"]),
+                }
             yaw_rad = None
             attitude = snapshot.get("attitude_rpy_rad")
             if (
@@ -954,13 +1018,20 @@ class BrowserGateway:
                     "fcu_link_ok": bool(snapshot.get("fcu_link_ok")),
                     "mode": snapshot.get("mode"),
                     "armed": bool(snapshot.get("armed")),
-                    "position_m": (
+                    "position_m": shared_position,
+                    "local_position_ned_m": (
                         {
                             "x": float(position["x"]),
                             "y": float(position["y"]),
                             "z": float(position["z"]),
                         }
                         if isinstance(position, dict)
+                        else None
+                    ),
+                    "global_position_deg_m": (
+                        [float(value) for value in global_position[:3]]
+                        if isinstance(global_position, (list, tuple))
+                        and len(global_position) >= 3
                         else None
                     ),
                     "velocity_m_s": (
@@ -989,7 +1060,8 @@ class BrowserGateway:
                 }
             )
         return {
-            "coordinate_frame": "local_ned",
+            "coordinate_frame": "shared_ned",
+            "origin_deg_m": origin_deg_m,
             "generated_monotonic_s": time.monotonic(),
             "vehicles": vehicles,
             "formation": {
