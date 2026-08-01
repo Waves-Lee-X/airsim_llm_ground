@@ -14,12 +14,20 @@ import time
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from aeromind_apm_lite.common.coordinates import (
+    GeodeticPosition,
+    Vec3,
+    enu_to_geodetic,
+    geodetic_to_local_ned,
+)
 from aeromind_apm_lite.common.formation import FormationType, formation_offsets
+from aeromind_apm_lite.ground.browser.airsim_settings import AirSimSpawnMap
 from aeromind_apm_lite.ground.browser.runtime import ManualRuntimeMode
 from aeromind_apm_lite.onboard.flight_commands import FlightCommandService
 from aeromind_apm_lite.onboard.mavlink.models import CommandStatus
 
 _STEP_TIMEOUT_S = 120.0
+_DEMO_MAP_ORIGIN = GeodeticPosition(47.641468, -122.140165, 0.0)
 _TAKEOFF_TIMEOUT_S = 90.0
 _LAND_TIMEOUT_S = 60.0
 
@@ -40,6 +48,23 @@ class FleetMissionConfig:
     formations: tuple[FormationType, ...] | None = None
 
 
+def map_to_vehicle_local_ned(
+    map_point: tuple[float, float, float],
+    origin: GeodeticPosition,
+    home: GeodeticPosition,
+) -> tuple[float, float, float]:
+    """Convert a map-frame (north, east, down) point to vehicle-local NED.
+
+    The map frame is anchored at ``origin`` (the fleet reference home).  Every
+    SITL vehicle has its own home (spawn point), so one physical target is a
+    different local-NED point for each vehicle.
+    """
+    offset_enu = Vec3(map_point[1], map_point[0], -map_point[2])
+    target = enu_to_geodetic(offset_enu, origin)
+    ned = geodetic_to_local_ned(target, home)
+    return (float(ned.x), float(ned.y), float(ned.z))
+
+
 async def fly_formation(
     services: dict[int, FlightCommandService],
     runtime: Any,
@@ -57,19 +82,109 @@ async def fly_formation(
 
     Every vehicle first climbs into its own altitude lane (1.5 m apart), then
     morphs horizontally inside the lane, then levels off at the formation
-    altitude, so crossing paths stay vertically separated. Returns per-step
-    command results for evidence.
+    altitude, so crossing paths stay vertically separated.  Slot targets are
+    converted from the shared map frame into each vehicle's local NED using
+    its own home, so the physical layout matches the intended shape.
+    Returns per-step command results for evidence.
     """
     results: list[dict[str, Any]] = []
     ids = tuple(int(vehicle_id) for vehicle_id in vehicle_ids)
     offsets = formation_offsets(formation, len(ids), spacing_m)
+
+    async def vehicle_origin(vehicle_id: int) -> GeodeticPosition | None:
+        """Derive the vehicle's local-NED origin from live telemetry.
+
+        local NED = current position - origin (as NED vectors), so the
+        origin is ``enu_to_geodetic((-east, -north, +down), current_gps)``.
+        The EKF origin is fixed at FCU boot, so this stays valid for the
+        whole flight no matter where AirSim currently places the vehicles
+        or how ArduPilot re-anchors the HOME_POSITION message.
+        """
+        link = runtime.link_for(vehicle_id)
+        if link is None:
+            raise FleetMissionError(f"飞机 {vehicle_id} 链路不可用")
+        snapshot = link.telemetry_snapshot()
+        gps = snapshot.global_position_deg_m
+        local = snapshot.local_position_ned_m
+        if not (
+            gps is not None
+            and len(gps) >= 3
+            and local is not None
+            and len(local) >= 3
+            and all(
+                isinstance(value, (int, float))
+                for value in (*gps[:3], *local[:3])
+            )
+        ):
+            return None
+        try:
+            current = GeodeticPosition(
+                float(gps[0]),
+                float(gps[1]),
+                float(gps[2]),
+            )
+            return enu_to_geodetic(
+                Vec3(
+                    -float(local[1]),
+                    -float(local[0]),
+                    float(local[2]),
+                ),
+                current,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    async def telemetry_home(vehicle_id: int) -> GeodeticPosition | None:
+        link = runtime.link_for(vehicle_id)
+        if link is None:
+            raise FleetMissionError(f"飞机 {vehicle_id} 链路不可用")
+        snapshot = link.telemetry_snapshot()
+        for candidate in (
+            snapshot.home_position_deg_m,
+            snapshot.global_position_deg_m,
+        ):
+            if (
+                candidate is not None
+                and len(candidate) >= 3
+                and all(
+                    isinstance(value, (int, float)) for value in candidate[:3]
+                )
+            ):
+                return GeodeticPosition(
+                    float(candidate[0]),
+                    float(candidate[1]),
+                    float(candidate[2]),
+                )
+        return None
+
+    spawn_map = AirSimSpawnMap()
+    origins: dict[int, GeodeticPosition] = {}
+    anchor: GeodeticPosition | None = None
+    for vehicle_id in ids:
+        origin = await vehicle_origin(vehicle_id)
+        if origin is None:
+            # Fall back to the AirSim spawn layout, then telemetry home.
+            origin = spawn_map.home_for(vehicle_id)
+        if origin is None:
+            origin = await telemetry_home(vehicle_id)
+        if origin is None:
+            # Demo links carry no geodetic data: fall back to a synthetic
+            # shared origin so relative offsets stay map-identical.
+            anchor = anchor or _DEMO_MAP_ORIGIN
+            origin = anchor
+        origins[vehicle_id] = origin
+    anchor = origins[ids[0]]
     slots: dict[int, tuple[float, float, float]] = {}
     for index, vehicle_id in enumerate(ids):
         offset = offsets[index]
-        slots[vehicle_id] = (
-            leader_target_map_m[0] + offset[0],
-            leader_target_map_m[1] + offset[1],
-            -altitude_m,
+        slots[vehicle_id] = map_to_vehicle_local_ned(
+            (
+                leader_target_map_m[0] + offset[0],
+                leader_target_map_m[1] + offset[1],
+                -altitude_m,
+            ),
+            anchor,
+            origins[vehicle_id],
         )
     lanes = {
         vehicle_id: -(altitude_m + 1.5 * (index + 1))

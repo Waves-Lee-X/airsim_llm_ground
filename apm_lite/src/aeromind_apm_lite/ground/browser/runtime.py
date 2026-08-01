@@ -462,6 +462,11 @@ class ManualRuntime:
         )
 
         transport = PymavlinkTransport(self.config.fcu_connection())
+        heartbeat_timeout_s = self.config.heartbeat_timeout_s
+        if self.config.mode == ManualRuntimeMode.SITL:
+            # Four SITL processes sharing one host can stall briefly under
+            # load; a 3 s real-vehicle watchdog would false-trigger here.
+            heartbeat_timeout_s = max(heartbeat_timeout_s, 10.0)
         return ApmLink(
             transport,
             target_system=(
@@ -473,7 +478,7 @@ class ManualRuntime:
             source_system=self.config.source_system,
             source_component=self.config.source_component,
             startup_timeout_s=self.config.startup_timeout_s,
-            heartbeat_timeout_s=self.config.heartbeat_timeout_s,
+            heartbeat_timeout_s=heartbeat_timeout_s,
             ack_timeout_s=self.config.ack_timeout_s,
             physical_timeout_s=self.config.physical_timeout_s,
             telemetry_freshness_s=self.config.telemetry_freshness_s,

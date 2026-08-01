@@ -133,7 +133,8 @@ def test_browser_fleet_map_aggregates_all_known_vehicles():
         body = client.get("/api/fleet/map")
         assert body.status_code == 200
         payload = body.json()
-        assert payload["coordinate_frame"] == "local_ned"
+        assert payload["coordinate_frame"] == "shared_ned"
+        assert payload["origin_deg_m"] is None
         assert payload["formation"]["formation"] == "line"
         assert payload["formation"]["leader_target_map_m"] == [0.0, 0.0, -3.0]
         ids = {item["vehicle_id"] for item in payload["vehicles"]}

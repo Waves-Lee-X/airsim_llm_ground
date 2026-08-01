@@ -154,6 +154,25 @@ class ColorDetection(VisionModel):
         return self.model_dump(mode="json")
 
 
+def _nearest_palette_color(hue: float) -> str | None:
+    """Map a mean hue to the nearest palette hue range (circular hue)."""
+    best_name: str | None = None
+    best_distance = 1e9
+    for name, ranges in _COLOR_HSV_RANGES.items():
+        if name in {"white", "black", "gray"}:
+            continue
+        for h_lo, _s_lo, _v_lo, h_hi, _s_hi, _v_hi in ranges:
+            lo, hi = float(h_lo), float(h_hi)
+            if lo <= hue <= hi:
+                return name
+            mid = (lo + hi) / 2.0
+            distance = min(abs(hue - mid), 180.0 - abs(hue - mid))
+            if distance < best_distance:
+                best_distance = distance
+                best_name = name
+    return best_name
+
+
 class ColorDetector:
     """Run deterministic HSV color detection without any model authority."""
 
@@ -170,6 +189,48 @@ class ColorDetector:
         self.min_coverage = min_coverage
         self.max_coverage = max_coverage
 
+    @staticmethod
+    def _classify_vivid_target(
+        hsv: Any,
+        region_total: int,
+    ) -> tuple[str, float, tuple[int, int, int, int]] | None:
+        """Classify the largest vivid blob's mean hue into the palette.
+
+        The region around a VLM target is usually background-dominated, so a
+        plain dominant-color vote would still return gray; the vivid blob (the
+        actual object) is what the VLM described.
+        """
+        import cv2
+        import numpy as np
+
+        mask = cv2.inRange(hsv, (0, 80, 60), (179, 255, 255))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        if not contours:
+            return None
+        largest = max(contours, key=cv2.contourArea)
+        area = float(cv2.contourArea(largest))
+        if area < 64.0:
+            return None
+        blob_mask = np.zeros_like(mask)
+        cv2.drawContours(blob_mask, [largest], -1, 255, -1)
+        mean_hue = float(cv2.mean(hsv[:, :, 0], mask=blob_mask)[0])
+        mean_sat = float(cv2.mean(hsv[:, :, 1], mask=blob_mask)[0])
+        if mean_sat < 60.0:
+            return None
+        color = _nearest_palette_color(mean_hue)
+        if color is None:
+            return None
+        x, y, w, h = cv2.boundingRect(largest)
+        coverage = min(1.0, area / region_total) if region_total > 0 else 0.0
+        return color, coverage, (int(x), int(y), int(w), int(h))
+
     def detect(
         self,
         data: bytes,
@@ -177,8 +238,16 @@ class ColorDetector:
         sequence: int,
         captured_at_utc: datetime,
         media_type: str = "image/jpeg",
+        region_center: tuple[float, float] | None = None,
+        region_size_fraction: float = 0.3,
     ) -> ColorDetection | None:
-        """Return the dominant palette color, or None when not informative."""
+        """Return the dominant palette color, or None when not informative.
+
+        ``region_center`` (normalized 0-1 pixel center) restricts the analysis
+        to a patch around the detected target, so the measurement matches the
+        object the VLM described instead of the whole (often background-
+        dominated) frame.
+        """
         try:
             import cv2
         except ImportError as exc:  # pragma: no cover - depends on ground extra
@@ -202,6 +271,22 @@ class ColorDetector:
                 note="无法解码图像",
             )
         height, width = image.shape[:2]
+        region_active = False
+        if region_center is not None and len(region_center) == 2:
+            cx, cy = float(region_center[0]), float(region_center[1])
+            if 0.0 <= cx <= 1.0 and 0.0 <= cy <= 1.0:
+                half = max(
+                    4,
+                    int(region_size_fraction * max(height, width) / 2.0),
+                )
+                x0 = max(0, int(cx * width) - half)
+                y0 = max(0, int(cy * height) - half)
+                x1 = min(width, int(cx * width) + half)
+                y1 = min(height, int(cy * height) + half)
+                if x1 - x0 >= 16 and y1 - y0 >= 16:
+                    image = image[y0:y1, x0:x1]
+                    height, width = image.shape[:2]
+                    region_active = True
         scale = self._MAX_DECODE_DIMENSION / max(height, width)
         if scale < 1.0:
             image = cv2.resize(
@@ -213,6 +298,20 @@ class ColorDetector:
         if total <= 0:
             return None
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        if region_active:
+            vivid = self._classify_vivid_target(hsv, height * width)
+            if vivid is not None:
+                color, coverage, bbox = vivid
+                return ColorDetection(
+                    color=color,
+                    coverage_ratio=round(coverage, 6),
+                    area_px=int(round(coverage * height * width)),
+                    bbox=bbox,
+                    confidence=round(min(1.0, 0.5 + coverage / 0.35), 4),
+                    frame_sequence=sequence,
+                    detected_at_utc=captured_at_utc,
+                )
 
         best: tuple[float, str, float, tuple[int, int, int, int] | None] = (
             0.0,

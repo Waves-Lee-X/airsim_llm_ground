@@ -321,3 +321,35 @@ def test_coordinator_waits_for_never_seen_vehicles_instead_of_aborting():
     )
     assert decision.phase == "syncing"
     assert all(directive.action == "hold" for directive in decision.directives)
+
+
+def test_map_to_vehicle_local_ned_uses_per_vehicle_home():
+    import math
+
+    from aeromind_apm_lite.common.coordinates import GeodeticPosition
+    from aeromind_apm_lite.ground.browser.fleet_executor import (
+        map_to_vehicle_local_ned,
+    )
+
+    origin = GeodeticPosition(47.641468, -122.1402251, 0.0)
+    home_a = origin
+    # About 3 m east of the anchor, like the multi-SITL spawn layout.
+    home_b = GeodeticPosition(47.641468, -122.1401852, 0.0)  # ~3.0 m east
+
+    ned_a = map_to_vehicle_local_ned((0.0, 0.0, -3.0), origin, home_a)
+    assert abs(ned_a[0]) < 0.01
+    assert abs(ned_a[1]) < 0.01
+    assert abs(ned_a[2] - (-3.0)) < 0.01
+
+    ned_b = map_to_vehicle_local_ned((0.0, 0.0, -3.0), origin, home_b)
+    # The physical target sits at the anchor; for a vehicle 3 m east it is
+    # ~3 m west in its local frame, and still 3 m up.
+    assert abs(ned_b[1] - (-3.0)) < 0.2
+    assert abs(ned_b[2] - (-3.0)) < 0.01
+
+    # A slot 1.5 m east of the anchor must be the same local point for the
+    # anchor vehicle, and ~1.5 m west for the east-shifted vehicle.
+    ned_a2 = map_to_vehicle_local_ned((0.0, 1.5, -3.0), origin, home_a)
+    assert abs(ned_a2[1] - 1.5) < 0.2
+    ned_b2 = map_to_vehicle_local_ned((0.0, 1.5, -3.0), origin, home_b)
+    assert abs(ned_b2[1] - (-1.5)) < 0.2

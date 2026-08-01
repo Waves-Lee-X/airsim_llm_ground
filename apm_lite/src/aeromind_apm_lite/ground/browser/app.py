@@ -287,6 +287,33 @@ class EventBroker:
             self._subscribers.discard(queue)
 
 
+def _target_region_center(payload: dict[str, Any]) -> tuple[float, float] | None:
+    """Return the normalized target center the VLM reported, or the salient
+    blob center, so OpenCV measures the same object's color."""
+    result = payload.get("result") or {}
+    target = result.get("target") or {}
+    if isinstance(target, dict):
+        cx = target.get("center_x")
+        cy = target.get("center_y")
+        if (
+            isinstance(cx, (int, float))
+            and isinstance(cy, (int, float))
+            and 0.0 <= float(cx) <= 1.0
+            and 0.0 <= float(cy) <= 1.0
+        ):
+            return (float(cx), float(cy))
+    salient = payload.get("salient_center")
+    if (
+        isinstance(salient, (list, tuple))
+        and len(salient) == 2
+        and all(isinstance(value, (int, float)) for value in salient)
+        and 0.0 <= float(salient[0]) <= 1.0
+        and 0.0 <= float(salient[1]) <= 1.0
+    ):
+        return (float(salient[0]), float(salient[1]))
+    return None
+
+
 class BrowserGateway:
     """Aggregate signed internal messages into browser-safe public state."""
 
@@ -832,6 +859,7 @@ class BrowserGateway:
                 sequence=frame.sequence,
                 captured_at_utc=frame.captured_at_utc,
                 media_type=frame.media_type,
+                region_center=_target_region_center(payload),
             )
             payload["opencv_detection"] = (
                 detection.public_payload() if detection is not None else None
@@ -856,6 +884,7 @@ class BrowserGateway:
                 sequence=frame.sequence,
                 captured_at_utc=frame.captured_at_utc,
                 media_type=frame.media_type,
+                region_center=_target_region_center(payload),
             )
         except ColorUnavailable:
             detection = None
@@ -1963,6 +1992,7 @@ def create_app(
     ) -> dict[str, Any]:
         selected = gateway._vehicle_id(request.vehicle_id)
         frame = await gateway.camera_frame(selected)
+        latest = gateway.semantic.latest_payload().get("visual")
         detection = None
         detector_error = None
         try:
@@ -1971,10 +2001,12 @@ def create_app(
                 sequence=frame.sequence,
                 captured_at_utc=frame.captured_at_utc,
                 media_type=frame.media_type,
+                region_center=_target_region_center(
+                    latest if isinstance(latest, dict) else {}
+                ),
             )
         except ColorUnavailable as exc:
             detector_error = str(exc)
-        latest = gateway.semantic.latest_payload().get("visual")
         vlm_color = None
         vlm_analyzed = isinstance(latest, dict)
         if vlm_analyzed:
