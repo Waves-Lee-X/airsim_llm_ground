@@ -263,7 +263,6 @@ class ApmLink:
         return self._identity
 
     @property
-    @property
     def ready_monotonic_s(self) -> float | None:
         """Monotonic time when the FCU first became ready (boot proxy)."""
         return self._ready_monotonic_s
