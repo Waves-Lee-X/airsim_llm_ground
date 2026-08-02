@@ -324,8 +324,6 @@ def test_coordinator_waits_for_never_seen_vehicles_instead_of_aborting():
 
 
 def test_map_to_vehicle_local_ned_uses_per_vehicle_home():
-    import math
-
     from aeromind_apm_lite.common.coordinates import GeodeticPosition
     from aeromind_apm_lite.ground.browser.fleet_executor import (
         map_to_vehicle_local_ned,

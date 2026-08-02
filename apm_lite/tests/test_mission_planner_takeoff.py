@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 
 from aeromind_apm_lite.ground.browser import mission_planner as planner_module
+from aeromind_apm_lite.ground.browser.fleet_executor import FleetMissionError
 from aeromind_apm_lite.ground.browser.mission_planner import MissionPlanner
 from aeromind_apm_lite.onboard.apm_link import CommandHandle
 from aeromind_apm_lite.onboard.mavlink.models import (
@@ -181,3 +182,24 @@ def test_takeoff_rearms_when_disarmed(monkeypatch):
     assert service.calls == 1
     steps = [item["step"] for item in planner._results]
     assert "arm_retry" in steps
+
+
+def test_planner_rejects_preempted_command():
+    planner = MissionPlanner(
+        _FakeRuntime(_SettledLink()), clock=time.monotonic
+    )
+
+    async def scenario():
+        result = asyncio.get_running_loop().create_future()
+        result.set_result(
+            SimpleNamespace(
+                status=CommandStatus.PREEMPTED,
+                detail="preempted by higher-priority land",
+            )
+        )
+        handle = SimpleNamespace(result=result)
+        with pytest.raises(FleetMissionError, match="步骤 takeoff 失败"):
+            await planner._await_handle(handle, 1, "takeoff", 0.1)
+
+    asyncio.run(scenario())
+    assert planner._results == []

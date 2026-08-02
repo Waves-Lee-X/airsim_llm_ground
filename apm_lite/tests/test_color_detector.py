@@ -4,7 +4,7 @@ import pytest
 
 cv2 = pytest.importorskip("cv2")
 
-from aeromind_apm_lite.ground.browser.vision_evidence import (
+from aeromind_apm_lite.ground.browser.vision_evidence import (  # noqa: E402
     ColorDetector,
     utc_now,
 )

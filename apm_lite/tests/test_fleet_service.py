@@ -1,5 +1,8 @@
 """Fleet orchestration service and browser API tests."""
 
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,6 +12,10 @@ from aeromind_apm_lite.ground.browser.fleet_service import (
     FleetConfigError,
     FleetService,
 )
+from aeromind_apm_lite.ground.browser.fleet_executor import (
+    FleetMissionError,
+    FleetMissionRunner,
+)
 from aeromind_apm_lite.ground.browser.runtime import (
     DemoApmLink,
     FleetRuntime,
@@ -16,6 +23,7 @@ from aeromind_apm_lite.ground.browser.runtime import (
     ManualRuntimeConfig,
     ManualRuntimeMode,
 )
+from aeromind_apm_lite.onboard.mavlink.models import CommandStatus
 
 
 def ready_state(vehicle_id, x, y):
@@ -26,6 +34,25 @@ def ready_state(vehicle_id, x, y):
         last_seen_age_s=0.1,
         position_map_m=(x, y, -2.0),
     )
+
+
+def test_fleet_runner_rejects_preempted_command():
+    runner = FleetMissionRunner(runtime=None)
+
+    async def scenario():
+        result = asyncio.get_running_loop().create_future()
+        result.set_result(
+            SimpleNamespace(
+                status=CommandStatus.PREEMPTED,
+                detail="preempted by higher-priority rtl",
+            )
+        )
+        handle = SimpleNamespace(result=result)
+        with pytest.raises(FleetMissionError, match="步骤 goto 失败"):
+            await runner._await_handle(handle, 2, "goto", 0.1)
+
+    asyncio.run(scenario())
+    assert runner.status_payload()["results"] == []
 
 
 def test_fleet_service_defaults_and_validation():

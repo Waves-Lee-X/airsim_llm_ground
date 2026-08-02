@@ -197,7 +197,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `247 passed`。提交前还应运行 JavaScript 语法检查和
+当前完整测试基线为 `318 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 ## 安全边界

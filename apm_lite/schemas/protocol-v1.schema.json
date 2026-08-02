@@ -2307,6 +2307,20 @@
               "minimum": 1,
               "title": "Vehicle Id",
               "type": "integer"
+            },
+            "yaw_rad": {
+              "anyOf": [
+                {
+                  "maximum": 3.141593,
+                  "minimum": -3.141593,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Yaw Rad"
             }
           },
           "required": [

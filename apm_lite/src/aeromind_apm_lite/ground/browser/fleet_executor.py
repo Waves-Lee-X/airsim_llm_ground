@@ -36,6 +36,14 @@ class FleetMissionError(RuntimeError):
     """Raised when a fleet mission cannot start or fails mid-flight."""
 
 
+def require_completed_command(result: Any, vehicle_id: int, step: str) -> None:
+    """Reject command outcomes without confirmed physical completion."""
+    if result.status != CommandStatus.COMPLETED:
+        raise FleetMissionError(
+            f"飞机 {vehicle_id} 步骤 {step} 失败: {result.detail}"
+        )
+
+
 @dataclass(frozen=True)
 class FleetMissionConfig:
     formation: FormationType
@@ -206,13 +214,7 @@ async def fly_formation(
             result = await asyncio.wait_for(handle.result, timeout=step_timeout_s)
         except asyncio.TimeoutError as exc:
             raise FleetMissionError(f"飞机 {vehicle_id} 步骤 {step} 超时") from exc
-        if result.status not in {
-            CommandStatus.COMPLETED,
-            CommandStatus.PREEMPTED,
-        }:
-            raise FleetMissionError(
-                f"飞机 {vehicle_id} 步骤 {step} 失败: {result.detail}"
-            )
+        require_completed_command(result, vehicle_id, step)
         results.append(
             {
                 "vehicle_id": vehicle_id,
@@ -597,13 +599,7 @@ class FleetMissionRunner:
             raise FleetMissionError(
                 f"飞机 {vehicle_id} 步骤 {step} 超时"
             ) from exc
-        if result.status not in {
-            CommandStatus.COMPLETED,
-            CommandStatus.PREEMPTED,
-        }:
-            raise FleetMissionError(
-                f"飞机 {vehicle_id} 步骤 {step} 失败: {result.detail}"
-            )
+        require_completed_command(result, vehicle_id, step)
         self._results.append(
             {
                 "vehicle_id": vehicle_id,

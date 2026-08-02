@@ -25,6 +25,11 @@ missions/
 /aeromind-apm-lite-*.tar.gz
 /apm_lite/deploy/offline/pi-py39-wheelhouse/
 
+# Local AeroMind simulation helpers
+/apm_lite/.tmp_*.sh
+/apm_lite/*.lnk
+/apm_lite/deploy/wsl/start_sitl_fleet.sh
+
 # Logs
 logs/
 *.log

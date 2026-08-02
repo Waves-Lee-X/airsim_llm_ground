@@ -19,19 +19,15 @@ from aeromind_apm_lite.common.formation import FormationType
 from aeromind_apm_lite.ground.browser.fleet_executor import (
     FleetMissionError,
     fly_formation,
+    require_completed_command,
 )
 from aeromind_apm_lite.ground.browser.runtime import ManualRuntimeMode
 from aeromind_apm_lite.ground.browser.visual_navigation import (
-    estimate_object_radius,
     estimate_target_ned,
-    pixel_ray_ned,
     target_from_depth,
 )
 from aeromind_apm_lite.onboard.flight_commands import FlightCommandService
-from aeromind_apm_lite.onboard.mavlink.models import (
-    CommandStatus,
-    MavLandedState,
-)
+from aeromind_apm_lite.onboard.mavlink.models import MavLandedState
 
 _STEP_TIMEOUT_S = 120.0
 _MAX_TARGET_RANGE_M = 150.0
@@ -41,6 +37,7 @@ _TAKEOFF_ATTEMPT_WINDOW_S = 60.0
 _TAKEOFF_SETTLE_WAIT_S = 20.0
 _TAKEOFF_RETRY_GAP_S = 5.0
 _LAND_TIMEOUT_S = 60.0
+
 
 def _line_intersection(
     a: tuple[float, float],
@@ -1051,7 +1048,7 @@ class MissionPlanner:
         sits near the frame center (edge/occluded pixels localize poorly)."""
         prompt = str(
             params.get("prompt")
-            or "\u8bc6\u522b\u753b\u9762\u4e2d\u7684\u76ee\u6807\u7269\u4f53\uff08\u9525\u6876/\u7403\u4f53\uff09"
+            or "识别画面中的目标物体（锥桶/球体）"
         )
         current_best = target_ned
         for _attempt in range(3):
@@ -1391,13 +1388,7 @@ class MissionPlanner:
             result = await asyncio.wait_for(handle.result, timeout=timeout_s)
         except asyncio.TimeoutError as exc:
             raise FleetMissionError(f"飞机 {vehicle_id} 步骤 {step} 超时") from exc
-        if result.status not in {
-            CommandStatus.COMPLETED,
-            CommandStatus.PREEMPTED,
-        }:
-            raise FleetMissionError(
-                f"飞机 {vehicle_id} 步骤 {step} 失败: {result.detail}"
-            )
+        require_completed_command(result, vehicle_id, step)
         self._results.append(
             {
                 "vehicle_id": vehicle_id,
