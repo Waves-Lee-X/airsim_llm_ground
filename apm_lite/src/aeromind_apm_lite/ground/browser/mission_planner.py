@@ -40,7 +40,6 @@ _TAKEOFF_MAX_ATTEMPTS = 3
 _TAKEOFF_ATTEMPT_WINDOW_S = 60.0
 _TAKEOFF_SETTLE_WAIT_S = 20.0
 _TAKEOFF_RETRY_GAP_S = 5.0
-_TAKEOFF_GRACE_S = 300.0
 _LAND_TIMEOUT_S = 60.0
 
 def _line_intersection(
@@ -1287,29 +1286,17 @@ class MissionPlanner:
             )
 
     async def _wait_takeoff_ready(self, vehicle_id: int) -> None:
-        """Wait for the post-boot grace and ON_GROUND before NAV_TAKEOFF.
+        """Wait until the FCU reports ON_GROUND before sending NAV_TAKEOFF.
 
-        ArduCopter in this SITL setup rejects arming and takeoff for a few
-        minutes after reboot (arming checks / landing detector not settled),
-        so the first NAV_TAKEOFF is held until the FCU has been ready for the
-        configured grace period (zero wait for an already-settled FCU).
+        ArduCopter ignores NAV_TAKEOFF while its landing detector has not
+        settled; this short bounded check keeps the first attempt well-timed
+        without blocking an already-ready FCU.
         """
-        deadline = self._clock() + _TAKEOFF_SETTLE_WAIT_S + _TAKEOFF_GRACE_S
+        deadline = self._clock() + _TAKEOFF_SETTLE_WAIT_S
         while self._clock() < deadline:
             link = self._runtime.link_for(vehicle_id)
             if link is None:
                 return
-            # Prefer the FCU boot time (SYSTEM_TIME) so a ground-station
-            # restart does not re-arm the grace period for a settled FCU.
-            boot_monotonic = getattr(link, "fcu_boot_monotonic_s", None)
-            if boot_monotonic is None:
-                boot_monotonic = getattr(link, "ready_monotonic_s", None)
-            if (
-                boot_monotonic is not None
-                and self._clock() < boot_monotonic + _TAKEOFF_GRACE_S
-            ):
-                await asyncio.sleep(2.0)
-                continue
             snapshot = link.telemetry_snapshot()
             relative_altitude = snapshot.relative_altitude_m
             landed_state = snapshot.landed_state
@@ -1338,21 +1325,23 @@ class MissionPlanner:
         """
         await self._wait_takeoff_ready(vehicle_id)
         last_error: FleetMissionError | None = None
+        force_rearm = False
         for attempt in range(1, _TAKEOFF_MAX_ATTEMPTS + 1):
             try:
                 link = self._runtime.link_for(vehicle_id)
                 if link is not None:
                     snapshot = link.telemetry_snapshot()
-                    if snapshot.armed is not True:
-                        # The FCU may have disarmed while earlier attempts
-                        # were pending; re-arm so NAV_TAKEOFF is not rejected
-                        # with "motors not armed".
+                    if force_rearm or snapshot.armed is not True:
+                        # A failed attempt may leave the FCU disarmed while
+                        # the telemetry snapshot is stale; re-arm so the next
+                        # NAV_TAKEOFF is not rejected with "motors not armed".
                         await self._await_handle(
                             service.arm(),
                             vehicle_id,
                             "arm_retry",
                             _STEP_TIMEOUT_S,
                         )
+                        force_rearm = False
                 await self._await_handle(
                     service.takeoff(
                         altitude_m,
@@ -1372,6 +1361,7 @@ class MissionPlanner:
                         f"飞机 {vehicle_id} 起飞在 {_TAKEOFF_MAX_ATTEMPTS} "
                         f"次尝试后失败: {exc}"
                     ) from exc
+                force_rearm = True
                 self._results.append(
                     {
                         "vehicle_id": vehicle_id,

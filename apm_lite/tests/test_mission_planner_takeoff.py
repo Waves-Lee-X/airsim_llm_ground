@@ -125,6 +125,8 @@ def test_takeoff_retries_after_timeout(monkeypatch):
     asyncio.run(scenario())
 
     assert service.calls == 2
+    # After the failed attempt the next try re-arms unconditionally.
+    assert service.arm_calls == 1
     steps = [item["step"] for item in planner._results]
     assert "takeoff_retry" in steps
     completed = [
