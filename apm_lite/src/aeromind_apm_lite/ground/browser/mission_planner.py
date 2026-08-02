@@ -28,11 +28,19 @@ from aeromind_apm_lite.ground.browser.visual_navigation import (
     target_from_depth,
 )
 from aeromind_apm_lite.onboard.flight_commands import FlightCommandService
-from aeromind_apm_lite.onboard.mavlink.models import CommandStatus
+from aeromind_apm_lite.onboard.mavlink.models import (
+    CommandStatus,
+    MavLandedState,
+)
 
 _STEP_TIMEOUT_S = 120.0
 _MAX_TARGET_RANGE_M = 150.0
 _TAKEOFF_TIMEOUT_S = 90.0
+_TAKEOFF_MAX_ATTEMPTS = 3
+_TAKEOFF_ATTEMPT_WINDOW_S = 60.0
+_TAKEOFF_SETTLE_WAIT_S = 20.0
+_TAKEOFF_RETRY_GAP_S = 5.0
+_TAKEOFF_GRACE_S = 300.0
 _LAND_TIMEOUT_S = 60.0
 
 def _line_intersection(
@@ -312,10 +320,15 @@ class MissionPlanner:
                 _STEP_TIMEOUT_S,
             )
             await self._ensure_armed(step.vehicle_ids, services)
-            await for_each(
-                "takeoff",
-                lambda vid: services[vid].takeoff(altitude),
-                _TAKEOFF_TIMEOUT_S,
+            await asyncio.gather(
+                *(
+                    self._takeoff_with_retry(
+                        vehicle_id,
+                        services[vehicle_id],
+                        altitude,
+                    )
+                    for vehicle_id in step.vehicle_ids
+                )
             )
         elif action == "hold":
             # GUIDED position-hold instead of LOITER: in this SITL setup the
@@ -1272,6 +1285,109 @@ class MissionPlanner:
                 "arm",
                 _STEP_TIMEOUT_S,
             )
+
+    async def _wait_takeoff_ready(self, vehicle_id: int) -> None:
+        """Wait for the post-boot grace and ON_GROUND before NAV_TAKEOFF.
+
+        ArduCopter in this SITL setup rejects arming and takeoff for a few
+        minutes after reboot (arming checks / landing detector not settled),
+        so the first NAV_TAKEOFF is held until the FCU has been ready for the
+        configured grace period (zero wait for an already-settled FCU).
+        """
+        deadline = self._clock() + _TAKEOFF_SETTLE_WAIT_S + _TAKEOFF_GRACE_S
+        while self._clock() < deadline:
+            link = self._runtime.link_for(vehicle_id)
+            if link is None:
+                return
+            # Prefer the FCU boot time (SYSTEM_TIME) so a ground-station
+            # restart does not re-arm the grace period for a settled FCU.
+            boot_monotonic = getattr(link, "fcu_boot_monotonic_s", None)
+            if boot_monotonic is None:
+                boot_monotonic = getattr(link, "ready_monotonic_s", None)
+            if (
+                boot_monotonic is not None
+                and self._clock() < boot_monotonic + _TAKEOFF_GRACE_S
+            ):
+                await asyncio.sleep(2.0)
+                continue
+            snapshot = link.telemetry_snapshot()
+            relative_altitude = snapshot.relative_altitude_m
+            landed_state = snapshot.landed_state
+            if relative_altitude is not None and relative_altitude > 0.5:
+                return  # already airborne
+            if (
+                landed_state == MavLandedState.ON_GROUND
+                and relative_altitude is not None
+                and abs(relative_altitude) < 0.5
+            ):
+                return  # settled on the ground
+            await asyncio.sleep(1.0)
+
+    async def _takeoff_with_retry(
+        self,
+        vehicle_id: int,
+        service: FlightCommandService,
+        altitude_m: float,
+    ) -> None:
+        """Take off with a bounded retry loop.
+
+        The FCU can silently ignore NAV_TAKEOFF before its landing detector
+        settles; each attempt waits for physical completion inside a short
+        window and the loop retries after a settle gap instead of failing the
+        whole plan on the first rejection.
+        """
+        await self._wait_takeoff_ready(vehicle_id)
+        last_error: FleetMissionError | None = None
+        for attempt in range(1, _TAKEOFF_MAX_ATTEMPTS + 1):
+            try:
+                link = self._runtime.link_for(vehicle_id)
+                if link is not None:
+                    snapshot = link.telemetry_snapshot()
+                    if snapshot.armed is not True:
+                        # The FCU may have disarmed while earlier attempts
+                        # were pending; re-arm so NAV_TAKEOFF is not rejected
+                        # with "motors not armed".
+                        await self._await_handle(
+                            service.arm(),
+                            vehicle_id,
+                            "arm_retry",
+                            _STEP_TIMEOUT_S,
+                        )
+                await self._await_handle(
+                    service.takeoff(
+                        altitude_m,
+                        expires_monotonic_s=(
+                            self._clock() + _TAKEOFF_ATTEMPT_WINDOW_S
+                        ),
+                    ),
+                    vehicle_id,
+                    "takeoff",
+                    _TAKEOFF_ATTEMPT_WINDOW_S,
+                )
+                return
+            except FleetMissionError as exc:
+                last_error = exc
+                if attempt >= _TAKEOFF_MAX_ATTEMPTS:
+                    raise FleetMissionError(
+                        f"飞机 {vehicle_id} 起飞在 {_TAKEOFF_MAX_ATTEMPTS} "
+                        f"次尝试后失败: {exc}"
+                    ) from exc
+                self._results.append(
+                    {
+                        "vehicle_id": vehicle_id,
+                        "step": "takeoff_retry",
+                        "status": "retrying",
+                        "detail": (
+                            f"第 {attempt} 次起飞未确认物理完成，"
+                            f"{int(_TAKEOFF_RETRY_GAP_S)}s 后重试"
+                        ),
+                        "at_monotonic_s": round(self._clock(), 2),
+                    }
+                )
+                await asyncio.sleep(_TAKEOFF_RETRY_GAP_S)
+        raise FleetMissionError(  # pragma: no cover - defensive
+            f"飞机 {vehicle_id} 起飞失败: {last_error}"
+        )
 
     async def _await_handle(
         self,

@@ -59,6 +59,38 @@ def autopilot_version():
     )
 
 
+def test_system_time_captures_fcu_boot_time():
+    fake = FakeMavlinkTransport()
+    fake.feed(heartbeat())
+    fake.feed(autopilot_version())
+    fake.feed(
+        envelope(
+            "SYSTEM_TIME",
+            {"time_unix_usec": 0, "time_boot_ms": 12000},
+        )
+    )
+    link = ApmLink(
+        fake,
+        target_system=1,
+        poll_interval_s=0.005,
+        startup_timeout_s=0.2,
+    )
+
+    async def scenario():
+        starting = asyncio.create_task(link.start())
+        await asyncio.sleep(0.1)
+        boot = link.fcu_boot_monotonic_s
+        now = time.monotonic()
+        await link.stop()
+        await starting
+        return boot, now
+
+    boot, now = asyncio.run(scenario())
+    assert boot is not None
+    # 12 s boot age at feed time: boot monotonic is roughly now - 12 s
+    assert abs(boot - (now - 12.0)) < 2.0
+
+
 async def started_link(fake, **overrides):
     fake.feed(heartbeat())
     fake.feed(autopilot_version())

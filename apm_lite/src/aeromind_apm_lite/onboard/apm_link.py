@@ -221,6 +221,8 @@ class ApmLink:
         self._pending: _PendingCommand | None = None
         self._runner: asyncio.Task[None] | None = None
         self._ready_event = asyncio.Event()
+        self._ready_monotonic_s: float | None = None
+        self._fcu_boot_monotonic_s: float | None = None
         self._stop_event = asyncio.Event()
         self._startup_error: Exception | None = None
         self._identity: FcuIdentity | None = None
@@ -259,6 +261,17 @@ class ApmLink:
     @property
     def identity(self) -> FcuIdentity | None:
         return self._identity
+
+    @property
+    @property
+    def ready_monotonic_s(self) -> float | None:
+        """Monotonic time when the FCU first became ready (boot proxy)."""
+        return self._ready_monotonic_s
+
+    @property
+    def fcu_boot_monotonic_s(self) -> float | None:
+        """Host monotonic time when the FCU booted, from SYSTEM_TIME."""
+        return self._fcu_boot_monotonic_s
 
     @property
     def ready(self) -> bool:
@@ -442,6 +455,8 @@ class ApmLink:
             await self._discover_fcu()
             await self._configure_fcu_streams()
             await self._service_companion_heartbeat(self._clock())
+            if self._ready_monotonic_s is None:
+                self._ready_monotonic_s = self._clock()
             self._ready_event.set()
             while not self._stop_event.is_set():
                 await self._service_companion_heartbeat(self._clock())
@@ -449,6 +464,15 @@ class ApmLink:
                 message = await self._transport.receive(self._poll_interval_s)
                 if message is not None and self._is_target_message(message):
                     now = self._clock()
+                    if (
+                        self._fcu_boot_monotonic_s is None
+                        and message.name == "SYSTEM_TIME"
+                    ):
+                        boot_ms = message.fields.get("time_boot_ms")
+                        if boot_ms is not None:
+                            self._fcu_boot_monotonic_s = (
+                                now - float(boot_ms) / 1000.0
+                            )
                     self._telemetry.reduce(message, now)
                     self._capture_pending_status_text(message)
                     await self._handle_command_ack(message, now)
