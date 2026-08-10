@@ -20,6 +20,7 @@ ROS 2、MAVROS、`px4_msgs` 或 PX4 Offboard。
 | Mission Agent | 任务闭环完成 | 连续对话、多步 plan 草案、MissionPlanner 按序执行、执行反馈回环、视觉 analyze 步骤（VLM 识别结果回写决策） |
 | M5 编队（仿真） | 已验收 | SITL 10/10（一字/V/正方形）；地面站编队执行（序列/分层切换/取消）；态势地图 |
 | M1 升级最小版 | 已实现 | 统一孪生契约与注册表；L0 256 对象/32 分支、四策略、Pareto、可校验 EvidencePackage |
+| 无人机身份文档 P0 | 已实现 | 签名身份、能力、机载具身模型声明、授权、有效期和撤销过滤 |
 | 深度避障与多机任务 | 真机待验收 | 编队仿真闭环完成；D435i Depth/IR、路径规划与真机编队尚未进入实机授权 |
 
 2026-07-31 后真机已关机，当前工作全部在四机仿真（SITL + AirSim）中进行；
@@ -198,7 +199,7 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前 Lite 完整测试为 `334 passed`。提交前还应运行 JavaScript 语法检查和
+当前 Lite 完整测试为 `338 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
 
 M1 多保真平行推演入口：

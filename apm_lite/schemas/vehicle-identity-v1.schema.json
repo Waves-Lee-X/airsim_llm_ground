@@ -1,0 +1,864 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "1.0",
+  "schemas": {
+    "authorization_profile": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_commands": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Commands",
+          "type": "array"
+        },
+        "confirmation_required": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Confirmation Required",
+          "type": "array"
+        },
+        "frame_calibration_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Frame Calibration Id",
+          "type": "string"
+        },
+        "geofence_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geofence Id"
+        },
+        "max_altitude_m": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 500.0,
+          "title": "Max Altitude M",
+          "type": "number"
+        },
+        "max_distance_m": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 100000.0,
+          "title": "Max Distance M",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed_commands",
+        "frame_calibration_id",
+        "max_altitude_m",
+        "max_distance_m"
+      ],
+      "title": "AuthorizationProfile",
+      "type": "object"
+    },
+    "capability_profile": {
+      "$defs": {
+        "CoordinateFrame": {
+          "enum": [
+            "none",
+            "map",
+            "local_ned",
+            "global_wgs84",
+            "body_frd",
+            "camera_optical"
+          ],
+          "title": "CoordinateFrame",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Static profile extended with machine-readable operating limits.",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "coordinate_frames": {
+          "default": [
+            "map"
+          ],
+          "items": {
+            "$ref": "#/$defs/CoordinateFrame"
+          },
+          "title": "Coordinate Frames",
+          "type": "array"
+        },
+        "display_name": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "limits": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Limits",
+          "type": "object"
+        },
+        "max_endurance_min": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 10000.0,
+          "title": "Max Endurance Min",
+          "type": "number"
+        },
+        "max_speed_m_s": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1000.0,
+          "title": "Max Speed M S",
+          "type": "number"
+        },
+        "payloads": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Payloads",
+          "type": "array"
+        },
+        "platform_type": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "title": "Platform Type",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sensors": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Sensors",
+          "type": "array"
+        },
+        "vehicle_id": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Vehicle Id",
+          "type": "integer"
+        },
+        "whitelist_level": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Whitelist Level",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "vehicle_id",
+        "display_name",
+        "platform_type",
+        "max_endurance_min",
+        "max_speed_m_s",
+        "capabilities",
+        "whitelist_level"
+      ],
+      "title": "CapabilityProfile",
+      "type": "object"
+    },
+    "embodied_agent_profile": {
+      "$defs": {
+        "AutonomyLevel": {
+          "enum": [
+            "A0",
+            "A1",
+            "A2",
+            "A3",
+            "A4"
+          ],
+          "title": "AutonomyLevel",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "autonomy_level": {
+          "$ref": "#/$defs/AutonomyLevel",
+          "default": "A1"
+        },
+        "compute_budget_mflops": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1000000.0,
+          "title": "Compute Budget Mflops",
+          "type": "number"
+        },
+        "decision_rate_hz": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 10.0,
+          "title": "Decision Rate Hz",
+          "type": "number"
+        },
+        "fallback_policy": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Fallback Policy",
+          "type": "string"
+        },
+        "input_modalities": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Input Modalities",
+          "type": "array"
+        },
+        "model_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "skill_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Skill Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "model_id",
+        "model_version",
+        "input_modalities",
+        "skill_ids",
+        "decision_rate_hz",
+        "compute_budget_mflops",
+        "fallback_policy"
+      ],
+      "title": "EmbodiedAgentProfile",
+      "type": "object"
+    },
+    "identity_attestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "hmac-sha256",
+          "default": "hmac-sha256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "document_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Document Hash",
+          "type": "string"
+        },
+        "expires_at_utc": {
+          "format": "date-time",
+          "title": "Expires At Utc",
+          "type": "string"
+        },
+        "issued_at_utc": {
+          "format": "date-time",
+          "title": "Issued At Utc",
+          "type": "string"
+        },
+        "key_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Key Id",
+          "type": "string"
+        },
+        "revocation_reason": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revocation Reason"
+        },
+        "revoked": {
+          "default": false,
+          "title": "Revoked",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_id",
+        "document_hash",
+        "signature",
+        "issued_at_utc",
+        "expires_at_utc"
+      ],
+      "title": "IdentityAttestation",
+      "type": "object"
+    },
+    "identity_metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "document_version": {
+          "default": "1",
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[0-9]+(?:\\.[0-9]+)*$",
+          "title": "Document Version",
+          "type": "string"
+        },
+        "firmware_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Firmware Version",
+          "type": "string"
+        },
+        "platform_type": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "title": "Platform Type",
+          "type": "string"
+        },
+        "registered_at_utc": {
+          "format": "date-time",
+          "title": "Registered At Utc",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "serial_number": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Serial Number",
+          "type": "string"
+        },
+        "vehicle_id": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Vehicle Id",
+          "type": "integer"
+        },
+        "vendor": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Vendor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "vehicle_id",
+        "serial_number",
+        "display_name",
+        "platform_type",
+        "vendor",
+        "firmware_version"
+      ],
+      "title": "IdentityMetadata",
+      "type": "object"
+    },
+    "vehicle_identity_document": {
+      "$defs": {
+        "AuthorizationProfile": {
+          "additionalProperties": false,
+          "properties": {
+            "allowed_commands": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Allowed Commands",
+              "type": "array"
+            },
+            "confirmation_required": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Confirmation Required",
+              "type": "array"
+            },
+            "frame_calibration_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Frame Calibration Id",
+              "type": "string"
+            },
+            "geofence_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Geofence Id"
+            },
+            "max_altitude_m": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 500.0,
+              "title": "Max Altitude M",
+              "type": "number"
+            },
+            "max_distance_m": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 100000.0,
+              "title": "Max Distance M",
+              "type": "number"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            }
+          },
+          "required": [
+            "allowed_commands",
+            "frame_calibration_id",
+            "max_altitude_m",
+            "max_distance_m"
+          ],
+          "title": "AuthorizationProfile",
+          "type": "object"
+        },
+        "AutonomyLevel": {
+          "enum": [
+            "A0",
+            "A1",
+            "A2",
+            "A3",
+            "A4"
+          ],
+          "title": "AutonomyLevel",
+          "type": "string"
+        },
+        "CapabilityProfile": {
+          "additionalProperties": false,
+          "description": "Static profile extended with machine-readable operating limits.",
+          "properties": {
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Capabilities",
+              "type": "array"
+            },
+            "coordinate_frames": {
+              "default": [
+                "map"
+              ],
+              "items": {
+                "$ref": "#/$defs/CoordinateFrame"
+              },
+              "title": "Coordinate Frames",
+              "type": "array"
+            },
+            "display_name": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Display Name",
+              "type": "string"
+            },
+            "limits": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "title": "Limits",
+              "type": "object"
+            },
+            "max_endurance_min": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 10000.0,
+              "title": "Max Endurance Min",
+              "type": "number"
+            },
+            "max_speed_m_s": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 1000.0,
+              "title": "Max Speed M S",
+              "type": "number"
+            },
+            "payloads": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Payloads",
+              "type": "array"
+            },
+            "platform_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Platform Type",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "sensors": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Sensors",
+              "type": "array"
+            },
+            "vehicle_id": {
+              "maximum": 65535,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "whitelist_level": {
+              "maximum": 10,
+              "minimum": 0,
+              "title": "Whitelist Level",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "display_name",
+            "platform_type",
+            "max_endurance_min",
+            "max_speed_m_s",
+            "capabilities",
+            "whitelist_level"
+          ],
+          "title": "CapabilityProfile",
+          "type": "object"
+        },
+        "CoordinateFrame": {
+          "enum": [
+            "none",
+            "map",
+            "local_ned",
+            "global_wgs84",
+            "body_frd",
+            "camera_optical"
+          ],
+          "title": "CoordinateFrame",
+          "type": "string"
+        },
+        "EmbodiedAgentProfile": {
+          "additionalProperties": false,
+          "properties": {
+            "autonomy_level": {
+              "$ref": "#/$defs/AutonomyLevel",
+              "default": "A1"
+            },
+            "compute_budget_mflops": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 1000000.0,
+              "title": "Compute Budget Mflops",
+              "type": "number"
+            },
+            "decision_rate_hz": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 10.0,
+              "title": "Decision Rate Hz",
+              "type": "number"
+            },
+            "fallback_policy": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Fallback Policy",
+              "type": "string"
+            },
+            "input_modalities": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Input Modalities",
+              "type": "array"
+            },
+            "model_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Model Id",
+              "type": "string"
+            },
+            "model_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Model Version",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "skill_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Skill Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "model_id",
+            "model_version",
+            "input_modalities",
+            "skill_ids",
+            "decision_rate_hz",
+            "compute_budget_mflops",
+            "fallback_policy"
+          ],
+          "title": "EmbodiedAgentProfile",
+          "type": "object"
+        },
+        "IdentityAttestation": {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "hmac-sha256",
+              "default": "hmac-sha256",
+              "title": "Algorithm",
+              "type": "string"
+            },
+            "document_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Document Hash",
+              "type": "string"
+            },
+            "expires_at_utc": {
+              "format": "date-time",
+              "title": "Expires At Utc",
+              "type": "string"
+            },
+            "issued_at_utc": {
+              "format": "date-time",
+              "title": "Issued At Utc",
+              "type": "string"
+            },
+            "key_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Key Id",
+              "type": "string"
+            },
+            "revocation_reason": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Revocation Reason"
+            },
+            "revoked": {
+              "default": false,
+              "title": "Revoked",
+              "type": "boolean"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "signature": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Signature",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key_id",
+            "document_hash",
+            "signature",
+            "issued_at_utc",
+            "expires_at_utc"
+          ],
+          "title": "IdentityAttestation",
+          "type": "object"
+        },
+        "IdentityMetadata": {
+          "additionalProperties": false,
+          "properties": {
+            "display_name": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Display Name",
+              "type": "string"
+            },
+            "document_version": {
+              "default": "1",
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[0-9]+(?:\\.[0-9]+)*$",
+              "title": "Document Version",
+              "type": "string"
+            },
+            "firmware_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Firmware Version",
+              "type": "string"
+            },
+            "platform_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Platform Type",
+              "type": "string"
+            },
+            "registered_at_utc": {
+              "format": "date-time",
+              "title": "Registered At Utc",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "serial_number": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "title": "Serial Number",
+              "type": "string"
+            },
+            "vehicle_id": {
+              "maximum": 65535,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "vendor": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Vendor",
+              "type": "string"
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "serial_number",
+            "display_name",
+            "platform_type",
+            "vendor",
+            "firmware_version"
+          ],
+          "title": "IdentityMetadata",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "A signed digital passport for one vehicle and its onboard agent.",
+      "properties": {
+        "attestation": {
+          "$ref": "#/$defs/IdentityAttestation"
+        },
+        "authorization": {
+          "$ref": "#/$defs/AuthorizationProfile"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/CapabilityProfile"
+        },
+        "document_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "embodied_agent": {
+          "$ref": "#/$defs/EmbodiedAgentProfile"
+        },
+        "identity": {
+          "$ref": "#/$defs/IdentityMetadata"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "identity",
+        "capabilities",
+        "embodied_agent",
+        "authorization",
+        "attestation"
+      ],
+      "title": "VehicleIdentityDocument",
+      "type": "object"
+    }
+  }
+}

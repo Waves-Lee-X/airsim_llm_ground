@@ -28,6 +28,14 @@ from aeromind_apm_lite.common.contracts.twin import (  # noqa: E402
     VehicleProfile,
     WorldEvent,
 )
+from aeromind_apm_lite.common.contracts.identity import (  # noqa: E402
+    AuthorizationProfile,
+    CapabilityProfile,
+    EmbodiedAgentProfile,
+    IdentityAttestation,
+    IdentityMetadata,
+    VehicleIdentityDocument,
+)
 from aeromind_apm_lite.common.evidence import (  # noqa: E402
     EvidenceManifest,
     EvidencePackage,
@@ -86,6 +94,14 @@ def rendered_m1_schemas() -> dict[str, str]:
             "experiment_lock": ExperimentLock,
             "evidence_manifest": EvidenceManifest,
             "evidence_package": EvidencePackage,
+        },
+        "vehicle-identity-v1.schema.json": {
+            "identity_metadata": IdentityMetadata,
+            "capability_profile": CapabilityProfile,
+            "embodied_agent_profile": EmbodiedAgentProfile,
+            "authorization_profile": AuthorizationProfile,
+            "identity_attestation": IdentityAttestation,
+            "vehicle_identity_document": VehicleIdentityDocument,
         },
     }
     return {

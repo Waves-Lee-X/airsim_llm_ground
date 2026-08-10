@@ -52,6 +52,14 @@ def test_committed_m1_schemas_cover_twin_deduction_and_evidence_contracts():
             "evidence_manifest",
             "evidence_package",
         },
+        "vehicle-identity-v1.schema.json": {
+            "identity_metadata",
+            "capability_profile",
+            "embodied_agent_profile",
+            "authorization_profile",
+            "identity_attestation",
+            "vehicle_identity_document",
+        },
     }
 
     for filename, schemas in expected.items():

@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -17,6 +18,7 @@ from aeromind_apm_lite.common.contracts.twin import (
     VehicleProfile,
     distance_between,
 )
+from aeromind_apm_lite.common.contracts.identity import VehicleIdentityDocument
 
 
 class RegistryError(ValueError):
@@ -36,7 +38,33 @@ class VehicleRegistry:
     def __init__(self) -> None:
         self._profiles: dict[int, VehicleProfile] = {}
         self._states: dict[int, TwinState] = {}
+        self._documents: dict[int, VehicleIdentityDocument] = {}
         self._lock = threading.RLock()
+
+    def register_document(
+        self,
+        document: VehicleIdentityDocument,
+        state: TwinState | None = None,
+        *,
+        verification_secret: bytes | None = None,
+        replace: bool = False,
+    ) -> None:
+        """Register a signed identity document and expose its capability profile."""
+
+        if not document.verify_integrity():
+            raise RegistryError("identity document hash verification failed")
+        if verification_secret is not None and not document.verify_signature(
+            verification_secret
+        ):
+            raise RegistryError("identity document signature verification failed")
+        with self._lock:
+            existing = self._documents.get(document.identity.vehicle_id)
+            if existing is not None and existing != document and not replace:
+                raise RegistryError(
+                    f"vehicle {document.identity.vehicle_id} identity document is already registered"
+                )
+            self.register(document.to_vehicle_profile(), state, replace=replace)
+            self._documents[document.identity.vehicle_id] = document
 
     def register(
         self,
@@ -75,6 +103,15 @@ class VehicleRegistry:
             except KeyError as exc:
                 raise RegistryError(f"vehicle {vehicle_id} has no state") from exc
 
+    def get_document(self, vehicle_id: int) -> VehicleIdentityDocument:
+        with self._lock:
+            try:
+                return self._documents[int(vehicle_id)]
+            except KeyError as exc:
+                raise RegistryError(
+                    f"vehicle {vehicle_id} has no identity document"
+                ) from exc
+
     def query(
         self,
         *,
@@ -84,6 +121,7 @@ class VehicleRegistry:
         origin_m: Vector3 | None = None,
         maximum_distance_m: float | None = None,
         maximum_whitelist_level: int | None = None,
+        at_utc: datetime | None = None,
     ) -> tuple[RegistryMatch, ...]:
         if not 0.0 <= minimum_energy <= 1.0:
             raise ValueError("minimum_energy must be in [0, 1]")
@@ -102,6 +140,10 @@ class VehicleRegistry:
             for vehicle_id in sorted(self._profiles):
                 profile = self._profiles[vehicle_id]
                 state = self._states.get(vehicle_id)
+                document = self._documents.get(vehicle_id)
+                if document is not None:
+                    if document.attestation.revoked or not document.is_time_valid(at_utc):
+                        continue
                 available = set(profile.capabilities)
                 if not required.issubset(available):
                     continue
@@ -155,6 +197,10 @@ class VehicleRegistry:
                     self._states[vehicle_id].model_dump(mode="json")
                     for vehicle_id in sorted(self._states)
                 ],
+                "documents": [
+                    self._documents[vehicle_id].model_dump(mode="json")
+                    for vehicle_id in sorted(self._documents)
+                ],
             }
 
     def save(self, path: str | Path) -> None:
@@ -189,7 +235,12 @@ class VehicleRegistry:
                 temporary_path.unlink()
 
     @classmethod
-    def load(cls, path: str | Path) -> "VehicleRegistry":
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        verification_secret: bytes | None = None,
+    ) -> "VehicleRegistry":
         source = Path(path)
         try:
             payload = json.loads(source.read_text(encoding="utf-8"))
@@ -197,6 +248,10 @@ class VehicleRegistry:
                 raise ValueError("unsupported registry schema_version")
             profiles = [VehicleProfile.model_validate(item) for item in payload["profiles"]]
             states = [TwinState.model_validate(item) for item in payload["states"]]
+            documents = [
+                VehicleIdentityDocument.model_validate(item)
+                for item in payload.get("documents", [])
+            ]
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise RegistryError(f"failed to load registry {source}: {exc}") from exc
 
@@ -205,6 +260,12 @@ class VehicleRegistry:
             registry.register(profile)
         for state in states:
             registry.update_state(state)
+        for document in documents:
+            registry.register_document(
+                document,
+                verification_secret=verification_secret,
+                replace=True,
+            )
         return registry
 
 
