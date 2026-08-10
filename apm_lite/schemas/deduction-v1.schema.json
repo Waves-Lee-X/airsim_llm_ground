@@ -1,0 +1,1771 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "1.0",
+  "schemas": {
+    "baseline_snapshot": {
+      "$defs": {
+        "CoordinateFrame": {
+          "enum": [
+            "none",
+            "map",
+            "local_ned",
+            "global_wgs84",
+            "body_frd",
+            "camera_optical"
+          ],
+          "title": "CoordinateFrame",
+          "type": "string"
+        },
+        "FidelityLevel": {
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3"
+          ],
+          "title": "FidelityLevel",
+          "type": "string"
+        },
+        "HealthStatus": {
+          "enum": [
+            "nominal",
+            "degraded",
+            "failed",
+            "offline",
+            "unknown"
+          ],
+          "title": "HealthStatus",
+          "type": "string"
+        },
+        "Quaternion": {
+          "additionalProperties": false,
+          "properties": {
+            "w": {
+              "title": "W",
+              "type": "number"
+            },
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "w",
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Quaternion",
+          "type": "object"
+        },
+        "TwinSource": {
+          "enum": [
+            "real",
+            "sim",
+            "predicted",
+            "observed"
+          ],
+          "title": "TwinSource",
+          "type": "string"
+        },
+        "TwinState": {
+          "additionalProperties": false,
+          "description": "One source-labelled dynamic state for a physical or simulated platform.",
+          "properties": {
+            "attitude": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quaternion"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "communication_quality": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Communication Quality",
+              "type": "number"
+            },
+            "confidence": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "energy_remaining": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Energy Remaining",
+              "type": "number"
+            },
+            "fidelity": {
+              "$ref": "#/$defs/FidelityLevel"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame"
+            },
+            "frame_calibration_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Frame Calibration Id",
+              "type": "string"
+            },
+            "health_status": {
+              "$ref": "#/$defs/HealthStatus"
+            },
+            "mapped_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mapped At Utc"
+            },
+            "mission_phase": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Mission Phase",
+              "type": "string"
+            },
+            "platform_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Platform Type",
+              "type": "string"
+            },
+            "position_m": {
+              "$ref": "#/$defs/Vector3"
+            },
+            "sampled_at_utc": {
+              "format": "date-time",
+              "title": "Sampled At Utc",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "simulated_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Simulated At Utc"
+            },
+            "source": {
+              "$ref": "#/$defs/TwinSource"
+            },
+            "vehicle_id": {
+              "maximum": 65535,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "velocity_m_s": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "platform_type",
+            "frame",
+            "frame_calibration_id",
+            "position_m",
+            "energy_remaining",
+            "communication_quality",
+            "mission_phase",
+            "health_status",
+            "source",
+            "confidence",
+            "fidelity",
+            "sampled_at_utc"
+          ],
+          "title": "TwinState",
+          "type": "object"
+        },
+        "Vector3": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Vector3",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "captured_at_utc": {
+          "format": "date-time",
+          "title": "Captured At Utc",
+          "type": "string"
+        },
+        "duration_s": {
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Duration S",
+          "type": "integer"
+        },
+        "minimum_separation_m": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 10000.0,
+          "title": "Minimum Separation M",
+          "type": "number"
+        },
+        "reserve_energy": {
+          "exclusiveMaximum": 1.0,
+          "minimum": 0.0,
+          "title": "Reserve Energy",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "target_count": {
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Target Count",
+          "type": "integer"
+        },
+        "twins": {
+          "items": {
+            "$ref": "#/$defs/TwinState"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Twins",
+          "type": "array"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "captured_at_utc",
+        "duration_s",
+        "target_count",
+        "minimum_separation_m",
+        "reserve_energy",
+        "twins"
+      ],
+      "title": "BaselineSnapshot",
+      "type": "object"
+    },
+    "branch_result": {
+      "$defs": {
+        "CoordinateFrame": {
+          "enum": [
+            "none",
+            "map",
+            "local_ned",
+            "global_wgs84",
+            "body_frd",
+            "camera_optical"
+          ],
+          "title": "CoordinateFrame",
+          "type": "string"
+        },
+        "FidelityLevel": {
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3"
+          ],
+          "title": "FidelityLevel",
+          "type": "string"
+        },
+        "HealthStatus": {
+          "enum": [
+            "nominal",
+            "degraded",
+            "failed",
+            "offline",
+            "unknown"
+          ],
+          "title": "HealthStatus",
+          "type": "string"
+        },
+        "MetricDirection": {
+          "enum": [
+            "maximize",
+            "minimize"
+          ],
+          "title": "MetricDirection",
+          "type": "string"
+        },
+        "MetricRecord": {
+          "additionalProperties": false,
+          "properties": {
+            "branch_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Branch Id",
+              "type": "string"
+            },
+            "direction": {
+              "$ref": "#/$defs/MetricDirection"
+            },
+            "metric_name": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "title": "Metric Name",
+              "type": "string"
+            },
+            "recorded_at_utc": {
+              "format": "date-time",
+              "title": "Recorded At Utc",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "source": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Source",
+              "type": "string"
+            },
+            "unit": {
+              "maxLength": 32,
+              "minLength": 1,
+              "title": "Unit",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value",
+              "type": "number"
+            }
+          },
+          "required": [
+            "branch_id",
+            "metric_name",
+            "value",
+            "unit",
+            "direction",
+            "source",
+            "recorded_at_utc"
+          ],
+          "title": "MetricRecord",
+          "type": "object"
+        },
+        "Quaternion": {
+          "additionalProperties": false,
+          "properties": {
+            "w": {
+              "title": "W",
+              "type": "number"
+            },
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "w",
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Quaternion",
+          "type": "object"
+        },
+        "StrategyKind": {
+          "enum": [
+            "fixed_partition",
+            "centralized_optimization",
+            "distributed_collaboration",
+            "ai_assisted_hybrid"
+          ],
+          "title": "StrategyKind",
+          "type": "string"
+        },
+        "TwinSource": {
+          "enum": [
+            "real",
+            "sim",
+            "predicted",
+            "observed"
+          ],
+          "title": "TwinSource",
+          "type": "string"
+        },
+        "TwinState": {
+          "additionalProperties": false,
+          "description": "One source-labelled dynamic state for a physical or simulated platform.",
+          "properties": {
+            "attitude": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quaternion"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "communication_quality": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Communication Quality",
+              "type": "number"
+            },
+            "confidence": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "energy_remaining": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Energy Remaining",
+              "type": "number"
+            },
+            "fidelity": {
+              "$ref": "#/$defs/FidelityLevel"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame"
+            },
+            "frame_calibration_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Frame Calibration Id",
+              "type": "string"
+            },
+            "health_status": {
+              "$ref": "#/$defs/HealthStatus"
+            },
+            "mapped_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mapped At Utc"
+            },
+            "mission_phase": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Mission Phase",
+              "type": "string"
+            },
+            "platform_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Platform Type",
+              "type": "string"
+            },
+            "position_m": {
+              "$ref": "#/$defs/Vector3"
+            },
+            "sampled_at_utc": {
+              "format": "date-time",
+              "title": "Sampled At Utc",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "simulated_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Simulated At Utc"
+            },
+            "source": {
+              "$ref": "#/$defs/TwinSource"
+            },
+            "vehicle_id": {
+              "maximum": 65535,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "velocity_m_s": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "platform_type",
+            "frame",
+            "frame_calibration_id",
+            "position_m",
+            "energy_remaining",
+            "communication_quality",
+            "mission_phase",
+            "health_status",
+            "source",
+            "confidence",
+            "fidelity",
+            "sampled_at_utc"
+          ],
+          "title": "TwinState",
+          "type": "object"
+        },
+        "Vector3": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Vector3",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "baseline_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Baseline Hash",
+          "type": "string"
+        },
+        "branch_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Branch Id",
+          "type": "string"
+        },
+        "event_count": {
+          "minimum": 0,
+          "title": "Event Count",
+          "type": "integer"
+        },
+        "failure_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Reasons",
+          "type": "array"
+        },
+        "final_states": {
+          "items": {
+            "$ref": "#/$defs/TwinState"
+          },
+          "title": "Final States",
+          "type": "array"
+        },
+        "hard_constraint_violations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hard Constraint Violations",
+          "type": "array"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/MetricRecord"
+          },
+          "title": "Metrics",
+          "type": "array"
+        },
+        "reproducibility_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Reproducibility Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "strategy_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Strategy Id",
+          "type": "string"
+        },
+        "strategy_kind": {
+          "$ref": "#/$defs/StrategyKind"
+        }
+      },
+      "required": [
+        "branch_id",
+        "strategy_id",
+        "strategy_kind",
+        "baseline_hash",
+        "event_count",
+        "final_states",
+        "metrics",
+        "hard_constraint_violations",
+        "failure_reasons",
+        "reproducibility_hash"
+      ],
+      "title": "BranchResult",
+      "type": "object"
+    },
+    "branch_spec": {
+      "$defs": {
+        "BaselineSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "captured_at_utc": {
+              "format": "date-time",
+              "title": "Captured At Utc",
+              "type": "string"
+            },
+            "duration_s": {
+              "maximum": 86400,
+              "minimum": 1,
+              "title": "Duration S",
+              "type": "integer"
+            },
+            "minimum_separation_m": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 10000.0,
+              "title": "Minimum Separation M",
+              "type": "number"
+            },
+            "reserve_energy": {
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Reserve Energy",
+              "type": "number"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "snapshot_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Snapshot Id",
+              "type": "string"
+            },
+            "target_count": {
+              "maximum": 1000000,
+              "minimum": 1,
+              "title": "Target Count",
+              "type": "integer"
+            },
+            "twins": {
+              "items": {
+                "$ref": "#/$defs/TwinState"
+              },
+              "maxItems": 10000,
+              "minItems": 1,
+              "title": "Twins",
+              "type": "array"
+            }
+          },
+          "required": [
+            "snapshot_id",
+            "captured_at_utc",
+            "duration_s",
+            "target_count",
+            "minimum_separation_m",
+            "reserve_energy",
+            "twins"
+          ],
+          "title": "BaselineSnapshot",
+          "type": "object"
+        },
+        "CoordinateFrame": {
+          "enum": [
+            "none",
+            "map",
+            "local_ned",
+            "global_wgs84",
+            "body_frd",
+            "camera_optical"
+          ],
+          "title": "CoordinateFrame",
+          "type": "string"
+        },
+        "FidelityLevel": {
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3"
+          ],
+          "title": "FidelityLevel",
+          "type": "string"
+        },
+        "HealthStatus": {
+          "enum": [
+            "nominal",
+            "degraded",
+            "failed",
+            "offline",
+            "unknown"
+          ],
+          "title": "HealthStatus",
+          "type": "string"
+        },
+        "Quaternion": {
+          "additionalProperties": false,
+          "properties": {
+            "w": {
+              "title": "W",
+              "type": "number"
+            },
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "w",
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Quaternion",
+          "type": "object"
+        },
+        "StrategyKind": {
+          "enum": [
+            "fixed_partition",
+            "centralized_optimization",
+            "distributed_collaboration",
+            "ai_assisted_hybrid"
+          ],
+          "title": "StrategyKind",
+          "type": "string"
+        },
+        "StrategySpec": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "$ref": "#/$defs/StrategyKind"
+            },
+            "metric_names": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Metric Names",
+              "type": "array"
+            },
+            "parameters": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": "Parameters",
+              "type": "object"
+            },
+            "random_seed": {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Random Seed",
+              "type": "integer"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "strategy_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "strategy_id",
+            "kind",
+            "random_seed",
+            "metric_names"
+          ],
+          "title": "StrategySpec",
+          "type": "object"
+        },
+        "TwinSource": {
+          "enum": [
+            "real",
+            "sim",
+            "predicted",
+            "observed"
+          ],
+          "title": "TwinSource",
+          "type": "string"
+        },
+        "TwinState": {
+          "additionalProperties": false,
+          "description": "One source-labelled dynamic state for a physical or simulated platform.",
+          "properties": {
+            "attitude": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quaternion"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "communication_quality": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Communication Quality",
+              "type": "number"
+            },
+            "confidence": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "energy_remaining": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Energy Remaining",
+              "type": "number"
+            },
+            "fidelity": {
+              "$ref": "#/$defs/FidelityLevel"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame"
+            },
+            "frame_calibration_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Frame Calibration Id",
+              "type": "string"
+            },
+            "health_status": {
+              "$ref": "#/$defs/HealthStatus"
+            },
+            "mapped_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mapped At Utc"
+            },
+            "mission_phase": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Mission Phase",
+              "type": "string"
+            },
+            "platform_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Platform Type",
+              "type": "string"
+            },
+            "position_m": {
+              "$ref": "#/$defs/Vector3"
+            },
+            "sampled_at_utc": {
+              "format": "date-time",
+              "title": "Sampled At Utc",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "simulated_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Simulated At Utc"
+            },
+            "source": {
+              "$ref": "#/$defs/TwinSource"
+            },
+            "vehicle_id": {
+              "maximum": 65535,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "velocity_m_s": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "platform_type",
+            "frame",
+            "frame_calibration_id",
+            "position_m",
+            "energy_remaining",
+            "communication_quality",
+            "mission_phase",
+            "health_status",
+            "source",
+            "confidence",
+            "fidelity",
+            "sampled_at_utc"
+          ],
+          "title": "TwinState",
+          "type": "object"
+        },
+        "Vector3": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Vector3",
+          "type": "object"
+        },
+        "WorldEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "affected_vehicle_ids": {
+              "default": [],
+              "items": {
+                "type": "integer"
+              },
+              "title": "Affected Vehicle Ids",
+              "type": "array"
+            },
+            "confidence": {
+              "default": 1.0,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "event_id": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            },
+            "event_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Event Type",
+              "type": "string"
+            },
+            "occurs_at_utc": {
+              "format": "date-time",
+              "title": "Occurs At Utc",
+              "type": "string"
+            },
+            "parameters": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": "Parameters",
+              "type": "object"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "source": {
+              "$ref": "#/$defs/TwinSource"
+            }
+          },
+          "required": [
+            "event_type",
+            "occurs_at_utc",
+            "source"
+          ],
+          "title": "WorldEvent",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "$ref": "#/$defs/BaselineSnapshot"
+        },
+        "branch_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Branch Id",
+          "type": "string"
+        },
+        "events": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WorldEvent"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "model_version": {
+          "default": "l0-event-v1",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "software_version": {
+          "default": "aeromind-apm-lite-0.1.0",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Software Version",
+          "type": "string"
+        },
+        "strategy": {
+          "$ref": "#/$defs/StrategySpec"
+        }
+      },
+      "required": [
+        "branch_id",
+        "baseline",
+        "strategy"
+      ],
+      "title": "BranchSpec",
+      "type": "object"
+    },
+    "deduction_run": {
+      "$defs": {
+        "BranchResult": {
+          "additionalProperties": false,
+          "properties": {
+            "baseline_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Baseline Hash",
+              "type": "string"
+            },
+            "branch_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Branch Id",
+              "type": "string"
+            },
+            "event_count": {
+              "minimum": 0,
+              "title": "Event Count",
+              "type": "integer"
+            },
+            "failure_reasons": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Failure Reasons",
+              "type": "array"
+            },
+            "final_states": {
+              "items": {
+                "$ref": "#/$defs/TwinState"
+              },
+              "title": "Final States",
+              "type": "array"
+            },
+            "hard_constraint_violations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Hard Constraint Violations",
+              "type": "array"
+            },
+            "metrics": {
+              "items": {
+                "$ref": "#/$defs/MetricRecord"
+              },
+              "title": "Metrics",
+              "type": "array"
+            },
+            "reproducibility_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Reproducibility Hash",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "strategy_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Strategy Id",
+              "type": "string"
+            },
+            "strategy_kind": {
+              "$ref": "#/$defs/StrategyKind"
+            }
+          },
+          "required": [
+            "branch_id",
+            "strategy_id",
+            "strategy_kind",
+            "baseline_hash",
+            "event_count",
+            "final_states",
+            "metrics",
+            "hard_constraint_violations",
+            "failure_reasons",
+            "reproducibility_hash"
+          ],
+          "title": "BranchResult",
+          "type": "object"
+        },
+        "CoordinateFrame": {
+          "enum": [
+            "none",
+            "map",
+            "local_ned",
+            "global_wgs84",
+            "body_frd",
+            "camera_optical"
+          ],
+          "title": "CoordinateFrame",
+          "type": "string"
+        },
+        "FidelityLevel": {
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3"
+          ],
+          "title": "FidelityLevel",
+          "type": "string"
+        },
+        "HealthStatus": {
+          "enum": [
+            "nominal",
+            "degraded",
+            "failed",
+            "offline",
+            "unknown"
+          ],
+          "title": "HealthStatus",
+          "type": "string"
+        },
+        "MetricDirection": {
+          "enum": [
+            "maximize",
+            "minimize"
+          ],
+          "title": "MetricDirection",
+          "type": "string"
+        },
+        "MetricRecord": {
+          "additionalProperties": false,
+          "properties": {
+            "branch_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Branch Id",
+              "type": "string"
+            },
+            "direction": {
+              "$ref": "#/$defs/MetricDirection"
+            },
+            "metric_name": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "title": "Metric Name",
+              "type": "string"
+            },
+            "recorded_at_utc": {
+              "format": "date-time",
+              "title": "Recorded At Utc",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "source": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Source",
+              "type": "string"
+            },
+            "unit": {
+              "maxLength": 32,
+              "minLength": 1,
+              "title": "Unit",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value",
+              "type": "number"
+            }
+          },
+          "required": [
+            "branch_id",
+            "metric_name",
+            "value",
+            "unit",
+            "direction",
+            "source",
+            "recorded_at_utc"
+          ],
+          "title": "MetricRecord",
+          "type": "object"
+        },
+        "ParetoReport": {
+          "additionalProperties": false,
+          "properties": {
+            "objective_names": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Objective Names",
+              "type": "array"
+            },
+            "rejected_branch_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Rejected Branch Ids",
+              "type": "array"
+            },
+            "rejection_reasons": {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": "Rejection Reasons",
+              "type": "object"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "selected_branch_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Selected Branch Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "selected_branch_ids",
+            "rejected_branch_ids",
+            "rejection_reasons",
+            "objective_names"
+          ],
+          "title": "ParetoReport",
+          "type": "object"
+        },
+        "Quaternion": {
+          "additionalProperties": false,
+          "properties": {
+            "w": {
+              "title": "W",
+              "type": "number"
+            },
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "w",
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Quaternion",
+          "type": "object"
+        },
+        "StrategyKind": {
+          "enum": [
+            "fixed_partition",
+            "centralized_optimization",
+            "distributed_collaboration",
+            "ai_assisted_hybrid"
+          ],
+          "title": "StrategyKind",
+          "type": "string"
+        },
+        "TwinSource": {
+          "enum": [
+            "real",
+            "sim",
+            "predicted",
+            "observed"
+          ],
+          "title": "TwinSource",
+          "type": "string"
+        },
+        "TwinState": {
+          "additionalProperties": false,
+          "description": "One source-labelled dynamic state for a physical or simulated platform.",
+          "properties": {
+            "attitude": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quaternion"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "communication_quality": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Communication Quality",
+              "type": "number"
+            },
+            "confidence": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "energy_remaining": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Energy Remaining",
+              "type": "number"
+            },
+            "fidelity": {
+              "$ref": "#/$defs/FidelityLevel"
+            },
+            "frame": {
+              "$ref": "#/$defs/CoordinateFrame"
+            },
+            "frame_calibration_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Frame Calibration Id",
+              "type": "string"
+            },
+            "health_status": {
+              "$ref": "#/$defs/HealthStatus"
+            },
+            "mapped_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mapped At Utc"
+            },
+            "mission_phase": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Mission Phase",
+              "type": "string"
+            },
+            "platform_type": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "title": "Platform Type",
+              "type": "string"
+            },
+            "position_m": {
+              "$ref": "#/$defs/Vector3"
+            },
+            "sampled_at_utc": {
+              "format": "date-time",
+              "title": "Sampled At Utc",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "1.0",
+              "default": "1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "simulated_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Simulated At Utc"
+            },
+            "source": {
+              "$ref": "#/$defs/TwinSource"
+            },
+            "vehicle_id": {
+              "maximum": 65535,
+              "minimum": 1,
+              "title": "Vehicle Id",
+              "type": "integer"
+            },
+            "velocity_m_s": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Vector3"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "vehicle_id",
+            "platform_type",
+            "frame",
+            "frame_calibration_id",
+            "position_m",
+            "energy_remaining",
+            "communication_quality",
+            "mission_phase",
+            "health_status",
+            "source",
+            "confidence",
+            "fidelity",
+            "sampled_at_utc"
+          ],
+          "title": "TwinState",
+          "type": "object"
+        },
+        "Vector3": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "title": "X",
+              "type": "number"
+            },
+            "y": {
+              "title": "Y",
+              "type": "number"
+            },
+            "z": {
+              "title": "Z",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Vector3",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "baseline_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Baseline Hash",
+          "type": "string"
+        },
+        "pareto_report": {
+          "$ref": "#/$defs/ParetoReport"
+        },
+        "realtime_factor": {
+          "minimum": 0.0,
+          "title": "Realtime Factor",
+          "type": "number"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/BranchResult"
+          },
+          "title": "Results",
+          "type": "array"
+        },
+        "run_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "simulated_time_s": {
+          "minimum": 0.0,
+          "title": "Simulated Time S",
+          "type": "number"
+        },
+        "wall_time_s": {
+          "minimum": 0.0,
+          "title": "Wall Time S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "run_id",
+        "baseline_hash",
+        "results",
+        "pareto_report",
+        "wall_time_s",
+        "simulated_time_s",
+        "realtime_factor"
+      ],
+      "title": "DeductionRun",
+      "type": "object"
+    },
+    "pareto_report": {
+      "additionalProperties": false,
+      "properties": {
+        "objective_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Objective Names",
+          "type": "array"
+        },
+        "rejected_branch_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rejected Branch Ids",
+          "type": "array"
+        },
+        "rejection_reasons": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Rejection Reasons",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected_branch_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Branch Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "selected_branch_ids",
+        "rejected_branch_ids",
+        "rejection_reasons",
+        "objective_names"
+      ],
+      "title": "ParetoReport",
+      "type": "object"
+    }
+  }
+}

@@ -19,6 +19,7 @@ ROS 2、MAVROS、`px4_msgs` 或 PX4 Offboard。
 | M2 真机命令台架 | 待人工完成 | 机载只允许 ARM/DISARM；TAKEOFF/HOLD/LAND/RTL 继续禁用 |
 | Mission Agent | 任务闭环完成 | 连续对话、多步 plan 草案、MissionPlanner 按序执行、执行反馈回环、视觉 analyze 步骤（VLM 识别结果回写决策） |
 | M5 编队（仿真） | 已验收 | SITL 10/10（一字/V/正方形）；地面站编队执行（序列/分层切换/取消）；态势地图 |
+| M1 升级最小版 | 已实现 | 统一孪生契约与注册表；L0 256 对象/32 分支、四策略、Pareto、可校验 EvidencePackage |
 | 深度避障与多机任务 | 真机待验收 | 编队仿真闭环完成；D435i Depth/IR、路径规划与真机编队尚未进入实机授权 |
 
 2026-07-31 后真机已关机，当前工作全部在四机仿真（SITL + AirSim）中进行；
@@ -197,8 +198,20 @@ PYTHONPATH=src python3 tools/export_schemas.py --check
 python3 -m flake8 --max-line-length=101 --extend-ignore=E203,W503 src tests
 ```
 
-当前完整测试基线为 `318 passed`。提交前还应运行 JavaScript 语法检查和
+当前 Lite 完整测试为 `334 passed`。提交前还应运行 JavaScript 语法检查和
 `git diff --check`。
+
+M1 多保真平行推演入口：
+
+```bash
+PYTHONPATH=src python3 -m aeromind_apm_lite.ground.deduction.cli demo \
+  --vehicles 256 --branches 32 --workers 4 \
+  --output /tmp/aeromind-m1-run.json \
+  --evidence /tmp/aeromind-m1-evidence.zip
+PYTHONPATH=src python3 tools/export_evidence.py verify /tmp/aeromind-m1-evidence.zip
+```
+
+设计、指标口径和当前边界见 [`docs/18-M1多保真平行推演与证据包.md`](docs/18-M1多保真平行推演与证据包.md)。
 
 ## 安全边界
 
