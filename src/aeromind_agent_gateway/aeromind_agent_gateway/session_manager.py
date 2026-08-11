@@ -1002,14 +1002,61 @@ def _deterministic_control_fallback(
         "让无人机起飞",
     }:
         return "takeoff", {"altitude": 10.0}
-    if compact.rstrip("。！!") in {"降落", "立即降落", "现在降落", "执行降落"}:
+    if compact.rstrip("。！!") in {
+        "降落",
+        "立即降落",
+        "现在降落",
+        "执行降落",
+        "让无人机安全落地",
+    }:
         return "land", {}
-    if compact.rstrip("。！!") in {"返航", "立即返航", "现在返航", "返航并降落", "rtl"}:
+    if compact.rstrip("。！!") in {
+        "返航",
+        "立即返航",
+        "现在返航",
+        "返航并降落",
+        "rtl",
+        "执行rtl",
+    }:
         return "return_home", {}
     if compact.rstrip("。！!") in {"解锁", "立即解锁", "无人机解锁"}:
         return "arm", {}
     if compact.rstrip("。！!") in {"加锁", "立即加锁", "无人机加锁"}:
         return "disarm", {}
+    if compact.rstrip("。！!") in {
+        "悬停",
+        "原地悬停",
+        "立即悬停",
+        "保持悬停",
+    }:
+        return "hover", {}
+
+    movement_patterns = (
+        ("forward", r"(?:向)?前(?:方)?(?:飞行?|移动|平移|进)"),
+        ("backward", r"(?:向)?后(?:方)?(?:飞行?|移动|平移|退)"),
+        ("left", r"(?:向)?左(?:侧)?(?:飞行?|移动|平移)"),
+        ("right", r"(?:向)?右(?:侧)?(?:飞行?|移动|平移)"),
+        ("up", r"(?:(?:向)?上(?:方)?(?:飞行?|移动|平移)|上升)"),
+        ("down", r"(?:(?:向)?下(?:方)?(?:飞行?|移动|平移)|下降)"),
+    )
+    for direction, movement in movement_patterns:
+        move_match = re.fullmatch(
+            rf"(?:请|现在|立即|让无人机)*{movement}"
+            r"(\d+(?:\.\d+)?)(?:米|m)[。！!]*",
+            compact,
+        )
+        if move_match:
+            return "move", {
+                "direction": direction,
+                "distance": float(move_match.group(1)),
+            }
+
+    if re.fullmatch(
+        r"(?:请|现在|立即|让无人机)*(?:拍照|拍一张(?:当前)?(?:前视)?照片|"
+        r"保存当前(?:画面|图像|照片)(?:作为任务证据)?)[。！!]*",
+        compact,
+    ):
+        return "capture_image", {}
     return None
 
 
