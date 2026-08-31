@@ -5,7 +5,10 @@ from .frames import (
     Vec3,
     VenueCalibration,
     airsim_ned_to_map,
+    ecef_to_enu,
     ecef_to_geodetic,
+    ecef_to_wgs84,
+    enu_to_ecef,
     enu_to_geodetic,
     enu_to_local_ned,
     enu_to_map,
@@ -24,6 +27,7 @@ from .frames import (
     map_to_ned,
     ned_to_map,
     ned_to_enu,
+    wgs84_to_ecef,
 )
 from .georeference import (
     AltitudeDatum,
@@ -55,7 +59,10 @@ __all__ = [
     "VenueCalibration",
     "Wgs84Position",
     "airsim_ned_to_map",
+    "ecef_to_enu",
     "ecef_to_geodetic",
+    "ecef_to_wgs84",
+    "enu_to_ecef",
     "enu_to_geodetic",
     "enu_to_local_ned",
     "enu_to_map",
@@ -74,6 +81,7 @@ __all__ = [
     "map_to_ned",
     "ned_to_map",
     "ned_to_enu",
+    "wgs84_to_ecef",
     "default_georeference",
     "load_georeference",
 ]

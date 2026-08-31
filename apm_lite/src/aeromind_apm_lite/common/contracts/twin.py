@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -28,6 +28,12 @@ class TwinSource(str, Enum):
     SIM = "sim"
     PREDICTED = "predicted"
     OBSERVED = "observed"
+    PLANNED = "planned"
+
+
+class TwinLine(str, Enum):
+    PX4 = "px4"
+    APM = "apm"
 
 
 class FidelityLevel(str, Enum):
@@ -71,7 +77,13 @@ class TwinContract(StrictModel):
 class TwinState(TwinContract):
     """One source-labelled dynamic state for a physical or simulated platform."""
 
+    twin_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
     vehicle_id: int = Field(ge=1, le=65_535)
+    line: TwinLine
     platform_type: str = Field(
         min_length=1,
         max_length=64,
@@ -79,21 +91,119 @@ class TwinState(TwinContract):
     )
     frame: CoordinateFrame
     frame_calibration_id: str = Field(min_length=1, max_length=128)
+    position: Vector3
     position_m: Vector3
     velocity_m_s: Vector3 | None = None
     attitude: Quaternion | None = None
     energy_remaining: float = Field(ge=0.0, le=1.0)
     communication_quality: float = Field(ge=0.0, le=1.0)
+    mode: str = Field(min_length=1, max_length=64)
+    task_phase: str = Field(min_length=1, max_length=64)
     mission_phase: str = Field(min_length=1, max_length=64)
     health_status: HealthStatus
     source: TwinSource
     confidence: float = Field(ge=0.0, le=1.0)
     fidelity: FidelityLevel
+    sim_time: float | None = Field(ge=0.0)
+    wall_time: datetime
+    received_monotonic_s: float = Field(ge=0.0)
+    received_wall_time: datetime
+    mirrored_monotonic_s: float = Field(ge=0.0)
+    mirrored_wall_time: datetime
     sampled_at_utc: datetime
     simulated_at_utc: datetime | None = None
     mapped_at_utc: datetime | None = None
 
-    @field_validator("sampled_at_utc", "simulated_at_utc", "mapped_at_utc")
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_and_representation_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        vehicle_id = payload.get("vehicle_id")
+        platform_type = str(payload.get("platform_type", "")).lower()
+        raw_line = payload.get("line")
+        if raw_line is None:
+            raw_line = "apm" if "ardu" in platform_type or "apm" in platform_type else "px4"
+        if isinstance(raw_line, TwinLine):
+            line = raw_line.value
+        else:
+            line = str(raw_line).strip().lower()
+            if line in {"ardupilot", "arducopter"}:
+                line = TwinLine.APM.value
+        payload["line"] = line
+        payload.setdefault("twin_id", f"{line}-{vehicle_id}")
+        payload.setdefault(
+            "platform_type",
+            "ardupilot_multirotor" if line == TwinLine.APM.value else "px4_multirotor",
+        )
+
+        if "position_m" in payload:
+            payload["position"] = payload["position_m"]
+        elif "position" in payload:
+            payload["position_m"] = payload["position"]
+        if "mission_phase" in payload:
+            payload["task_phase"] = payload["mission_phase"]
+        elif "task_phase" in payload:
+            payload["mission_phase"] = payload["task_phase"]
+        payload.setdefault("mode", "UNKNOWN")
+        payload.setdefault("energy_remaining", 1.0)
+        payload.setdefault("communication_quality", 1.0)
+        payload.setdefault("health_status", HealthStatus.UNKNOWN.value)
+
+        wall_time = payload.get("wall_time", payload.get("sampled_at_utc"))
+        if wall_time is not None:
+            payload.setdefault("wall_time", wall_time)
+            payload.setdefault("sampled_at_utc", wall_time)
+            payload.setdefault("received_wall_time", wall_time)
+            payload.setdefault("mirrored_wall_time", wall_time)
+        payload.setdefault("received_monotonic_s", 0.0)
+        payload.setdefault(
+            "mirrored_monotonic_s",
+            payload.get("received_monotonic_s", 0.0),
+        )
+        payload.setdefault("sim_time", None)
+
+        source = payload.get("source")
+        source_value = source.value if isinstance(source, TwinSource) else str(source)
+        if wall_time is not None:
+            if source_value in {TwinSource.SIM.value, TwinSource.PREDICTED.value}:
+                payload.setdefault("simulated_at_utc", wall_time)
+            elif source_value in {TwinSource.REAL.value, TwinSource.OBSERVED.value}:
+                payload.setdefault("mapped_at_utc", wall_time)
+        return payload
+
+    def model_copy(
+        self,
+        *,
+        update: dict[str, Any] | None = None,
+        deep: bool = False,
+    ) -> "TwinState":
+        """Keep v1 compatibility fields synchronized during Pydantic copies."""
+
+        changes = dict(update or {})
+        if "position_m" in changes and "position" not in changes:
+            changes["position"] = changes["position_m"]
+        elif "position" in changes and "position_m" not in changes:
+            changes["position_m"] = changes["position"]
+        if "mission_phase" in changes and "task_phase" not in changes:
+            changes["task_phase"] = changes["mission_phase"]
+        elif "task_phase" in changes and "mission_phase" not in changes:
+            changes["mission_phase"] = changes["task_phase"]
+        if "sampled_at_utc" in changes and "wall_time" not in changes:
+            changes["wall_time"] = changes["sampled_at_utc"]
+        elif "wall_time" in changes and "sampled_at_utc" not in changes:
+            changes["sampled_at_utc"] = changes["wall_time"]
+        return super().model_copy(update=changes, deep=deep)
+
+    @field_validator(
+        "wall_time",
+        "received_wall_time",
+        "mirrored_wall_time",
+        "sampled_at_utc",
+        "simulated_at_utc",
+        "mapped_at_utc",
+    )
     @classmethod
     def timestamps_are_utc(cls, value: datetime | None) -> datetime | None:
         return _as_utc(value) if value is not None else None
@@ -102,14 +212,69 @@ class TwinState(TwinContract):
     def validate_state_provenance(self) -> "TwinState":
         if self.frame == CoordinateFrame.NONE:
             raise ValueError("twin state requires an explicit coordinate frame")
+        if self.position != self.position_m:
+            raise ValueError("position and position_m must describe the same map point")
+        if self.task_phase != self.mission_phase:
+            raise ValueError("task_phase and mission_phase must match")
+        if self.mirrored_monotonic_s < self.received_monotonic_s:
+            raise ValueError("mirrored monotonic time must not precede receive time")
+        if self.mirrored_wall_time < self.received_wall_time:
+            raise ValueError("mirrored wall time must not precede receive time")
         simulated = self.source in {TwinSource.SIM, TwinSource.PREDICTED}
+        physical = self.source in {TwinSource.REAL, TwinSource.OBSERVED}
         if simulated and self.simulated_at_utc is None:
             raise ValueError("sim/predicted state requires simulated_at_utc")
-        if not simulated and self.mapped_at_utc is None:
+        if physical and self.mapped_at_utc is None:
             raise ValueError("real/observed state requires mapped_at_utc")
         if self.simulated_at_utc is not None and self.mapped_at_utc is not None:
             raise ValueError("one state must not mix simulated and mapped timestamps")
         return self
+
+
+class TwinStateSet(TwinContract):
+    """Independent evidence slots; updating predicted never replaces observed."""
+
+    twin_id: str = Field(min_length=1, max_length=128)
+    vehicle_id: int = Field(ge=1, le=65_535)
+    line: TwinLine
+    planned: TwinState | None = None
+    predicted: TwinState | None = None
+    observed: TwinState | None = None
+
+    @model_validator(mode="after")
+    def state_slots_match_identity_and_source(self) -> "TwinStateSet":
+        expected = {
+            "planned": TwinSource.PLANNED,
+            "predicted": TwinSource.PREDICTED,
+            "observed": TwinSource.OBSERVED,
+        }
+        for field_name, source in expected.items():
+            state = getattr(self, field_name)
+            if state is None:
+                continue
+            if state.source != source:
+                raise ValueError(f"{field_name} slot requires source={source.value}")
+            if (
+                state.twin_id != self.twin_id
+                or state.vehicle_id != self.vehicle_id
+                or state.line != self.line
+            ):
+                raise ValueError(f"{field_name} state identity does not match state set")
+        return self
+
+    def updated(self, state: TwinState) -> "TwinStateSet":
+        slot_by_source = {
+            TwinSource.PLANNED: "planned",
+            TwinSource.PREDICTED: "predicted",
+            TwinSource.OBSERVED: "observed",
+        }
+        try:
+            slot = slot_by_source[state.source]
+        except KeyError as exc:
+            raise ValueError("state set accepts only planned/predicted/observed") from exc
+        payload = self.model_dump(mode="python")
+        payload[slot] = state
+        return type(self).model_validate(payload)
 
 
 class VehicleProfile(TwinContract):
@@ -288,7 +453,9 @@ __all__ = [
     "StrategyKind",
     "StrategySpec",
     "TwinSource",
+    "TwinLine",
     "TwinState",
+    "TwinStateSet",
     "VehicleProfile",
     "WorldEvent",
     "distance_between",

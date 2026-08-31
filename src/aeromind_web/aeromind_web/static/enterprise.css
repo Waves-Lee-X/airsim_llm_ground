@@ -210,6 +210,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   .conversation-layout { grid-template-columns: minmax(0, 1fr) 280px; }
   .status-strip .badge:nth-last-child(-n + 2) { display: none; }
 }
+.task-presets { margin-bottom: -2px; }
+.task-preset-button { border-color: rgb(34 211 238 / .42); background: #111b22; color: #8be8f5; }
+.task-mode-note { color: var(--text-muted); }
 @media (max-width: 1280px) {
   body { min-width: 0; }
   .station-shell { grid-template-rows: auto auto auto; }

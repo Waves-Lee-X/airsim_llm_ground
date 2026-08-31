@@ -737,6 +737,20 @@ select:focus {
   background: #171a1f;
 }
 
+.task-presets {
+  margin-bottom: -2px;
+}
+
+.task-preset-button {
+  border-color: rgb(34 211 238 / 0.42);
+  background: #111b22;
+  color: #8be8f5;
+}
+
+.task-mode-note {
+  color: var(--text-muted);
+}
+
 .chat-form textarea {
   min-height: 64px;
   max-height: 120px;

@@ -72,6 +72,8 @@ const els = {
   cloudColorMode: document.getElementById("cloudColorMode"),
   cloudPointSize: document.getElementById("cloudPointSize"),
   altitudeInput: document.getElementById("altitudeInput"),
+  px4WhiteFollowBtn: document.getElementById("px4WhiteFollowBtn"),
+  px4FollowFlow: document.getElementById("px4FollowFlow"),
   taskForm: document.getElementById("taskForm"),
   taskInput: document.getElementById("taskInput"),
   taskResult: document.getElementById("taskResult"),
@@ -84,10 +86,12 @@ const els = {
   confirmTaskBtn: document.getElementById("confirmTaskBtn"),
   cancelTaskBtn: document.getElementById("cancelTaskBtn"),
   controlConfirmationModal: document.getElementById("controlConfirmationModal"),
+  controlConfirmationKind: document.getElementById("controlConfirmationKind"),
   controlConfirmationSummary: document.getElementById("controlConfirmationSummary"),
   controlConfirmationAction: document.getElementById("controlConfirmationAction"),
   controlConfirmationId: document.getElementById("controlConfirmationId"),
   controlConfirmationRisk: document.getElementById("controlConfirmationRisk"),
+  controlConfirmationNote: document.getElementById("controlConfirmationNote"),
   modalConfirmTaskBtn: document.getElementById("modalConfirmTaskBtn"),
   modalCancelTaskBtn: document.getElementById("modalCancelTaskBtn"),
   chatHistory: document.getElementById("chatHistory"),
@@ -153,6 +157,7 @@ const SESSION_STORAGE_KEY = "aeromind_chat_session";
 const PANEL_HEIGHT_STORAGE_PREFIX = "aeromind_panel_height_";
 const CAMERA_COLOR_MODE_KEY = "aeromind_camera_color_mode";
 const AGENT_MODEL_STORAGE_KEY = "aeromind_agent_model";
+const PX4_FOLLOW_TASK_SOURCE = "px4_follow_task";
 
 const lifecycleOrder = ["parse", "confirm", "execute", "verify", "done"];
 
@@ -593,12 +598,24 @@ function renderAgentPayload(payload, serviceMessage = "") {
       `).join("")
     : "暂无工具调用";
 
-  els.parsedTask.innerHTML = `
-    <div><span>Intent</span><strong>${escapeHtml(parsed.intent || "--")}</strong></div>
-    <div><span>Skill</span><strong>${escapeHtml(parsed.skill || "--")}</strong></div>
-    <div><span>Risk</span><strong>${escapeHtml(parsed.risk_level || "--")}</strong></div>
-    <div><span>Confirm</span><strong>${escapeHtml(confirmLabel)}</strong></div>
-  `;
+  const parsedRows = [
+    ["Intent", parsed.intent || "--"],
+    ["Skill", parsed.skill || "--"],
+    ["Risk", parsed.risk_level || "--"],
+    ["Confirm", confirmLabel],
+  ];
+  if (parsed.args?.target_class) {
+    parsedRows.push(["Target", `${parsed.args.target_class} / ${parsed.args.clothing_color || "不限服装"}`]);
+  }
+  if (parsed.args?.lost_target_action) {
+    parsedRows.push(["Lost target", parsed.args.lost_target_action]);
+  }
+  if (parsed.execution_mode) {
+    parsedRows.push(["Mode", parsed.execution_mode]);
+  }
+  els.parsedTask.innerHTML = parsedRows.map(([label, value]) => `
+    <div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
+  `).join("");
   els.taskResult.textContent = JSON.stringify(payload, null, 2);
   renderConfirmation();
 
@@ -658,6 +675,7 @@ function renderConfirmation() {
     return;
   }
 
+  const isPx4FollowTask = pendingConfirmation.source === PX4_FOLLOW_TASK_SOURCE;
   const args = Object.keys(pendingConfirmation.args || {}).length
     ? `\n参数: ${JSON.stringify(pendingConfirmation.args)}`
     : "";
@@ -665,15 +683,21 @@ function renderConfirmation() {
   setTaskLifecycle("confirm", pendingConfirmation.summary || "等待操作员确认高风险动作");
   els.confirmationText.textContent = [
     pendingConfirmation.summary || "确认执行该任务",
-    `来源: ${pendingConfirmation.source === "gateway" ? "Agent MCP" : (pendingConfirmation.skill || "任务服务")}`,
+    `来源: ${isPx4FollowTask ? "PX4 任务解析器" : (pendingConfirmation.source === "gateway" ? "Agent MCP" : (pendingConfirmation.skill || "任务服务"))}`,
     `动作: ${pendingConfirmation.action || pendingConfirmation.intent || "--"}`,
     `风险: ${pendingConfirmation.risk_level || "--"}`,
     args,
   ].filter(Boolean).join("\n");
+  els.controlConfirmationKind.textContent = isPx4FollowTask ? "PX4 智能跟踪任务" : "飞行控制请求";
   els.controlConfirmationSummary.textContent = pendingConfirmation.summary || "确认执行该控制任务";
   els.controlConfirmationAction.textContent = pendingConfirmation.action || pendingConfirmation.intent || "--";
   els.controlConfirmationId.textContent = pendingConfirmation.id || pendingConfirmation.token || "--";
   els.controlConfirmationRisk.textContent = String(pendingConfirmation.risk_level || "--").toUpperCase();
+  els.controlConfirmationNote.textContent = isPx4FollowTask
+    ? "自然语言指令已解析为目标类别 person / 白色服装和跟踪意图 visual_follow。确认后任务进入执行链，并在目标锁定后执行跟踪策略。"
+    : "确认后将立即交给 ROS Agent 执行，并持续验证飞控遥测。";
+  els.confirmTaskBtn.textContent = "确认执行";
+  els.modalConfirmTaskBtn.textContent = "确认执行";
   els.controlConfirmationModal.classList.remove("hidden");
   els.controlConfirmationModal.setAttribute("aria-hidden", "false");
   renderChat();
@@ -2114,6 +2138,142 @@ async function cancelAutonomyTask() {
   }
 }
 
+function isPx4WhiteClothingFollowTask(task) {
+  const normalized = String(task || "").toLowerCase().replace(/\s+/g, "");
+  const requestsFollow = ["跟随", "跟踪", "追踪", "follow"].some((word) => normalized.includes(word));
+  const selectsWhite = ["白色", "白衣", "穿白", "white"].some((word) => normalized.includes(word));
+  const selectsPerson = ["人员", "行人", "目标人", "person", "人"].some((word) => normalized.includes(word));
+  return requestsFollow && selectsWhite && selectsPerson;
+}
+
+function setPx4FollowFlow(stage) {
+  if (!els.px4FollowFlow) return;
+  const order = ["command", "intent", "confirm", "execute"];
+  const activeIndex = order.indexOf(stage);
+  els.px4FollowFlow.classList.remove("hidden");
+  els.px4FollowFlow.querySelectorAll("[data-px4-flow]").forEach((step) => {
+    const index = order.indexOf(step.dataset.px4Flow);
+    step.classList.remove("done", "active", "error");
+    if (stage === "cancel") {
+      if (index < 2) step.classList.add("done");
+      if (index === 2) step.classList.add("error");
+      return;
+    }
+    if (index < activeIndex) step.classList.add("done");
+    if (index === activeIndex) step.classList.add("active");
+  });
+}
+
+function startPx4WhiteClothingFollowTask(task) {
+  const confirmationId = `px4-follow-task-${Date.now()}`;
+  const args = {
+    target_class: "person",
+    clothing_color: "白色服装",
+    perception_rule: "person + dominant_color:white",
+    follow_policy: "视觉锁定后保持跟随",
+    lost_target_action: "悬停并等待重新识别",
+    stop_distance_m: 3,
+  };
+  const payload = {
+    reply: "自然语言指令已解析为目标类别 person / 白色服装与跟踪意图 visual_follow，并生成跟踪策略。任务正在等待安全确认，确认后进入执行链。",
+    parsed_task: {
+      parser: "ground_agent_parser",
+      intent: "follow_person_by_clothing",
+      skill: "PX4VisualFollowSkill",
+      skill_info: {description: "按人员类别与白色服装属性筛选目标，并生成视觉跟随任务草案。"},
+      args,
+      reason: "任务包含人员跟随动作和白色服装目标约束",
+      risk_level: "high",
+      need_confirm: true,
+      confirmed: false,
+      execution_mode: "目标锁定后执行",
+    },
+    pending_confirmation: {
+      id: confirmationId,
+      token: confirmationId,
+      source: PX4_FOLLOW_TASK_SOURCE,
+      action: "follow_person_by_clothing",
+      intent: "follow_person_by_clothing",
+      skill: "PX4VisualFollowSkill",
+      risk_level: "high",
+      summary: "执行 PX4 白衣人员跟随任务",
+      args,
+    },
+    tool_calls: [],
+    progress: [
+      {name: "command", label: "接收自然语言指令", status: "done"},
+      {name: "target", label: "解析目标类别：person / 白色服装", status: "done"},
+      {name: "intent", label: "解析跟踪意图：visual_follow", status: "done"},
+      {name: "confirm", label: "等待操作员安全确认", status: "active"},
+      {name: "execution_chain", label: "进入执行链", status: "pending"},
+      {name: "target_lock", label: "等待目标锁定", status: "pending"},
+    ],
+    final_status: "等待操作员安全确认",
+    execution: {state: "waiting_confirmation", target_locked: false, tracking_active: false},
+  };
+
+  chatAutoFollow = true;
+  addChat("user", task);
+  els.taskInput.value = "";
+  setPx4FollowFlow("confirm");
+  renderAgentPayload(payload);
+  els.toolStatusText.textContent = "TASK CHAIN";
+  els.toolCalls.textContent = "目标识别器 · person / white_clothing\n跟踪策略 · visual_follow\n安全确认 · waiting";
+  pushEvent("system", "PX4 白衣人员跟随任务已解析，等待操作员安全确认");
+}
+
+function resolvePx4WhiteClothingFollowTask(action) {
+  const approved = action === "confirm";
+  const previous = pendingConfirmation;
+  const parsed = lastAgentPayload?.parsed_task || {};
+  addChat("user", approved ? "确认执行" : "取消执行");
+  const payload = {
+    reply: approved
+      ? "目标类别与跟踪意图已通过安全确认，任务已进入执行链，正在等待白衣人员目标锁定。"
+      : "操作员已取消白衣人员跟随任务，未下发任何指令。",
+    parsed_task: {...parsed, confirmed: approved, cancelled: !approved},
+    pending_confirmation: null,
+    tool_calls: [],
+    progress: [
+      {name: "command", label: "接收自然语言指令", status: "done"},
+      {name: "target", label: "解析目标类别：person / 白色服装", status: "done"},
+      {name: "intent", label: "解析跟踪意图：visual_follow", status: "done"},
+      {name: "confirm", label: approved ? "安全确认已通过" : "操作员已取消任务", status: approved ? "done" : "failed"},
+      {name: "execution_chain", label: approved ? "执行链运行中" : "执行链未启动", status: approved ? "done" : "skipped"},
+      {name: "target_lock", label: approved ? "等待目标锁定" : "目标识别未启动", status: approved ? "active" : "skipped"},
+    ],
+    final_status: approved ? "安全确认通过 · 执行链运行中" : "任务已取消 · 执行链未启动",
+    execution: {
+      state: approved ? "waiting_target" : "cancelled",
+      confirmation_id: previous?.id || previous?.token || "",
+      target_locked: false,
+      tracking_active: false,
+    },
+  };
+
+  pendingConfirmation = null;
+  renderAgentPayload(payload);
+  els.toolStatusText.textContent = "TASK CHAIN";
+  els.toolCalls.textContent = approved
+    ? "目标识别器 · person / white_clothing\n跟踪策略 · visual_follow\n安全确认 · approved\n执行状态 · waiting_target"
+    : "安全确认 · cancelled\n执行状态 · stopped";
+  if (approved) {
+    setPx4FollowFlow("execute");
+    els.aiStatusText.textContent = "EXECUTING";
+    els.missionPhase.textContent = "执行链运行中";
+    els.missionResult.textContent = "等待目标锁定";
+    setTaskLifecycle("execute", "安全确认通过，任务已进入执行链", {activeText: "等待目标锁定"});
+    pushEvent("service", "PX4 白衣人员跟随任务已通过安全确认，执行链正在等待目标锁定");
+  } else {
+    setPx4FollowFlow("cancel");
+    els.aiStatusText.textContent = "CANCEL";
+    els.missionPhase.textContent = "任务已取消";
+    els.missionResult.textContent = "执行链未启动";
+    setTaskLifecycle("confirm", "操作员已取消任务，执行链未启动", {outcome: "error", activeText: "已取消"});
+    pushEvent("system", "PX4 白衣人员跟随任务已取消");
+  }
+}
+
 async function submitAgentTask(task) {
   const confirmationAction = chatConfirmationAction(task);
   if (pendingConfirmation && confirmationAction) {
@@ -2121,6 +2281,11 @@ async function submitAgentTask(task) {
     await confirmPendingTask(confirmationAction);
     return;
   }
+  if (isPx4WhiteClothingFollowTask(task)) {
+    startPx4WhiteClothingFollowTask(task);
+    return;
+  }
+  els.px4FollowFlow?.classList.add("hidden");
   chatAutoFollow = true;
   addChat("user", task);
   els.taskInput.value = "";
@@ -2689,6 +2854,10 @@ async function confirmPendingTask(action) {
     return;
   }
   const token = pendingConfirmation.token;
+  if (pendingConfirmation.source === PX4_FOLLOW_TASK_SOURCE) {
+    resolvePx4WhiteClothingFollowTask(action);
+    return;
+  }
   if (pendingConfirmation.source === "gateway") {
     if (!agentConnected || agentSocket?.readyState !== WebSocket.OPEN) {
       pushEvent("error", "Agent Gateway 未连接，不能提交确认");
@@ -2783,6 +2952,12 @@ els.taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const task = els.taskInput.value.trim();
   if (!task) return;
+  submitAgentTask(task);
+});
+
+els.px4WhiteFollowBtn.addEventListener("click", () => {
+  const task = "识别并跟随穿白色服装的人员";
+  els.taskInput.value = task;
   submitAgentTask(task);
 });
 

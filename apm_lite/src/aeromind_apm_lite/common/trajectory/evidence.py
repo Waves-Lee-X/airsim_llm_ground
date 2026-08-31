@@ -99,16 +99,47 @@ class TrajectorySample(TrajectoryModel):
     position_map_m: tuple[float, float, float]
     phase: str | None = Field(default=None, min_length=1, max_length=64)
     observed_at_utc: datetime | None = None
+    received_monotonic_s: float | None = Field(default=None, ge=0.0)
+    received_at_utc: datetime | None = None
+    mirrored_monotonic_s: float | None = Field(default=None, ge=0.0)
+    mirrored_at_utc: datetime | None = None
+    sim_time_s: float | None = Field(default=None, ge=0.0)
     source_wgs84: Wgs84Position | None = None
     gps_quality: GpsQuality | None = None
 
-    @field_validator("observed_at_utc")
+    @field_validator("observed_at_utc", "received_at_utc", "mirrored_at_utc")
     @classmethod
     def observed_timestamp_is_utc(
         cls,
         value: datetime | None,
     ) -> datetime | None:
         return _as_utc(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def mirror_follows_receive(self) -> "TrajectorySample":
+        monotonic_pair = (self.received_monotonic_s, self.mirrored_monotonic_s)
+        wall_pair = (self.received_at_utc, self.mirrored_at_utc)
+        if any(value is not None for value in monotonic_pair) and any(
+            value is None for value in monotonic_pair
+        ):
+            raise ValueError("receive and mirror monotonic stamps must be paired")
+        if any(value is not None for value in wall_pair) and any(
+            value is None for value in wall_pair
+        ):
+            raise ValueError("receive and mirror wall stamps must be paired")
+        if (
+            self.received_monotonic_s is not None
+            and self.mirrored_monotonic_s is not None
+            and self.mirrored_monotonic_s < self.received_monotonic_s
+        ):
+            raise ValueError("mirrored monotonic time must not precede receive time")
+        if (
+            self.received_at_utc is not None
+            and self.mirrored_at_utc is not None
+            and self.mirrored_at_utc < self.received_at_utc
+        ):
+            raise ValueError("mirrored wall time must not precede receive time")
+        return self
 
 
 class TrajectoryEvidence(TrajectoryModel):

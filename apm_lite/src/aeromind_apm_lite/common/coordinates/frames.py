@@ -156,7 +156,12 @@ def geodetic_to_enu(
 ) -> Vec3:
     """Project WGS84 into the local tangent ENU frame at ``origin``."""
 
-    point_ecef = geodetic_to_ecef(position)
+    return ecef_to_enu(geodetic_to_ecef(position), origin)
+
+
+def ecef_to_enu(point_ecef: Vec3, origin: GeodeticPosition) -> Vec3:
+    """Rotate an ECEF point into the tangent ENU frame at ``origin``."""
+
     origin_ecef = geodetic_to_ecef(origin)
     delta_x = point_ecef.x - origin_ecef.x
     delta_y = point_ecef.y - origin_ecef.y
@@ -184,6 +189,12 @@ def enu_to_geodetic(
 ) -> GeodeticPosition:
     """Inverse local tangent-plane projection for :func:`geodetic_to_enu`."""
 
+    return ecef_to_geodetic(enu_to_ecef(point_enu, origin))
+
+
+def enu_to_ecef(point_enu: Vec3, origin: GeodeticPosition) -> Vec3:
+    """Rotate tangent ENU metres into an ECEF point."""
+
     origin_ecef = geodetic_to_ecef(origin)
     latitude = math.radians(origin.latitude_deg)
     longitude = math.radians(origin.longitude_deg)
@@ -202,13 +213,23 @@ def enu_to_geodetic(
         + cos_latitude * sin_longitude * point_enu.z
     )
     delta_z = cos_latitude * point_enu.y + sin_latitude * point_enu.z
-    return ecef_to_geodetic(
-        Vec3(
-            origin_ecef.x + delta_x,
-            origin_ecef.y + delta_y,
-            origin_ecef.z + delta_z,
-        )
+    return Vec3(
+        origin_ecef.x + delta_x,
+        origin_ecef.y + delta_y,
+        origin_ecef.z + delta_z,
     )
+
+
+def wgs84_to_ecef(position: GeodeticPosition) -> Vec3:
+    """Explicit WGS84-named alias for :func:`geodetic_to_ecef`."""
+
+    return geodetic_to_ecef(position)
+
+
+def ecef_to_wgs84(point_ecef: Vec3) -> GeodeticPosition:
+    """Explicit WGS84-named alias for :func:`ecef_to_geodetic`."""
+
+    return ecef_to_geodetic(point_ecef)
 
 
 def map_to_enu(point_map: Vec3, calibration: VenueCalibration) -> Vec3:

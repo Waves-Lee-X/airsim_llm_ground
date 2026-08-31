@@ -20,6 +20,7 @@ ROS 2、MAVROS、`px4_msgs` 或 PX4 Offboard。
 | Mission Agent | 任务闭环完成 | 连续对话、多步 plan 草案、MissionPlanner 按序执行、执行反馈回环、视觉 analyze 步骤（VLM 识别结果回写决策） |
 | M5 编队（仿真） | 已验收 | SITL 10/10（一字/V/正方形）；地面站编队执行（序列/分层切换/取消）；态势地图 |
 | M1 升级最小版 | 已实现 | 统一孪生契约与注册表；L0 256 对象/32 分支、四策略、Pareto、可校验 EvidencePackage |
+| 翼策·平行域 live | 已完成本机双线 live 实跑 | PX4/APM 双线 SITL 实机替身、AirSim UE 孪生、任务门禁、同屏误差和可校验证据包；轨迹阈值结论按每次原始报告单列 |
 | 无人机身份文档 P0 | 已实现 | 签名身份、能力、机载具身模型声明、授权、有效期和撤销过滤 |
 | 深度避障与多机任务 | 真机待验收 | 编队仿真闭环完成；D435i Depth/IR、路径规划与真机编队尚未进入实机授权 |
 
@@ -72,6 +73,101 @@ apm_lite/
   tests/         协议、MAVLink、P9、Web、相机和 VLM 测试
   web/           Lite Web 地面站静态资源
 ```
+
+## 翼策·平行域一键 live 验收
+
+这里的“real”端是可重复运行的**实机替身**，不是外场真机：PX4 线使用 Gazebo
+Classic + PX4 SITL，APM 线使用 ArduPilot 原生 SITL。后者没有 Gazebo 刚体/碰撞
+世界，只承担 HIL/SITL 协议替身。孪生端是两个实际运行的 AirSim UE 世界及各自的
+SITL。外场飞行器由用户后续接入，本仓库当前没有外场验收结论。
+
+### 依赖与构建
+
+- Windows 10/11、WSL2 Ubuntu 22.04、PowerShell、可用的 Windows/WSL 网络互通；
+- Python 3.9-3.12、`tmux`，以及 `pip install -e '.[ground,dev]'`；
+- `~/PX4-Autopilot`，已构建 `build/px4_sitl_default/bin/px4`，并包含
+  `Tools/simulation/gazebo-classic`；
+- `~/ardupilot`，已构建 `build/sitl/bin/arducopter`，目标版本 ArduCopter 4.7.0；
+- Windows UE 4.27、AirSim 1.8.1 Blocks 工程。默认路径可通过
+  `start_all.ps1` 的 `-AirSimPx4Exe/-AirSimApmExe` 和
+  `-AirSimPx4Project/-AirSimApmProject` 覆盖。
+
+四路 MAVLink 不合并、不转发，桥各自独占端口：
+
+| 线/世界 | 明确角色 | vehicle_id / MAV_SYS_ID | 桥 MAVLink UDP | 坐标 | dialect |
+|---|---|---:|---:|---|---|
+| PX4 Gazebo | 实机替身（仿真/HIL） | 1 | 14540 | Gazebo ENU → map | common + PX4 extensions |
+| PX4 AirSim | 仿真/孪生 | 1 | 14541 | AirSim NED → map | common + PX4 extensions |
+| APM native SITL | 实机替身（仿真/HIL） | 2 | 14550 | WGS84/local → map | ardupilotmega |
+| APM AirSim | 仿真/孪生 | 2 | 14551 | AirSim NED → map | ardupilotmega |
+
+AirSim RPC 使用 `41451`（PX4）和 `41452`（APM）。启动顺序固定为：生成两份
+settings → PX4 Gazebo → APM native SITL → PX4/AirSim SITL → APM/AirSim SITL →
+两个 UE 世界 → 地面桥 → 越权负例 → 合法预演/确认/执行 → 证据打包。完整端口、
+GeoReference、消息集合和故障处理见
+[`deploy/parallel_domain/环境说明.md`](deploy/parallel_domain/环境说明.md)。
+
+### 从零复现
+
+在 Windows PowerShell 中进入本目录，先用 dry-run 检查路径与四实例参数：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\deploy\parallel_domain\start_all.ps1 -Line all -DryRun
+```
+
+随后在 WSL 中执行一键验收。脚本会补起缺失的四个 SITL session 和两个真正的 UE
+进程，确认 UE PID、独立 settings SHA-256 及 RPC 监听后才进入任务链：
+
+```bash
+cd ~/aeromind_ws/apm_lite
+PYTHONPATH=src python3 tools/end_to_end_demo.py --line all
+```
+
+`--line px4` 或 `--line apm` 可单线重复执行。每条线会显示 mission hash、AirSim
+predicted evidence hash 和一次性 `confirmation_digest`；操作员必须原样输入摘要，脚本
+才允许任务下发。仅在已经确认四个端点全是本机 SITL/HIL 替身时，可用下面的显式
+自动验收开关，不能把它用于外场配置：
+
+```bash
+PYTHONPATH=src python3 tools/end_to_end_demo.py --line all --confirm-sitl
+```
+
+每次运行创建新的 mission UUID 和输出目录。结果包括 `acceptance.json`、原始 audit/
+replay/evidence、每线 `*-live-evidence.zip`，以及 `same-screen-report.html`；后者同屏显示
+任务目标、AirSim 孪生预测、实机替身 observed 轨迹和三组误差曲线，并在页面内标注
+“仿真/HIL”“仿真/孪生”和“不是外场真机”。脚本已在生成时校验证据包；也可独立复核：
+
+```bash
+PYTHONPATH=src python3 tools/package_parallel_domain_live.py verify \
+  .runtime/parallel-domain-e2e/<run>/px4-live-evidence.zip
+PYTHONPATH=src python3 tools/package_parallel_domain_live.py verify \
+  .runtime/parallel-domain-e2e/<run>/apm-live-evidence.zip
+```
+
+### AirSim 多实例隔离
+
+编排器不会写标准的 `Documents/AirSim/settings.json`。它先在 runtime 生成 PX4/APM
+配置，再复制到 `%LOCALAPPDATA%\Aeromind\parallel-domain\airsim\px4|apm\settings.json`，
+以两个独立 `-settings=<绝对路径>`、RPC 端口、窗口和日志启动 UE。进程 manifest
+记录 PID、参数和 settings SHA-256，并校验标准 settings 在启动前后哈希不变。不要
+手动删除 `-settings`，否则 AirSim 会回退到单一 Documents 配置，使两个世界互相污染。
+
+### 已知边界与外场接入点
+
+- APM real 替身是 native SITL，没有 Gazebo 碰撞/动力学；它不能被表述为
+  Gazebo-ArduPilot，更不能被表述为真机。
+- 一台电脑同时运行两个 UE 4.27 世界需要足够显存/内存；UE 没有存活并监听对应 RPC
+  时，live gate 必须失败，禁止用离线 predicted 顶替。
+- QGC/MAVProxy 与桥不能同时直接绑定同一 `udpin` 端口；需要旁路观察时，应配置明确
+  的额外 FC 输出或独立 MAVLink router，并保持四个实例流隔离。
+- `--confirm-sitl`、`force_arm_for_sitl` 和 SITL 标定不得进入外场配置。坐标材料口径为
+  “实现往返自洽 1.6e-9 m + live 标定误差实测值”，不是“0 m 误差”。
+- 外场切换只替换每条线 real 侧的飞控适配器/传输端点（串口、UDP、系统号及其
+  模式/命令映射），`ParallelDomainCore`、TwinState、map 坐标契约、任务级门禁、
+  planned/predicted/observed 槽和证据格式不改。接入时必须关闭 SITL force-arm，使用
+  新的实测 GeoReference/标定 SHA，并重新完成 RC、failsafe、权限和场地安全验收。
+  这说明接入边界稳定，不表示当前已经完成外场真机接入。
 
 ## 手动 AirSim/SITL
 

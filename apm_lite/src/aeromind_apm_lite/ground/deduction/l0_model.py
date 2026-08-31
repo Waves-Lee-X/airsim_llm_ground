@@ -76,6 +76,11 @@ class L0Model:
             state_payload = state.model_dump(mode="python")
             state_payload.update(
                 {
+                    "position": Vector3(
+                        x=state.position_m.x + (0.0 if is_failed else progress + jitter),
+                        y=state.position_m.y + (index % 2) * jitter,
+                        z=state.position_m.z,
+                    ),
                     "position_m": Vector3(
                         x=state.position_m.x + (0.0 if is_failed else progress + jitter),
                         y=state.position_m.y + (index % 2) * jitter,
@@ -83,11 +88,16 @@ class L0Model:
                     ),
                     "energy_remaining": energy,
                     "communication_quality": communication,
+                    "task_phase": "failed" if is_failed else "evaluated",
                     "mission_phase": "failed" if is_failed else "evaluated",
                     "health_status": HealthStatus.FAILED if is_failed else state.health_status,
                     "confidence": min(state.confidence, 0.7) if is_failed else state.confidence,
                     "source": "predicted",
                     "sampled_at_utc": timestamp,
+                    "wall_time": timestamp,
+                    "received_wall_time": timestamp,
+                    "mirrored_wall_time": timestamp,
+                    "sim_time": float(duration),
                     "simulated_at_utc": timestamp,
                     "mapped_at_utc": None,
                 }

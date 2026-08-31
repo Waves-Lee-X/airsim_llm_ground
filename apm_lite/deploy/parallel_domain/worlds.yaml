@@ -1,0 +1,57 @@
+schema_version: "1.0"
+project: yice-parallel-domain
+georeference:
+  calibration_id: parallel-sitl-locked-v1
+  status: surveyed
+  origin_wgs84:
+    latitude_deg: 47.641468
+    longitude_deg: -122.140165
+    altitude_m: 122.0
+  map_x_heading_from_true_north_deg: 0.0
+  map_z: up
+  enu_axes: {x: east, y: north, z: up}
+  airsim_axes: {x: north, y: east, z: down}
+  note: "Locked against deterministic SITL settings only; not an outdoor venue survey."
+instances:
+  - id: px4-real
+    line: px4
+    role: real
+    simulator: gazebo-classic
+    flight_controller: PX4
+    vehicle_id: 1
+    mavlink_dialect: common
+    mavlink_endpoint: udpin:0.0.0.0:14540
+    simulator_tcp: 4560
+    gazebo_mavlink_udp: 14560
+    gazebo_qgc_udp: 14640
+  - id: px4-virtual
+    line: px4
+    role: virtual
+    simulator: AirSim
+    flight_controller: PX4
+    vehicle_id: 1
+    mavlink_dialect: common
+    mavlink_endpoint: udpin:0.0.0.0:14541
+    simulator_tcp: 4561
+    qgc_udp: 14641
+  - id: apm-real
+    line: apm
+    role: real
+    simulator: native-sitl
+    flight_controller: ArduCopter
+    vehicle_id: 2
+    mavlink_dialect: ardupilotmega
+    mavlink_endpoint: udpin:0.0.0.0:14550
+    airsim_sensor_control: null
+    sitl_speedup: 10
+  - id: apm-virtual
+    line: apm
+    role: virtual
+    simulator: AirSim
+    flight_controller: ArduCopter
+    vehicle_id: 2
+    mavlink_dialect: ardupilotmega
+    mavlink_endpoint: udpin:0.0.0.0:14551
+    airsim_sensor_port: 9003
+    airsim_control_port: 9002
+    sitl_speedup: 10

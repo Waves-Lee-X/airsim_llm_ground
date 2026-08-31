@@ -308,6 +308,13 @@
           "enum": [
             "none",
             "map",
+            "map_enu",
+            "enu",
+            "ned",
+            "ecef",
+            "wgs84",
+            "gazebo_enu",
+            "airsim_ned",
             "local_ned",
             "global_wgs84",
             "body_frd",
@@ -366,12 +373,21 @@
           "title": "Quaternion",
           "type": "object"
         },
+        "TwinLine": {
+          "enum": [
+            "px4",
+            "apm"
+          ],
+          "title": "TwinLine",
+          "type": "string"
+        },
         "TwinSource": {
           "enum": [
             "real",
             "sim",
             "predicted",
-            "observed"
+            "observed",
+            "planned"
           ],
           "title": "TwinSource",
           "type": "string"
@@ -448,6 +464,9 @@
         "health_status": {
           "$ref": "#/$defs/HealthStatus"
         },
+        "line": {
+          "$ref": "#/$defs/TwinLine"
+        },
         "mapped_at_utc": {
           "anyOf": [
             {
@@ -461,10 +480,26 @@
           "default": null,
           "title": "Mapped At Utc"
         },
+        "mirrored_monotonic_s": {
+          "minimum": 0.0,
+          "title": "Mirrored Monotonic S",
+          "type": "number"
+        },
+        "mirrored_wall_time": {
+          "format": "date-time",
+          "title": "Mirrored Wall Time",
+          "type": "string"
+        },
         "mission_phase": {
           "maxLength": 64,
           "minLength": 1,
           "title": "Mission Phase",
+          "type": "string"
+        },
+        "mode": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Mode",
           "type": "string"
         },
         "platform_type": {
@@ -474,8 +509,21 @@
           "title": "Platform Type",
           "type": "string"
         },
+        "position": {
+          "$ref": "#/$defs/Vector3"
+        },
         "position_m": {
           "$ref": "#/$defs/Vector3"
+        },
+        "received_monotonic_s": {
+          "minimum": 0.0,
+          "title": "Received Monotonic S",
+          "type": "number"
+        },
+        "received_wall_time": {
+          "format": "date-time",
+          "title": "Received Wall Time",
+          "type": "string"
         },
         "sampled_at_utc": {
           "format": "date-time",
@@ -487,6 +535,18 @@
           "default": "1.0",
           "title": "Schema Version",
           "type": "string"
+        },
+        "sim_time": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sim Time"
         },
         "simulated_at_utc": {
           "anyOf": [
@@ -504,6 +564,19 @@
         "source": {
           "$ref": "#/$defs/TwinSource"
         },
+        "task_phase": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Task Phase",
+          "type": "string"
+        },
+        "twin_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Twin Id",
+          "type": "string"
+        },
         "vehicle_id": {
           "maximum": 65535,
           "minimum": 1,
@@ -520,21 +593,37 @@
             }
           ],
           "default": null
+        },
+        "wall_time": {
+          "format": "date-time",
+          "title": "Wall Time",
+          "type": "string"
         }
       },
       "required": [
+        "twin_id",
         "vehicle_id",
+        "line",
         "platform_type",
         "frame",
         "frame_calibration_id",
+        "position",
         "position_m",
         "energy_remaining",
         "communication_quality",
+        "mode",
+        "task_phase",
         "mission_phase",
         "health_status",
         "source",
         "confidence",
         "fidelity",
+        "sim_time",
+        "wall_time",
+        "received_monotonic_s",
+        "received_wall_time",
+        "mirrored_monotonic_s",
+        "mirrored_wall_time",
         "sampled_at_utc"
       ],
       "title": "TwinState",
@@ -631,7 +720,8 @@
             "real",
             "sim",
             "predicted",
-            "observed"
+            "observed",
+            "planned"
           ],
           "title": "TwinSource",
           "type": "string"

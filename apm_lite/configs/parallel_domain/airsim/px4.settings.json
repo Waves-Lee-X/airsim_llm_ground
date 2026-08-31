@@ -1,0 +1,48 @@
+{
+  "SeeDocsAt": "https://microsoft.github.io/AirSim/settings/",
+  "SettingsVersion": 1.2,
+  "SimMode": "Multirotor",
+  "ClockType": "SteppableClock",
+  "RpcEnabled": true,
+  "ApiServerPort": 41451,
+  "LocalHostIp": "0.0.0.0",
+  "OriginGeopoint": {
+    "Latitude": 47.641468,
+    "Longitude": -122.140165,
+    "Altitude": 122.0
+  },
+  "Vehicles": {
+    "Drone1": {
+      "VehicleType": "PX4Multirotor",
+      "AutoCreate": true,
+      "UseSerial": false,
+      "UseTcp": true,
+      "TcpPort": 4561,
+      "ControlIp": "remote",
+      "ControlPortLocal": 14541,
+      "ControlPortRemote": 14581,
+      "LocalHostIp": "__AIRSIM_HOST__",
+      "X": 0.0,
+      "Y": 0.0,
+      "Z": 0.0,
+      "Yaw": 0.0,
+      "LockStep": true,
+      "EnableTrace": true,
+      "AllowAPIAlways": true,
+      "Sensors": {
+        "Barometer": {
+          "SensorType": 1,
+          "Enabled": true,
+          "PressureFactorSigma": 0.0001825
+        }
+      },
+      "Parameters": {
+        "NAV_RCL_ACT": 0,
+        "NAV_DLL_ACT": 0,
+        "COM_OBL_ACT": 1,
+        "LPE_LAT": 47.641468,
+        "LPE_LON": -122.140165
+      }
+    }
+  }
+}

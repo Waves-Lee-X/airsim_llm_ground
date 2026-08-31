@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AeroMind AI 地面站</title>
-    <link rel="stylesheet" href="./styles.css?v=20260715-enterprise" />
-    <link rel="stylesheet" href="./enterprise.css?v=20260715-layout2" />
+    <link rel="stylesheet" href="./styles.css?v=20260811-px4-follow1" />
+    <link rel="stylesheet" href="./enterprise.css?v=20260811-px4-follow1" />
   </head>
   <body>
     <div class="station-shell">
@@ -167,6 +167,22 @@
               </aside>
             </div>
             <form id="taskForm" class="chat-form">
+              <div class="task-presets">
+                <button id="px4WhiteFollowBtn" class="task-preset-button" type="button">
+                  <span class="task-preset-dot" aria-hidden="true"></span>
+                  PX4 白衣人员跟随
+                </button>
+                <span class="task-mode-note">安全确认 · 目标锁定后执行</span>
+              </div>
+              <div id="px4FollowFlow" class="task-intent-flow hidden" aria-label="PX4 人员跟随任务链">
+                <span class="task-intent-step" data-px4-flow="command"><em>01</em><strong>自然语言指令</strong></span>
+                <i class="task-intent-arrow" aria-hidden="true">→</i>
+                <span class="task-intent-step" data-px4-flow="intent"><em>02</em><strong>目标类别 + 跟踪意图</strong></span>
+                <i class="task-intent-arrow" aria-hidden="true">→</i>
+                <span class="task-intent-step" data-px4-flow="confirm"><em>03</em><strong>安全确认</strong></span>
+                <i class="task-intent-arrow" aria-hidden="true">→</i>
+                <span class="task-intent-step" data-px4-flow="execute"><em>04</em><strong>进入执行链</strong></span>
+              </div>
               <textarea id="taskInput" rows="3" autocomplete="off" placeholder="输入任务，例如：检查状态，安全后起飞到 10 米"></textarea>
               <button class="primary" type="submit">发送</button>
             </form>
@@ -351,7 +367,7 @@
       <div class="control-confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="controlConfirmationTitle">
         <div class="control-confirmation-header">
           <div>
-            <span>飞行控制请求</span>
+            <span id="controlConfirmationKind">飞行控制请求</span>
             <h2 id="controlConfirmationTitle">等待操作员确认</h2>
           </div>
           <strong id="controlConfirmationRisk" class="risk-badge">HIGH</strong>
@@ -361,7 +377,7 @@
           <div><dt>动作</dt><dd id="controlConfirmationAction">--</dd></div>
           <div><dt>确认编号</dt><dd id="controlConfirmationId">--</dd></div>
         </dl>
-        <p>确认后将立即交给 ROS Agent 执行，并持续验证飞控遥测。</p>
+        <p id="controlConfirmationNote">确认后将立即交给 ROS Agent 执行，并持续验证飞控遥测。</p>
         <div class="control-confirmation-actions">
           <button id="modalCancelTaskBtn" type="button">取消</button>
           <button id="modalConfirmTaskBtn" class="primary" type="button">确认执行</button>
@@ -386,6 +402,6 @@
         <canvas id="cameraViewerCanvas"></canvas>
       </div>
     </div>
-    <script src="./app.js?v=20260715-vision1"></script>
+    <script src="./app.js?v=20260811-px4-follow1"></script>
   </body>
 </html>

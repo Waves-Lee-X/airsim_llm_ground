@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>翼策·平行域｜Observed Monitor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">YC</span>
+        <div><strong>翼策·平行域</strong><span>Observed Monitor</span></div>
+      </div>
+      <div class="top-status">
+        <span id="clock">--</span>
+        <span class="readonly"><i></i>READ ONLY</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary" aria-label="双线状态">
+        <article class="line-summary" data-line="px4">
+          <div class="line-name"><i></i><strong>PX4</strong><span>vehicle 1</span></div>
+          <span class="state" id="px4State">WAITING</span>
+          <dl>
+            <div><dt>SEQ</dt><dd id="px4Sequence">0</dd></div>
+            <div><dt>SIM</dt><dd id="px4Sim">--</dd></div>
+            <div><dt>MAP ENU</dt><dd id="px4Position">--</dd></div>
+          </dl>
+        </article>
+        <article class="line-summary" data-line="apm">
+          <div class="line-name"><i></i><strong>APM</strong><span>vehicle 2</span></div>
+          <span class="state" id="apmState">WAITING</span>
+          <dl>
+            <div><dt>SEQ</dt><dd id="apmSequence">0</dd></div>
+            <div><dt>SIM</dt><dd id="apmSim">--</dd></div>
+            <div><dt>MAP ENU</dt><dd id="apmPosition">--</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="map-section">
+        <div class="section-heading">
+          <div><span>LIVE EVIDENCE</span><h1>Observed 轨迹</h1></div>
+          <div class="legend" aria-label="图例">
+            <span class="px4"><i></i>PX4 / real</span>
+            <span class="apm"><i></i>APM / real</span>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="map" aria-label="PX4 与 APM 的 map ENU observed 轨迹"></canvas>
+          <span class="north">N</span>
+          <span class="east">E</span>
+          <div id="empty" class="empty">WAITING FOR OBSERVED</div>
+        </div>
+        <footer>
+          <span id="frame">map ENU · X EAST · Y NORTH · Z UP</span>
+          <span id="calibration">CALIBRATION --</span>
+        </footer>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

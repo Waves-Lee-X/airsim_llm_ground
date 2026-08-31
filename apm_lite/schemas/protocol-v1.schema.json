@@ -1033,6 +1033,32 @@
               ],
               "default": null
             },
+            "mirrored_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mirrored At Utc"
+            },
+            "mirrored_monotonic_s": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mirrored Monotonic S"
+            },
             "observed_at_utc": {
               "anyOf": [
                 {
@@ -1076,6 +1102,45 @@
               ],
               "title": "Position Map M",
               "type": "array"
+            },
+            "received_at_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Received At Utc"
+            },
+            "received_monotonic_s": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Received Monotonic S"
+            },
+            "sim_time_s": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sim Time S"
             },
             "source_wgs84": {
               "anyOf": [
@@ -1438,6 +1503,13 @@
           "enum": [
             "none",
             "map",
+            "map_enu",
+            "enu",
+            "ned",
+            "ecef",
+            "wgs84",
+            "gazebo_enu",
+            "airsim_ned",
             "local_ned",
             "global_wgs84",
             "body_frd",

@@ -1,0 +1,65 @@
+{
+  "dataset_id": "5f9a56e4-3dd2-4cbe-9271-8073f50a9a02",
+  "calibration_id": "parallel-sitl-locked-v1",
+  "line": "apm",
+  "vehicle_id": 2,
+  "truth_source": "simulation_ground_truth",
+  "truth_reference": "Deterministic ArduCopter SITL control-point fixture; ground_truth_map_m is independent from measured_wgs84 and includes non-zero GPS residuals.",
+  "created_at_utc": "2026-08-17T00:00:00+08:00",
+  "measurements": [
+    {
+      "sample_id": "67d8e313-61c0-4c85-b844-9877f7bb3a11",
+      "control_point_id": "CP0",
+      "pass_id": "outbound-1",
+      "direction": "outbound",
+      "captured_at_utc": "2026-08-17T00:00:01+08:00",
+      "measured_wgs84": {"latitude_deg": 47.641468449699, "longitude_deg": -122.140164600758, "altitude_m": 122.040000000037},
+      "ground_truth_map_m": [0.0, 0.0, 0.0]
+    },
+    {
+      "sample_id": "67d8e313-61c0-4c85-b844-9877f7bb3a12",
+      "control_point_id": "CP1",
+      "pass_id": "outbound-1",
+      "direction": "outbound",
+      "captured_at_utc": "2026-08-17T00:00:02+08:00",
+      "measured_wgs84": {"latitude_deg": 47.641558659295, "longitude_deg": -122.140165266162, "altitude_m": 124.070007974282},
+      "ground_truth_map_m": [10.0, 0.0, 2.0]
+    },
+    {
+      "sample_id": "67d8e313-61c0-4c85-b844-9877f7bb3a13",
+      "control_point_id": "CP2",
+      "pass_id": "outbound-1",
+      "direction": "outbound",
+      "captured_at_utc": "2026-08-17T00:00:03+08:00",
+      "measured_wgs84": {"latitude_deg": 47.641557400047, "longitude_deg": -122.14029927859, "altitude_m": 124.950015721843},
+      "ground_truth_map_m": [10.0, 10.0, 3.0]
+    },
+    {
+      "sample_id": "67d8e313-61c0-4c85-b844-9877f7bb3a14",
+      "control_point_id": "CP2",
+      "pass_id": "return-1",
+      "direction": "return",
+      "captured_at_utc": "2026-08-17T00:00:04+08:00",
+      "measured_wgs84": {"latitude_deg": 47.641558209506, "longitude_deg": -122.140297415459, "altitude_m": 125.020015642978},
+      "ground_truth_map_m": [10.0, 10.0, 3.0]
+    },
+    {
+      "sample_id": "67d8e313-61c0-4c85-b844-9877f7bb3a15",
+      "control_point_id": "CP1",
+      "pass_id": "return-1",
+      "direction": "return",
+      "captured_at_utc": "2026-08-17T00:00:05+08:00",
+      "measured_wgs84": {"latitude_deg": 47.641557580019, "longitude_deg": -122.140164201515, "altitude_m": 123.960007785819},
+      "ground_truth_map_m": [10.0, 0.0, 2.0]
+    },
+    {
+      "sample_id": "67d8e313-61c0-4c85-b844-9877f7bb3a16",
+      "control_point_id": "CP0",
+      "pass_id": "return-1",
+      "direction": "return",
+      "captured_at_utc": "2026-08-17T00:00:06+08:00",
+      "measured_wgs84": {"latitude_deg": 47.641467640241, "longitude_deg": -122.140165665403, "altitude_m": 121.970000000671},
+      "ground_truth_map_m": [0.0, 0.0, 0.0]
+    }
+  ]
+}

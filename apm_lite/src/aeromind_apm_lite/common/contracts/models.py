@@ -29,6 +29,13 @@ class StrictModel(BaseModel):
 class CoordinateFrame(str, Enum):
     NONE = "none"
     MAP = "map"
+    MAP_ENU = "map_enu"
+    ENU = "enu"
+    NED = "ned"
+    ECEF = "ecef"
+    WGS84 = "wgs84"
+    GAZEBO_ENU = "gazebo_enu"
+    AIRSIM_NED = "airsim_ned"
     LOCAL_NED = "local_ned"
     GLOBAL_WGS84 = "global_wgs84"
     BODY_FRD = "body_frd"

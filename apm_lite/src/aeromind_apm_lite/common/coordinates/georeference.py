@@ -19,10 +19,12 @@ from .frames import (
     Vec3,
     VenueCalibration,
     airsim_ned_to_map,
+    enu_to_map as local_enu_to_map,
     geodetic_to_enu,
     geodetic_to_map,
     local_ned_to_map,
     map_to_airsim_ned,
+    map_to_enu,
     map_to_geodetic,
     map_to_local_ned,
 )
@@ -128,6 +130,20 @@ class GeoReference(GeoReferenceModel):
         return hashlib.sha256(canonical).hexdigest()
 
     @property
+    def sha256(self) -> str:
+        """SHA-256 of the canonical calibration payload."""
+
+        return self.config_hash
+
+    @property
+    def calibration_sha256(self) -> str:
+        return self.config_hash
+
+    @property
+    def preview_only(self) -> bool:
+        return self.status != CalibrationStatus.SURVEYED
+
+    @property
     def is_complete(self) -> bool:
         return all(
             value is not None
@@ -161,11 +177,81 @@ class GeoReference(GeoReferenceModel):
             map_x_yaw_from_east_rad=yaw_from_east,
         )
 
+    def wgs84_to_map(self, position: Wgs84Position) -> Vec3:
+        """Normalize a GPS point to the single shared map ENU representation."""
+
+        if not self.is_complete:
+            raise ValueError("georeference is incomplete")
+        assert self.map_origin_wgs84 is not None
+        return geodetic_to_map(
+            position.coordinate(),
+            self.venue_calibration(),
+            self.map_origin_wgs84.coordinate(),
+        )
+
+    def telemetry_wgs84_to_map(
+        self,
+        position: Wgs84Position,
+        *,
+        line: Literal["px4", "apm", "PX4", "APM"],
+    ) -> Vec3:
+        """Line-labelled entry point proving both FCU stacks share one transform."""
+
+        normalized_line = str(getattr(line, "value", line)).lower()
+        if normalized_line not in {"px4", "apm"}:
+            raise ValueError("line must be px4 or apm")
+        return self.wgs84_to_map(position)
+
+    def map_to_wgs84(self, point_map: Vec3) -> Wgs84Position:
+        if not self.is_complete:
+            raise ValueError("georeference is incomplete")
+        assert self.map_origin_wgs84 is not None
+        position = map_to_geodetic(
+            point_map,
+            self.venue_calibration(),
+            self.map_origin_wgs84.coordinate(),
+        )
+        return Wgs84Position(
+            latitude_deg=position.latitude_deg,
+            longitude_deg=position.longitude_deg,
+            altitude_m=position.altitude_m,
+        )
+
+    def gazebo_enu_to_map(self, point_enu: Vec3) -> Vec3:
+        """Convert Gazebo ENU, anchored at the map GPS origin, into map ENU."""
+
+        return local_enu_to_map(point_enu, self.venue_calibration())
+
+    def map_to_gazebo_enu(self, point_map: Vec3) -> Vec3:
+        return map_to_enu(point_map, self.venue_calibration())
+
+    def airsim_ned_to_map(self, point_ned: Vec3) -> Vec3:
+        """Convert AirSim NED, anchored at OriginGeopoint, into shared map ENU."""
+
+        if not self.is_complete:
+            raise ValueError("georeference is incomplete")
+        assert self.airsim_origin_wgs84 is not None
+        return airsim_ned_to_map(
+            point_ned,
+            self.venue_calibration(enu_origin=self.airsim_origin_wgs84),
+        )
+
+    def map_to_airsim_ned(self, point_map: Vec3) -> Vec3:
+        if not self.is_complete:
+            raise ValueError("georeference is incomplete")
+        assert self.airsim_origin_wgs84 is not None
+        return map_to_airsim_ned(
+            point_map,
+            self.venue_calibration(enu_origin=self.airsim_origin_wgs84),
+        )
+
     def coordinate_round_trip_report(self) -> dict[str, Any]:
         if not self.is_complete:
             return {
                 "ready": False,
                 "passed": False,
+                "preview_only": True,
+                "acceptance_passed": None,
                 "detail": "map origin, map X heading and AirSim origin are required",
                 "points": [],
             }
@@ -239,9 +325,14 @@ class GeoReference(GeoReferenceModel):
                     "errors_m": errors,
                 }
             )
+        numerical_passed = maximum_error <= 0.01
         return {
             "ready": True,
-            "passed": maximum_error <= 0.01,
+            "passed": numerical_passed,
+            "preview_only": self.preview_only,
+            "acceptance_passed": (
+                numerical_passed if not self.preview_only else None
+            ),
             "tolerance_m": 0.01,
             "maximum_error_m": maximum_error,
             "points": results,

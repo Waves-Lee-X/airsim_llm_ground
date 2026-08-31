@@ -1,0 +1,12 @@
+# Stage-0 native SITL only. Never load this file on a real ArduPilot vehicle.
+# The physical-side substitute has no external sensor operator, so disable
+# pre-arm checks to make the explicit ARM/TAKEOFF ACK gate deterministic.
+ARMING_CHECK 0
+GPS1_TYPE 1
+SIM_GPS1_TYPE 1
+SIM_GPS1_ENABLE 1
+# SERIAL0 is the isolated bridge stream. ArduPilot otherwise emits heartbeat
+# only until a GCS requests rates, leaving the observation-only bridge waiting.
+MAV1_EXT_STAT 2
+MAV1_POSITION 10
+MAV1_EXTRA1 10

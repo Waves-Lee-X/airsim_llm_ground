@@ -1,0 +1,28 @@
+schema_version: "1.0"
+calibration_id: parallel-sitl-locked-v1
+status: surveyed
+map_definition:
+  origin_marker: SITL_ORIGIN
+  positive_x_marker: TRUE_NORTH
+  x_axis_reference: true_north
+  z_axis: up
+  units: m
+map_origin_wgs84:
+  latitude_deg: 47.641468
+  longitude_deg: -122.140165
+  altitude_m: 122.0
+map_x_heading_from_true_north_deg: 0.0
+airsim_origin_wgs84:
+  latitude_deg: 47.641468
+  longitude_deg: -122.140165
+  altitude_m: 122.0
+map_scale: 1.0
+height_reference:
+  datum: amsl
+  map_z_zero: map_origin
+vehicle_homes:
+  - vehicle_id: 1
+    map_position_m: [0.0, 0.0, 0.0]
+  - vehicle_id: 2
+    map_position_m: [0.0, 3.0, 0.0]
+notes: "Locked against deterministic SITL world settings only; not an outdoor venue survey."
