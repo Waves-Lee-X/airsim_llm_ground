@@ -23,12 +23,14 @@ missions/
 
 # AeroMind APM Lite generated deployment artifacts
 /aeromind-apm-lite-*.tar.gz
+/deliverables/*.tar.gz
 /apm_lite/deploy/offline/pi-py39-wheelhouse/
 
 # Local AeroMind simulation helpers
 /apm_lite/.tmp_*.sh
 /apm_lite/*.lnk
 /apm_lite/deploy/wsl/start_sitl_fleet.sh
+/apm_lite/.runtime/
 
 # Logs
 logs/
@@ -45,6 +47,13 @@ ppt_work/
 /doc/附件2：第八届中国研究生人工智能创新大赛项目文档模版.*
 /面向无人机的视觉语言感知*.pptx
 /面向无人机的视觉语言感知*.tmp
+/deliverables/*.pptx
+/deliverables/*.tmp
+
+# Local workspace helper / QA artifacts
+symlink_install_manifest.txt
+.qa_doc*/
+doc_review/
 
 # OS
 .DS_Store
